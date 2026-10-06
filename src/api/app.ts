@@ -7,13 +7,14 @@ import {
 import { GoUnavailable, cardTap, catchUp, deleteFact, forgetPerson, getPerson, updateCarryOver, vaultLink } from '../domain/ask-go.js';
 import type { GoClient } from '../domain/ask-go.js';
 import { messageForApp } from '../domain/mappers.js';
-import { openPersonVote } from '../domain/votes-bookings.js';
+import { addPersonBooking, openPersonVote, updatePersonBooking } from '../domain/votes-bookings.js';
+import { invalid } from '../domain/errors.js';
 import type { MessageRow, ReactionRow } from '../domain/mappers.js';
 import { buildSnapshot } from '../domain/snapshot.js';
 import { SocketCallError } from '../go/go-socket.js';
 import type { LiveEvent } from '../live/live.js';
 import { signSession, verifySession } from './auth.js';
-import { checkOpenVote } from './bodies.js';
+import { checkAddBooking, checkOpenVote, checkUpdateBooking } from './bodies.js';
 import { corsHeaders } from './cors.js';
 
 export interface AppDeps {
@@ -151,6 +152,12 @@ export function buildApp({ ctx, go, sessionSecret, origins = [] }: AppDeps): Fas
     handler: async (req: any) => fn(req.params.id, req.personId, req),
   });
   app.post('/app/trips/:id/decisions', inTrip((req, trip, me) => openPersonVote(ctx, trip, me, checkOpenVote(req.body)), 201));
+  app.post('/app/trips/:id/bookings', inTrip((req, trip, me) => addPersonBooking(ctx, trip, me, checkAddBooking(req.body)), 201));
+  app.patch('/app/trips/:id/bookings/:bid', inTrip((req, trip, me) => {
+    const body = checkUpdateBooking(req.body);
+    if (Object.keys(body).length === 0) throw invalid('send at least one field');
+    return updatePersonBooking(ctx, trip, me, req.params.bid, body);
+  }));
   app.post('/app/trips/:id/decisions/:did/vote', withTrip((t, me, r) => castVote(ctx, t, me, r.params.did!, Number(r.body?.option_index))));
   app.post('/app/trips/:id/decisions/:did/close', withTrip((t, me, r) => closeVoteByPerson(ctx, t, me, r.params.did!)));
   app.post('/app/trips/:id/decisions/:did/cancel', withTrip((t, me, r) => cancelDecision(ctx, t, me, r.params.did!)));
