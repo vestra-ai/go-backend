@@ -304,7 +304,7 @@ describe('F4. From a vote to a booking (guides: "From a vote to a booking", "Mon
     await h.flush();
     expect(eventsFor(trip, mark)[0]).toMatchObject({ type: 'mandate.set', data: { decision_id: villa, mandate: { payer_person_id: rahul.id, cap_minor: 5500000 } } });
     expect(eventsFor(trip, mark)[0]!.data.mandate.confirmed_at).toBeUndefined();
-    expect(await strip(rahul, trip)).toContainEqual({ kind: 'mandate', decision_id: villa, text: 'Where do we stay?' });
+    expect(await strip(rahul, trip)).toContainEqual({ kind: 'mandate', decision_id: villa, text: 'Yes, book it? Villa Sol, up to ₹55,000', question: 'Where do we stay?' });
     expect(await strip(priya, trip)).toEqual([]);
     await go('post_message', trip, { text: 'Rahul, shall I book Villa Sol?', card });
   });
@@ -581,12 +581,12 @@ describe('F7. Forget me (guides: "Forget me", "People and privacy")', () => {
     expect((await rows(h.pool, 'select count(*)::int as n from messages where author_person_id = $1', [kabir.id]))[0].n).toBe(1);
   });
 
-  it('forget everywhere: one person.updated in each of his trips', async () => {
+  it('forget everywhere: person.updated in each trip that still had answers (trip A was already cleared)', async () => {
     const mark = h.go.events.length;
     await api(kabir, 'POST', '/app/me/forget', {});
     expect(h.go.requests.at(-1)).toEqual({ method: 'forget_person', params: { person_id: kabir.id } });
     await h.flush();
-    expect(h.go.events.slice(mark).filter((e) => e.type === 'person.updated').map((e) => e.trip_id).sort()).toEqual([tripA, tripB].sort());
+    expect(h.go.events.slice(mark).filter((e) => e.type === 'person.updated').map((e) => e.trip_id)).toEqual([tripB]);
     expect(await answersOf(tripB)).toEqual({ from_city: null, earliest_leave: null, know: [] });
   });
 

@@ -205,7 +205,7 @@ describe('votes, mandate and the "needs you" strip', () => {
 
   it('only the payer can answer the mandate; "Yes, book it" opens the spend check', async () => {
     await goCall('set_mandate', { decision_id: decision, choice_index: 0, cap_minor: 5500000, currency: 'INR', refundable_only: true, payer_person_id: rahul.id }, trip);
-    expect((await api(rahul, 'GET', `/app/trips/${trip}/needs-you`)).body).toContainEqual({ kind: 'mandate', decision_id: decision, text: 'Where do we stay?' });
+    expect((await api(rahul, 'GET', `/app/trips/${trip}/needs-you`)).body).toContainEqual({ kind: 'mandate', decision_id: decision, text: 'Yes, book it? Villa Sol, up to ₹55,000', question: 'Where do we stay?' });
     expect((await api(priya, 'POST', `/app/trips/${trip}/decisions/${decision}/mandate/confirm`)).status).toBe(403);
     const ask = () => h.go.call('request_spend_approval', {
       request_id: `rq_sp_${Math.random()}`, trip_id: trip, decision_id: decision, amount_minor: 5420000, currency: 'INR', merchant: 'ixigo', purpose: 'Villa', refundable_until: '2099-01-01T00:00:00Z',

@@ -268,6 +268,39 @@ describe('B13: frames that are not JSON-RPC', () => {
   });
 });
 
+describe('R2 (real Go): an empty body with content-type: application/json', () => {
+  it('is read as no body: a POST that needs none works, and a route that needs fields still says 400', async () => {
+    const headers = { authorization: `Bearer ${token('p_rahul')}`, 'content-type': 'application/json' };
+    expect((await h.app.inject({ method: 'POST', url: `/app/trips/${T}/seen`, payload: '', headers })).statusCode).toBe(200);
+    const msg = await h.app.inject({ method: 'POST', url: `/app/trips/${T}/messages`, payload: '', headers });
+    expect(msg.statusCode).toBe(400);
+    expect(JSON.parse(msg.body).error.message).toMatch(/client_id/);
+  });
+});
+
+describe('R1 (real Go): forget me', () => {
+  it('sends no person.updated when there were no join answers to clear', async () => {
+    await h.flush();
+    const before = h.go.events.length;
+    expect((await api('p_meher', 'POST', '/app/me/forget', { trip_id: T })).status).toBe(200);
+    await h.flush();
+    expect(h.go.events.slice(before).filter((e) => e.type === 'person.updated')).toEqual([]);
+  });
+
+  it('clears the answers in a trip the person has left, without an event, by trip or everywhere', async () => {
+    const p = (await api(null, 'POST', '/app/people', { name: 'Leaver' })).body.person_id;
+    await api(p, 'POST', '/app/join/inv_t_goa', { from_city: 'Pune', know: ['Nuts'] });
+    await api(p, 'POST', `/app/trips/${T}/leave`);
+    await h.flush();
+    const before = h.go.events.length;
+    expect((await api(p, 'POST', '/app/me/forget', { trip_id: T })).status).toBe(200); // was 403
+    expect((await rows(h.pool, 'select from_city, know from trip_people where trip_id = $1 and person_id = $2', [T, p]))[0]).toEqual({ from_city: null, know: [] });
+    await h.flush();
+    expect(h.go.events.length).toBe(before);
+    expect((await api(p, 'POST', '/app/me/forget', { trip_id: 't_never' })).status).toBe(403);
+  });
+});
+
 describe('B16: cancelling an approval that already expired', () => {
   it('answers ok and changes nothing', async () => {
     const [d] = await rows(h.pool, "select decision_id from decisions where trip_id = $1 and status = 'closed' limit 1", [T]);

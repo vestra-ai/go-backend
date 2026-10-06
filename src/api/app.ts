@@ -35,6 +35,19 @@ const body = (properties: Record<string, object>, required: string[] = []) => ({
 /** The app's API. The app talks only to this, never to Go. The paths are ours to design. */
 export function buildApp({ ctx, go, sessionSecret }: AppDeps): FastifyInstance {
   const app = Fastify({ logger: false });
+  // An empty body is fine even with content-type: application/json (many HTTP clients always set it): it is read as
+  // no body, and each route's schema still decides what is required. Unreadable JSON is a 400.
+  app.removeContentTypeParser('application/json');
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+    const text = String(body);
+    if (text.trim() === '') return done(null, undefined);
+    try {
+      done(null, JSON.parse(text));
+    } catch (err) {
+      (err as { statusCode?: number }).statusCode = 400;
+      done(err as Error, undefined);
+    }
+  });
 
   app.setErrorHandler((err: any, _req, reply) => {
     if (err instanceof Forbidden) return reply.code(403).send({ error: { code: 'forbidden', message: err.message } });

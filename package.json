@@ -17,7 +17,9 @@
     "migrate": "tsx scripts/migrate.ts",
     "pretest": "node scripts/prepare-test-pg.mjs",
     "dev:stack": "node scripts/prepare-test-pg.mjs && tsx scripts/dev-stack.ts",
-    "postman": "pnpm dlx newman@6 run docs/go-server.postman_collection.json -e docs/go-server.postman_environment.json --folder \"Run in order\""
+    "postman": "pnpm dlx newman@6 run docs/go-server.postman_collection.json -e docs/go-server.postman_environment.json --folder \"Run in order\"",
+    "dev:real": "node scripts/prepare-test-pg.mjs && tsx scripts/dev-real.ts",
+    "inspect": "tsx scripts/inspect.ts"
   },
   "dependencies": {
     "ajv": "^8.20.0",

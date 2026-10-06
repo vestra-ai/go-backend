@@ -119,12 +119,16 @@ export const vaultLink = (go: GoClient, personId: string, start?: 'home' | 'add_
   askGo(go, 'vault_link', { kind: 'vault', person_id: personId, ...(start ? { start } : {}) });
 
 /**
- * "Forget me", in one trip or everywhere. Go deletes what it learned and checks none is left. Then the
- * Server clears the person's join answers in the same trips and sends `person.updated`, so Go cannot
- * learn them again. The room's messages stay: the rest of the group can still see them.
+ * "Forget me", in one trip or everywhere, including trips the person has left. Go deletes what it learned
+ * and checks none is left. Then the Server clears the person's join answers in the same trips, so Go cannot
+ * learn them again, and sends `person.updated` where they are still in the trip and something was cleared.
+ * The room's messages stay: the rest of the group can still see them.
  */
 export async function forgetPerson(ctx: Ctx, go: GoClient, personId: string, tripId?: string) {
-  if (tripId) await requireMember(ctx.pool, tripId, personId);
+  if (tripId) {
+    const ever = await ctx.pool.query('select 1 from trip_people where trip_id = $1 and person_id = $2', [tripId, personId]);
+    if (!ever.rowCount) throw new Forbidden(`${personId} was never in trip ${tripId}`);
+  }
   const result = await askGo<{ deleted_facts: number; remaining_facts: number }>(go, 'forget_person', {
     person_id: personId,
     ...(tripId ? { trip_id: tripId } : {}),
@@ -132,10 +136,17 @@ export async function forgetPerson(ctx: Ctx, go: GoClient, personId: string, tri
   if (result.remaining_facts !== 0) throw new GoUnavailable(502, 'Go says some facts are still left after forgetting');
   const trips = tripId
     ? [tripId]
-    : (await ctx.pool.query('select trip_id from trip_people where person_id = $1 and left_at is null', [personId])).rows.map((r) => r.trip_id as string);
+    : (await ctx.pool.query('select trip_id from trip_people where person_id = $1', [personId])).rows.map((r) => r.trip_id as string);
   for (const id of trips) {
     await withTx(ctx.pool, async (db, after) => {
-      await db.query(`update trip_people set from_city = null, earliest_leave = null, know = '[]' where trip_id = $1 and person_id = $2`, [id, personId]);
+      const cleared = await db.query(
+        `update trip_people set from_city = null, earliest_leave = null, know = '[]'
+          where trip_id = $1 and person_id = $2 and (from_city is not null or earliest_leave is not null or know <> '[]'::jsonb)
+          returning left_at`,
+        [id, personId],
+      );
+      // Nothing to clear, or they left the trip (Go no longer counts them in it): no event.
+      if (!cleared.rowCount || cleared.rows[0].left_at !== null) return;
       const person = (await activePeople(db, id)).find((p) => p.person_id === personId)!;
       const seq = await change(db, id, 'person.updated', { person: personForGo(person), changed: ['from_city', 'earliest_leave', 'know'] });
       after(() => ctx.live.publish(id, { kind: 'trip', seq }));

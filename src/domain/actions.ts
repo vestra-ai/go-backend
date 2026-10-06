@@ -436,7 +436,7 @@ export async function needsYou(ctx: Ctx, tripId: string, personId: string) {
     [tripId, personId],
   );
   const mandates = await ctx.pool.query(
-    `select decision_id, question from decisions
+    `select decision_id, question, options, mandate from decisions
       where trip_id = $1 and status = 'closed' and mandate->>'payer_person_id' = $2
         and mandate->>'confirmed_at' is null and mandate->>'declined_at' is null`,
     [tripId, personId],
@@ -452,7 +452,13 @@ export async function needsYou(ctx: Ctx, tripId: string, personId: string) {
   );
   return [
     ...votes.rows.map((r) => ({ kind: 'vote', decision_id: r.decision_id, text: r.question })),
-    ...mandates.rows.map((r) => ({ kind: 'mandate', decision_id: r.decision_id, text: r.question })),
+    // What the payer is asked to confirm, such as "Yes, book it? Villa Sol, up to ₹55,000", and the vote it came from.
+    ...mandates.rows.map((r) => ({
+      kind: 'mandate',
+      decision_id: r.decision_id,
+      text: `Yes, book it? ${r.options[r.mandate.choice_index]?.label ?? r.question}, up to ${formatMoney(r.mandate.cap_minor, r.mandate.currency)}`,
+      question: r.question,
+    })),
     ...cards.rows.map((r) => ({ kind: 'card', card_id: r.card_id, message_id: r.message_id, text: r.text })),
     ...lines.rows.map((r) => ({ kind: 'record', line_id: r.line_id, text: r.text })),
   ];

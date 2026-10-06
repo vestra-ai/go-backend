@@ -103,7 +103,7 @@ The "needs you" strip for this person. → array of items, each with `kind` and 
 | `kind` | extra fields | Tap opens |
 |---|---|---|
 | `vote` | `decision_id` | the vote card (open vote you haven't voted in) |
-| `mandate` | `decision_id` | the mandate card (you are the payer and haven't answered) |
+| `mandate` | `decision_id`, `question` | the mandate card (you are the payer and haven't answered). `text` is what to confirm, e.g. "Yes, book it? Villa Sol, up to ₹55,000"; `question` is the vote it came from |
 | `card` | `card_id`, `message_id` | a Go card that names you |
 | `record` | `line_id` | an open trip-record line that asks you |
 

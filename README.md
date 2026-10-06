@@ -87,6 +87,17 @@ shows "Go is typing...", reads the trip, adds a ✅ and replies with one of its 
 Postman) act as Go for the rest: `POST http://localhost:8090/sim/<method>` with Go's params, for example
 `/sim/open_vote`. `GET /sim/state` shows what the fake Go has received.
 
+## Run it against the real Go
+
+```bash
+pnpm dev:real     # reads .env, keeps a local Postgres in .pgdata/, connects to the real Go (Ctrl-C stops)
+pnpm inspect      # what happened on the socket: outbox per trip, refused events, our errors, latencies
+```
+
+`.env` needs `GO_URL`, `GO_SIGNING_SECRET`, `GO_SPEND_PRIVATE_KEY` and a unique `INSTANCE_NAME`. With
+`LOG_GO_TRAFFIC=1`, every socket frame is written to `logs/go-traffic.jsonl` (no secrets). Results so far are in
+[`docs/REAL-GO-TESTING.md`](docs/REAL-GO-TESTING.md).
+
 ## Test it
 
 ```bash
