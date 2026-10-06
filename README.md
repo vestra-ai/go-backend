@@ -36,7 +36,7 @@ If a rule is unclear, the rulebook wins. Do not guess.
 
 ---
 
-**Frontend team:** every endpoint the app can call, with parameters and responses, is in [`docs/API.md`](docs/API.md).
+**Frontend team:** every endpoint the app can call, with parameters and responses, is in [`docs/API.md`](docs/API.md). For Postman, import [`docs/go-server.postman_collection.json`](docs/go-server.postman_collection.json).
 
 ## Folder map
 

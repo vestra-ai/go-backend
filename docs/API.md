@@ -8,6 +8,14 @@ sees Go's address or secrets. Source of truth for the code: `src/api/app.ts`. De
 > The paths below are **our own design**: the Go contract leaves the app API open. If you want a path or shape
 > changed, tell the backend team.
 
+## Try it in Postman
+
+Import `docs/go-server.postman_collection.json` (and optionally `docs/go-server.postman_environment.json`) into Postman.
+Set `baseUrl` (default `http://localhost:8080`). Then run **1. People, trips, joining > Create person**: it saves `token`
+and `personId`, and every other request uses the token automatically. **Create trip** saves `tripId` and `inviteCode`;
+**Post message** saves `messageId`; **Add expense** saves `expenseId`. Each request has a description, an example body
+and example responses (success and error cases). The collection covers all 33 endpoints plus `/health`.
+
 ## Basics
 
 - **Base URL:** the server's address (default port `8080`). All bodies are JSON (`content-type: application/json`).

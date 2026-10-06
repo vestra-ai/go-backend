@@ -1,0 +1,2885 @@
+{
+  "info": {
+    "name": "Go Server: App API",
+    "description": "Everything the app can call on the Go Server. Import this file and the environment file into Postman.\n\n**Quick start:** run *1. People, trips, joining > Create person* (saves `token`), then *Create trip* (saves `tripId`). Every other request uses `{{token}}` automatically.\n\nErrors always look like `{\"error\": {\"code\", \"message\"}}`. Money is whole paise. Full reference: docs/API.md.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "personId",
+      "value": ""
+    },
+    {
+      "key": "tripId",
+      "value": ""
+    },
+    {
+      "key": "inviteCode",
+      "value": ""
+    },
+    {
+      "key": "messageId",
+      "value": ""
+    },
+    {
+      "key": "decisionId",
+      "value": ""
+    },
+    {
+      "key": "lineId",
+      "value": ""
+    },
+    {
+      "key": "expenseId",
+      "value": ""
+    },
+    {
+      "key": "factId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Health",
+      "description": "Is the server up, and is its connection to Go open?",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "No sign-in. `go` is true when the server's connection to Go is open.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/health",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "health"
+                  ]
+                },
+                "description": "No sign-in. `go` is true when the server's connection to Go is open.",
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"ok\": true,\n  \"go\": true\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. People, trips, joining",
+      "description": "Start here: create a person (saves `token` + `personId`), create a trip (saves `tripId` + `inviteCode`), join with another person.",
+      "item": [
+        {
+          "name": "Create person (sign in)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/people",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "people"
+              ]
+            },
+            "description": "Creates a person and returns the sign-in token. **Saves `token` and `personId` automatically.** Phone, email and UPI id stay on the server; Go never sees them.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Rahul\",\n  \"photo_url\": \"https://cdn.example/p_rahul.jpg\",\n  \"phone\": \"+919999999999\",\n  \"email\": \"rahul@example.com\",\n  \"upi_id\": \"rahul@upi\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('token', j.token);",
+                  "pm.collectionVariables.set('personId', j.person_id);"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/people",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "people"
+                  ]
+                },
+                "description": "Creates a person and returns the sign-in token. **Saves `token` and `personId` automatically.** Phone, email and UPI id stay on the server; Go never sees them.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Rahul\",\n  \"photo_url\": \"https://cdn.example/p_rahul.jpg\",\n  \"phone\": \"+919999999999\",\n  \"email\": \"rahul@example.com\",\n  \"upi_id\": \"rahul@upi\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"person_id\": \"p_1a2b3c4d5e6f7a8b\",\n  \"token\": \"s1.eyJzdWIiOi...signature\"\n}"
+            },
+            {
+              "name": "Name missing",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/people",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "people"
+                  ]
+                },
+                "description": "Creates a person and returns the sign-in token. **Saves `token` and `personId` automatically.** Phone, email and UPI id stay on the server; Go never sees them.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Rahul\",\n  \"photo_url\": \"https://cdn.example/p_rahul.jpg\",\n  \"phone\": \"+919999999999\",\n  \"email\": \"rahul@example.com\",\n  \"upi_id\": \"rahul@upi\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"invalid\",\n    \"message\": \"body must have required property 'name'\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Create trip",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips"
+              ]
+            },
+            "description": "Creates a trip; the caller is the organizer. Go is told (`trip.created`) and greets the room. **Saves `tripId` and `inviteCode`.**\n\nOptional: `destination` {name, lat, lng, address, place_id, photo_url}, `dates` {start, end}, `vibe` (≤12), `stay`, `plan_minor` (paise), `currency` (default INR).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Goa 🌴\",\n  \"destination\": {\n    \"name\": \"Goa\",\n    \"lat\": 15.49,\n    \"lng\": 73.83\n  },\n  \"dates\": {\n    \"start\": \"2026-11-06\",\n    \"end\": \"2026-11-09\"\n  },\n  \"vibe\": [\n    \"beaches\",\n    \"food\"\n  ],\n  \"stay\": \"villa with a pool\",\n  \"plan_minor\": 7500000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('tripId', j.trip_id);",
+                  "pm.collectionVariables.set('inviteCode', j.invite_url.split('/j/')[1]);"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips"
+                  ]
+                },
+                "description": "Creates a trip; the caller is the organizer. Go is told (`trip.created`) and greets the room. **Saves `tripId` and `inviteCode`.**\n\nOptional: `destination` {name, lat, lng, address, place_id, photo_url}, `dates` {start, end}, `vibe` (≤12), `stay`, `plan_minor` (paise), `currency` (default INR).",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"Goa 🌴\",\n  \"destination\": {\n    \"name\": \"Goa\",\n    \"lat\": 15.49,\n    \"lng\": 73.83\n  },\n  \"dates\": {\n    \"start\": \"2026-11-06\",\n    \"end\": \"2026-11-09\"\n  },\n  \"vibe\": [\n    \"beaches\",\n    \"food\"\n  ],\n  \"stay\": \"villa with a pool\",\n  \"plan_minor\": 7500000\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"trip_id\": \"t_9f8e7d6c5b4a3210\",\n  \"invite_url\": \"https://go.example/j/Kx9fQ2aB\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Join preview (public)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/app/join/{{inviteCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "join",
+                "{{inviteCode}}"
+              ]
+            },
+            "description": "For the join screen. No sign-in.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/join/{{inviteCode}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "join",
+                    "{{inviteCode}}"
+                  ]
+                },
+                "description": "For the join screen. No sign-in.",
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"trip_id\": \"t_9f8e7d6c5b4a3210\",\n  \"title\": \"Goa 🌴\",\n  \"destination\": {\n    \"name\": \"Goa\"\n  },\n  \"dates_start\": \"2026-11-06\",\n  \"dates_end\": \"2026-11-09\",\n  \"people\": 1\n}"
+            },
+            {
+              "name": "Bad link",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/join/{{inviteCode}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "join",
+                    "{{inviteCode}}"
+                  ]
+                },
+                "description": "For the join screen. No sign-in.",
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"not_found\",\n    \"message\": \"no trip for this invite link\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Join trip",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/join/{{inviteCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "join",
+                "{{inviteCode}}"
+              ]
+            },
+            "description": "Join with the join answers (all optional). Safe to repeat. `budget` is the person's own answer and stays private: Go only learns the lowest band of everyone's.\n\n*Tip: create a second person first, then run this with their token.*",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from_city\": \"Delhi\",\n  \"earliest_leave\": \"Fri after 6 pm\",\n  \"know\": [\n    \"Vegetarian\",\n    \"Window seat\"\n  ],\n  \"budget\": {\n    \"min_minor\": 1500000,\n    \"max_minor\": 2000000\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/join/{{inviteCode}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "join",
+                    "{{inviteCode}}"
+                  ]
+                },
+                "description": "Join with the join answers (all optional). Safe to repeat. `budget` is the person's own answer and stays private: Go only learns the lowest band of everyone's.\n\n*Tip: create a second person first, then run this with their token.*",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"from_city\": \"Delhi\",\n  \"earliest_leave\": \"Fri after 6 pm\",\n  \"know\": [\n    \"Vegetarian\",\n    \"Window seat\"\n  ],\n  \"budget\": {\n    \"min_minor\": 1500000,\n    \"max_minor\": 2000000\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"trip_id\": \"t_9f8e7d6c5b4a3210\",\n  \"already\": false\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get trip (Trip screens)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}"
+              ]
+            },
+            "description": "The whole trip: `trip_id, seq, title, status, organizer_person_id, invite_url, destination, dates, vibe, stay, budget, people[], decisions[], bookings[], expenses[], money, itinerary[], record[]`. `money.transfers` = who pays whom (the fewest payments). `budget` is only the lowest band + counts."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}"
+                  ]
+                },
+                "description": "The whole trip: `trip_id, seq, title, status, organizer_person_id, invite_url, destination, dates, vibe, stay, budget, people[], decisions[], bookings[], expenses[], money, itinerary[], record[]`. `money.transfers` = who pays whom (the fewest payments). `budget` is only the lowest band + counts."
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"trip_id\": \"t_9f8e7d6c5b4a3210\",\n  \"seq\": 12,\n  \"title\": \"Goa 🌴\",\n  \"status\": \"planning\",\n  \"people\": [\n    \"...\"\n  ],\n  \"decisions\": [],\n  \"bookings\": [],\n  \"expenses\": [],\n  \"money\": {\n    \"currency\": \"INR\",\n    \"spent_minor\": 0,\n    \"by_category\": [],\n    \"transfers\": []\n  },\n  \"record\": []\n}"
+            },
+            {
+              "name": "Not in this trip",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}"
+                  ]
+                },
+                "description": "The whole trip: `trip_id, seq, title, status, organizer_person_id, invite_url, destination, dates, vibe, stay, budget, people[], decisions[], bookings[], expenses[], money, itinerary[], record[]`. `money.transfers` = who pays whom (the fewest payments). `budget` is only the lowest band + counts."
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"forbidden\",\n    \"message\": \"p_x is not in trip t_y\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Leave trip",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/leave",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "leave"
+              ]
+            },
+            "description": "Leave the trip."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/leave",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "leave"
+                  ]
+                },
+                "description": "Leave the trip."
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"seq\": 20\n}"
+            }
+          ]
+        },
+        {
+          "name": "Pause / unpause Go",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/go-paused",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "go-paused"
+              ]
+            },
+            "description": "While paused, this person's messages reach Go with no words (`withheld`). The room still sees them in full.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paused\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/go-paused",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "go-paused"
+                  ]
+                },
+                "description": "While paused, this person's messages reach Go with no words (`withheld`). The room still sees them in full.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"paused\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"seq\": 21\n}"
+            }
+          ]
+        },
+        {
+          "name": "Mark room as seen",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/seen",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "seen"
+              ]
+            },
+            "description": "Call when the person opens/leaves the room. Used to decide when catch-up is needed."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/seen",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "seen"
+                  ]
+                },
+                "description": "Call when the person opens/leaves the room. Used to decide when catch-up is needed."
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"ok\": true\n}"
+            }
+          ]
+        },
+        {
+          "name": "Needs-you strip",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/needs-you",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "needs-you"
+              ]
+            },
+            "description": "What this person has to do. `kind`: `vote` (decision_id), `mandate` (decision_id), `card` (card_id, message_id), `record` (line_id)."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/needs-you",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "needs-you"
+                  ]
+                },
+                "description": "What this person has to do. `kind`: `vote` (decision_id), `mandate` (decision_id), `card` (card_id, message_id), `record` (line_id)."
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "[\n  {\n    \"kind\": \"vote\",\n    \"decision_id\": \"d_1\",\n    \"text\": \"Where do we stay?\"\n  },\n  {\n    \"kind\": \"mandate\",\n    \"decision_id\": \"d_1\",\n    \"text\": \"Where do we stay?\"\n  }\n]"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Messages",
+      "description": "Chat. Every post needs your own `client_id` so retries never post twice.",
+      "item": [
+        {
+          "name": "List messages (paging)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages?after_seq=0&limit=100",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "after_seq",
+                  "value": "0",
+                  "description": "Return messages with updated_seq greater than this"
+                },
+                {
+                  "key": "limit",
+                  "value": "100",
+                  "description": "Default 100, max 200"
+                }
+              ]
+            },
+            "description": "Messages posted **or changed** after a change number, oldest change first. Page on: next `after_seq` = last message's `updated_seq`. A reaction without `person_id` is Go's. `author.kind:\"go\"` messages must look like Go, never a person."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages?after_seq=0&limit=100",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "messages"
+                  ],
+                  "query": [
+                    {
+                      "key": "after_seq",
+                      "value": "0",
+                      "description": "Return messages with updated_seq greater than this"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "100",
+                      "description": "Default 100, max 200"
+                    }
+                  ]
+                },
+                "description": "Messages posted **or changed** after a change number, oldest change first. Page on: next `after_seq` = last message's `updated_seq`. A reaction without `person_id` is Go's. `author.kind:\"go\"` messages must look like Go, never a person."
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"messages\": [\n    {\n      \"message_id\": \"m_1\",\n      \"seq\": 5,\n      \"updated_seq\": 6,\n      \"author\": {\n        \"kind\": \"person\",\n        \"person_id\": \"p_1\"\n      },\n      \"text\": \"North Goa?\",\n      \"attachments\": [],\n      \"mentions_go\": false,\n      \"mentions\": [],\n      \"reactions\": [\n        {\n          \"emoji\": \"✅\"\n        }\n      ],\n      \"withheld\": false,\n      \"deleted\": false,\n      \"sent_at\": \"2026-10-05T04:08:00Z\"\n    }\n  ],\n  \"has_more\": false\n}"
+            }
+          ]
+        },
+        {
+          "name": "Post message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "messages"
+              ]
+            },
+            "description": "`client_id` is **required** (use a new UUID per press; the same id again returns the first answer). Send `text` (≤4000) and/or `attachments` (≤10).\n\n- `reply_to`: message id being replied to.\n- `about_message_id`: **\"Ask Go about this\"** (Go answers even if the text doesn't name Go).\n- `mentions`: person ids (≤30).\n- Attachments: `{kind:\"photo\",url,width?,height?,caption?}` or `{kind:\"file\",url,name,mime,size_bytes}` (URLs only, no upload yet).\n\nThe message counts as *for Go* when it has `@Go`, starts with \"Go,\", replies to Go, or has `about_message_id`.\n\n**Saves `messageId`.**",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{$guid}}\",\n  \"text\": \"@Go can you find flights for Friday evening?\",\n  \"mentions\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('messageId', j.message_id);"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "messages"
+                  ]
+                },
+                "description": "`client_id` is **required** (use a new UUID per press; the same id again returns the first answer). Send `text` (≤4000) and/or `attachments` (≤10).\n\n- `reply_to`: message id being replied to.\n- `about_message_id`: **\"Ask Go about this\"** (Go answers even if the text doesn't name Go).\n- `mentions`: person ids (≤30).\n- Attachments: `{kind:\"photo\",url,width?,height?,caption?}` or `{kind:\"file\",url,name,mime,size_bytes}` (URLs only, no upload yet).\n\nThe message counts as *for Go* when it has `@Go`, starts with \"Go,\", replies to Go, or has `about_message_id`.\n\n**Saves `messageId`.**",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"client_id\": \"{{$guid}}\",\n  \"text\": \"@Go can you find flights for Friday evening?\",\n  \"mentions\": []\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"message_id\": \"m_ab12cd34ef56ab78\",\n  \"seq\": 13\n}"
+            }
+          ]
+        },
+        {
+          "name": "Edit message",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages/{{messageId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "messages",
+                "{{messageId}}"
+              ]
+            },
+            "description": "Edit your own message.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Corrected text\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages/{{messageId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "messages",
+                    "{{messageId}}"
+                  ]
+                },
+                "description": "Edit your own message.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"text\": \"Corrected text\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"seq\": 14\n}"
+            },
+            {
+              "name": "Not yours",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages/{{messageId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "messages",
+                    "{{messageId}}"
+                  ]
+                },
+                "description": "Edit your own message.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"text\": \"Corrected text\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"forbidden\",\n    \"message\": \"only the author can change a message\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Delete message",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages/{{messageId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "messages",
+                "{{messageId}}"
+              ]
+            },
+            "description": "Delete your own message."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages/{{messageId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "messages",
+                    "{{messageId}}"
+                  ]
+                },
+                "description": "Delete your own message."
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"seq\": 15\n}"
+            }
+          ]
+        },
+        {
+          "name": "Add reaction",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages/{{messageId}}/reactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "messages",
+                "{{messageId}}",
+                "reactions"
+              ]
+            },
+            "description": "`emoji` is 1-16 characters. `seq` is null if you already had it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"emoji\": \"👍\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages/{{messageId}}/reactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "messages",
+                    "{{messageId}}",
+                    "reactions"
+                  ]
+                },
+                "description": "`emoji` is 1-16 characters. `seq` is null if you already had it.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"emoji\": \"👍\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"seq\": 16\n}"
+            }
+          ]
+        },
+        {
+          "name": "Remove reaction",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages/{{messageId}}/reactions/%F0%9F%91%8D",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "messages",
+                "{{messageId}}",
+                "reactions",
+                "%F0%9F%91%8D"
+              ]
+            },
+            "description": "The emoji in the path must be URL-encoded (👍 = `%F0%9F%91%8D`)."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages/{{messageId}}/reactions/%F0%9F%91%8D",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "messages",
+                    "{{messageId}}",
+                    "reactions",
+                    "%F0%9F%91%8D"
+                  ]
+                },
+                "description": "The emoji in the path must be URL-encoded (👍 = `%F0%9F%91%8D`)."
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"seq\": 17\n}"
+            }
+          ]
+        },
+        {
+          "name": "Typing indicator",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/typing",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "typing"
+              ]
+            },
+            "description": "Shows \"<you> is typing...\" to the room (runs out after 5 s). Not sent to Go.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"on\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/typing",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "typing"
+                  ]
+                },
+                "description": "Shows \"<you> is typing...\" to the room (runs out after 5 s). Not sent to Go.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"on\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"ok\": true\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Votes, mandate, record, expenses",
+      "description": "The Server's own buttons (record cards). They never go to Go. `decisionId` comes from the trip data (`decisions[]`) or the vote card.",
+      "item": [
+        {
+          "name": "Vote",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/vote",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "decisions",
+                "{{decisionId}}",
+                "vote"
+              ]
+            },
+            "description": "Change your vote any time until it closes. The vote closes by itself when everyone has voted.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"option_index\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/vote",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "decisions",
+                    "{{decisionId}}",
+                    "vote"
+                  ]
+                },
+                "description": "Change your vote any time until it closes. The vote closes by itself when everyone has voted.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"option_index\": 0\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"seq\": 30\n}"
+            },
+            {
+              "name": "Bad option",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/vote",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "decisions",
+                    "{{decisionId}}",
+                    "vote"
+                  ]
+                },
+                "description": "Change your vote any time until it closes. The vote closes by itself when everyone has voted.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"option_index\": 0\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"invalid\",\n    \"message\": \"option_index is not one of the options\"\n  }\n}"
+            },
+            {
+              "name": "Already closed",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/vote",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "decisions",
+                    "{{decisionId}}",
+                    "vote"
+                  ]
+                },
+                "description": "Change your vote any time until it closes. The vote closes by itself when everyone has voted.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"option_index\": 0\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"conflict\",\n    \"message\": \"decision d_1 is closed\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Close vote early",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/close",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "decisions",
+                "{{decisionId}}",
+                "close"
+              ]
+            },
+            "description": "Anyone can close a vote."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/close",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "decisions",
+                    "{{decisionId}}",
+                    "close"
+                  ]
+                },
+                "description": "Anyone can close a vote."
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"decision\": {\n    \"decision_id\": \"d_1\",\n    \"status\": \"closed\",\n    \"result_index\": 0,\n    \"tally\": [\n      4,\n      1\n    ]\n  },\n  \"seq\": 31\n}"
+            }
+          ]
+        },
+        {
+          "name": "Cancel vote",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "decisions",
+                "{{decisionId}}",
+                "cancel"
+              ]
+            },
+            "description": "Call the vote off."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/cancel",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "decisions",
+                    "{{decisionId}}",
+                    "cancel"
+                  ]
+                },
+                "description": "Call the vote off."
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"seq\": 32\n}"
+            }
+          ]
+        },
+        {
+          "name": "Mandate: Yes, book it",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/mandate/confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "decisions",
+                "{{decisionId}}",
+                "mandate",
+                "confirm"
+              ]
+            },
+            "description": "**Payer only** (403 otherwise). Part of the payment safety check."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/mandate/confirm",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "decisions",
+                    "{{decisionId}}",
+                    "mandate",
+                    "confirm"
+                  ]
+                },
+                "description": "**Payer only** (403 otherwise). Part of the payment safety check."
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"seq\": 33\n}"
+            },
+            {
+              "name": "Not the payer",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/mandate/confirm",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "decisions",
+                    "{{decisionId}}",
+                    "mandate",
+                    "confirm"
+                  ]
+                },
+                "description": "**Payer only** (403 otherwise). Part of the payment safety check."
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"forbidden\",\n    \"message\": \"only the payer can answer the mandate\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Mandate: Not now",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/mandate/decline",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "decisions",
+                "{{decisionId}}",
+                "mandate",
+                "decline"
+              ]
+            },
+            "description": "**Payer only.**"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/mandate/decline",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "decisions",
+                    "{{decisionId}}",
+                    "mandate",
+                    "decline"
+                  ]
+                },
+                "description": "**Payer only.**"
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"seq\": 34\n}"
+            }
+          ]
+        },
+        {
+          "name": "Undo record line",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/record/{{lineId}}/undo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "record",
+                "{{lineId}}",
+                "undo"
+              ]
+            },
+            "description": "Anyone can undo a trip-record line. Go never undoes one. `seq` is null if already undone."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/record/{{lineId}}/undo",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "record",
+                    "{{lineId}}",
+                    "undo"
+                  ]
+                },
+                "description": "Anyone can undo a trip-record line. Go never undoes one. `seq` is null if already undone."
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"seq\": 35\n}"
+            }
+          ]
+        },
+        {
+          "name": "Add expense",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/expenses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "expenses"
+              ]
+            },
+            "description": "`amount_minor` > 0 in paise. `category`: `stay | food | getting_around | activities | other`. `split_person_ids` share equally. Currency is the trip's. People who now owe get a push. **Saves `expenseId`.**",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paid_by_person_id\": \"{{personId}}\",\n  \"amount_minor\": 340000,\n  \"note\": \"Airport cab\",\n  \"category\": \"getting_around\",\n  \"split_person_ids\": [\n    \"{{personId}}\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('expenseId', j.expense_id);"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/expenses",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "expenses"
+                  ]
+                },
+                "description": "`amount_minor` > 0 in paise. `category`: `stay | food | getting_around | activities | other`. `split_person_ids` share equally. Currency is the trip's. People who now owe get a push. **Saves `expenseId`.**",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"paid_by_person_id\": \"{{personId}}\",\n  \"amount_minor\": 340000,\n  \"note\": \"Airport cab\",\n  \"category\": \"getting_around\",\n  \"split_person_ids\": [\n    \"{{personId}}\"\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"expense_id\": \"e_1\",\n  \"seq\": 36\n}"
+            }
+          ]
+        },
+        {
+          "name": "Remove expense",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/expenses/{{expenseId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "expenses",
+                "{{expenseId}}"
+              ]
+            },
+            "description": "To \"fix split\": remove, then add again."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/expenses/{{expenseId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "expenses",
+                    "{{expenseId}}"
+                  ]
+                },
+                "description": "To \"fix split\": remove, then add again."
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"seq\": 37\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Asking Go (via the Server)",
+      "description": "Go may be slow or busy: show the error and let the person retry. **Never auto-retry.**",
+      "item": [
+        {
+          "name": "Tap a Go card button",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/card-taps",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "card-taps"
+              ]
+            },
+            "description": "For `options`, `working`, `call`, `pay`, `notice` cards only (record cards → 422). `tap_id`: your own id per press (a double tap with the same id counts once); new press = new id. `option_id` when the button was on one option.\n\nResults: `done` (show toast) · `open` (open `url` in the **system browser sheet**, never a WebView; link expires in 5 min) · `refused` (show toast).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card_id\": \"c_flights_1\",\n  \"action_id\": \"pick\",\n  \"option_id\": \"opt_flight_1\",\n  \"tap_id\": \"{{$guid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "done",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/card-taps",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "card-taps"
+                  ]
+                },
+                "description": "For `options`, `working`, `call`, `pay`, `notice` cards only (record cards → 422). `tap_id`: your own id per press (a double tap with the same id counts once); new press = new id. `option_id` when the button was on one option.\n\nResults: `done` (show toast) · `open` (open `url` in the **system browser sheet**, never a WebView; link expires in 5 min) · `refused` (show toast).",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"card_id\": \"c_flights_1\",\n  \"action_id\": \"pick\",\n  \"option_id\": \"opt_flight_1\",\n  \"tap_id\": \"{{$guid}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"result\": \"done\",\n  \"toast\": \"Noted. Go will reply in the room.\"\n}"
+            },
+            {
+              "name": "open (vault)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/card-taps",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "card-taps"
+                  ]
+                },
+                "description": "For `options`, `working`, `call`, `pay`, `notice` cards only (record cards → 422). `tap_id`: your own id per press (a double tap with the same id counts once); new press = new id. `option_id` when the button was on one option.\n\nResults: `done` (show toast) · `open` (open `url` in the **system browser sheet**, never a WebView; link expires in 5 min) · `refused` (show toast).",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"card_id\": \"c_flights_1\",\n  \"action_id\": \"pick\",\n  \"option_id\": \"opt_flight_1\",\n  \"tap_id\": \"{{$guid}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"result\": \"open\",\n  \"url\": \"https://brain.go.example/vault/approve?link=lk_4Rt8Zp2Lq\",\n  \"expires_at\": \"2026-10-05T09:06:30Z\"\n}"
+            },
+            {
+              "name": "refused",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/card-taps",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "card-taps"
+                  ]
+                },
+                "description": "For `options`, `working`, `call`, `pay`, `notice` cards only (record cards → 422). `tap_id`: your own id per press (a double tap with the same id counts once); new press = new id. `option_id` when the button was on one option.\n\nResults: `done` (show toast) · `open` (open `url` in the **system browser sheet**, never a WebView; link expires in 5 min) · `refused` (show toast).",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"card_id\": \"c_flights_1\",\n  \"action_id\": \"pick\",\n  \"option_id\": \"opt_flight_1\",\n  \"tap_id\": \"{{$guid}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"result\": \"refused\",\n  \"toast\": \"Only Rahul can approve\"\n}"
+            },
+            {
+              "name": "Not a Go card",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/card-taps",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "card-taps"
+                  ]
+                },
+                "description": "For `options`, `working`, `call`, `pay`, `notice` cards only (record cards → 422). `tap_id`: your own id per press (a double tap with the same id counts once); new press = new id. `option_id` when the button was on one option.\n\nResults: `done` (show toast) · `open` (open `url` in the **system browser sheet**, never a WebView; link expires in 5 min) · `refused` (show toast).",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"card_id\": \"c_flights_1\",\n  \"action_id\": \"pick\",\n  \"option_id\": \"opt_flight_1\",\n  \"tap_id\": \"{{$guid}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"invalid\",\n    \"message\": \"vote cards are handled by the Server, not Go\"\n  }\n}"
+            },
+            {
+              "name": "Go busy",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/card-taps",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "card-taps"
+                  ]
+                },
+                "description": "For `options`, `working`, `call`, `pay`, `notice` cards only (record cards → 422). `tap_id`: your own id per press (a double tap with the same id counts once); new press = new id. `option_id` when the button was on one option.\n\nResults: `done` (show toast) · `open` (open `url` in the **system browser sheet**, never a WebView; link expires in 5 min) · `refused` (show toast).",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"card_id\": \"c_flights_1\",\n  \"action_id\": \"pick\",\n  \"option_id\": \"opt_flight_1\",\n  \"tap_id\": \"{{$guid}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Too Many Requests",
+              "code": 429,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"rate_limited\",\n    \"message\": \"Go is busy. Try again in a moment.\"\n  }\n}"
+            },
+            {
+              "name": "Go no answer",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/card-taps",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "card-taps"
+                  ]
+                },
+                "description": "For `options`, `working`, `call`, `pay`, `notice` cards only (record cards → 422). `tap_id`: your own id per press (a double tap with the same id counts once); new press = new id. `option_id` when the button was on one option.\n\nResults: `done` (show toast) · `open` (open `url` in the **system browser sheet**, never a WebView; link expires in 5 min) · `refused` (show toast).",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"card_id\": \"c_flights_1\",\n  \"action_id\": \"pick\",\n  \"option_id\": \"opt_flight_1\",\n  \"tap_id\": \"{{$guid}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Gateway Timeout",
+              "code": 504,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"go_unavailable\",\n    \"message\": \"Go did not answer in time. Try again.\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Catch-up",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/catch-up",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "catch-up"
+              ]
+            },
+            "description": "For a person returning to the room (away ≥3 h or ≥15 unread). Show the room first, slide this in above it for this person only (max 5 items, dismissible). If it fails, just show the room. `force: true` skips the threshold.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"force\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Not needed",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/catch-up",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "catch-up"
+                  ]
+                },
+                "description": "For a person returning to the room (away ≥3 h or ≥15 unread). Show the room first, slide this in above it for this person only (max 5 items, dismissible). If it fails, just show the room. `force: true` skips the threshold.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"force\": false\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"needed\": false\n}"
+            },
+            {
+              "name": "Needed",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/catch-up",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "catch-up"
+                  ]
+                },
+                "description": "For a person returning to the room (away ≥3 h or ≥15 unread). Show the room first, slide this in above it for this person only (max 5 items, dismissible). If it fails, just show the room. `force: true` skips the threshold.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"force\": false\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"needed\": true,\n  \"summary\": \"While you were away, the group picked Villa Sol.\",\n  \"items\": [\n    {\n      \"kind\": \"decided\",\n      \"text\": \"Villa Sol won, 4 to 1\",\n      \"message_id\": \"m_0158\"\n    }\n  ]\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. You screen",
+      "description": "All of these act for the signed-in person only.",
+      "item": [
+        {
+          "name": "What Go knows about me",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/app/me/go-knows",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "me",
+                "go-knows"
+              ]
+            },
+            "description": "Facts with where each came from. A fact with `message_id` opens that message; without one it came from the join answers."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/me/go-knows",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "me",
+                    "go-knows"
+                  ]
+                },
+                "description": "Facts with where each came from. A fact with `message_id` opens that message; without one it came from the join answers."
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"person_id\": \"p_1\",\n  \"carry_over\": false,\n  \"facts\": [\n    {\n      \"fact_id\": \"f_1\",\n      \"topic\": \"food\",\n      \"text\": \"Vegetarian\",\n      \"trip_id\": \"t_1\",\n      \"message_id\": \"m_1\",\n      \"said_at\": \"2026-10-05T04:08:00Z\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Carry-over on/off",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/me/carry-over",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "me",
+                "carry-over"
+              ]
+            },
+            "description": "Remember me in future trips (off by default).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"carry_over\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/me/carry-over",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "me",
+                    "carry-over"
+                  ]
+                },
+                "description": "Remember me in future trips (off by default).",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"carry_over\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"ok\": true\n}"
+            }
+          ]
+        },
+        {
+          "name": "Delete one fact",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/app/me/facts/{{factId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "me",
+                "facts",
+                "{{factId}}"
+              ]
+            },
+            "description": "Remove one thing Go knows."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/me/facts/{{factId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "me",
+                    "facts",
+                    "{{factId}}"
+                  ]
+                },
+                "description": "Remove one thing Go knows."
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"ok\": true\n}"
+            }
+          ]
+        },
+        {
+          "name": "Forget me",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/me/forget",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "me",
+                "forget"
+              ]
+            },
+            "description": "With `trip_id`: forget in that trip. Without it (`{}`): everywhere. Show how many were forgotten.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trip_id\": \"{{tripId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/me/forget",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "me",
+                    "forget"
+                  ]
+                },
+                "description": "With `trip_id`: forget in that trip. Without it (`{}`): everywhere. Show how many were forgotten.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"trip_id\": \"{{tripId}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"deleted_facts\": 3,\n  \"remaining_facts\": 0\n}"
+            }
+          ]
+        },
+        {
+          "name": "Vault link",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/me/vault-link",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "me",
+                "vault-link"
+              ]
+            },
+            "description": "Ask only when the person taps. Open in the system browser sheet right away (expires in 5 min). `start`: `home | add_card | add_login`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"start\": \"add_card\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/me/vault-link",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "me",
+                    "vault-link"
+                  ]
+                },
+                "description": "Ask only when the person taps. Open in the system browser sheet right away (expires in 5 min). `start`: `home | add_card | add_login`.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"start\": \"add_card\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"url\": \"https://brain.go.example/vault/add-card?link=lk_9Wm3Hc6Ty\",\n  \"expires_at\": \"2026-10-05T08:55:00Z\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Register device for pushes",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/devices",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "devices"
+              ]
+            },
+            "description": "Returns 204 with no body.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"fcm-or-apns-device-token\",\n  \"platform\": \"ios\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "No content",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/devices",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "devices"
+                  ]
+                },
+                "description": "Returns 204 with no body.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"token\": \"fcm-or-apns-device-token\",\n  \"platform\": \"ios\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "No Content",
+              "code": 204,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Live connection (SSE)",
+      "description": "Postman can open this but is awkward for streams; in the app use a streaming HTTP client.",
+      "item": [
+        {
+          "name": "Live stream",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/live",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "live"
+              ]
+            },
+            "description": "`text/event-stream`, with the `Authorization` header (browser `EventSource` can't send it). `: ping` every 20 s.\n\n| event | data | do |\n|---|---|---|\n| `hello` | `{trip_id}` | connected |\n| `message` | full Message | add/replace by `message_id` (also edits, deletes, reactions, **replaced cards**) |\n| `trip` | `{seq}` | re-read the trip + needs-you if `seq` is higher than yours |\n| `typing` | `{who, on, until?}` | show/hide \"Go is typing...\" |\n\nAfter a reconnect, re-read messages (`after_seq`) and the trip."
+          }
+        }
+      ]
+    }
+  ]
+}
