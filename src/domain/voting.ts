@@ -8,6 +8,27 @@ import { decisionOf, recordLineOf } from './mappers.js';
 import type { DecisionRow, RecordLineRow, VoteRow } from './mappers.js';
 import type { Decision } from './types.js';
 
+export interface NewDecision {
+  question: string;
+  kind: 'choice' | 'yesno';
+  anonymous: boolean;
+  /** The options as they are kept and shown (labels, and for a priced option its price and the trip's currency). */
+  options: unknown[];
+  closesAt: string | null;
+  openedBy: string;
+}
+
+/** Inserts an open vote. Its head count is the people in the trip now: everyone who can still vote. */
+export async function openDecision(db: pg.PoolClient, tripId: string, d: NewDecision): Promise<DecisionRow> {
+  const people = await db.query('select count(*)::int as n from trip_people where trip_id = $1 and left_at is null', [tripId]);
+  const { rows } = await db.query<DecisionRow>(
+    `insert into decisions (decision_id, trip_id, question, kind, anonymous, options, of_count, closes_at, opened_by_person_id)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning *`,
+    [newId('d'), tripId, d.question, d.kind, d.anonymous, JSON.stringify(d.options), people.rows[0].n, d.closesAt, d.openedBy],
+  );
+  return rows[0]!;
+}
+
 export type CloseReason = 'time' | 'everyone_voted' | 'closed_by_person' | 'closed_by_go';
 
 /** Locks the vote's row. Take row locks like this one before `nextSeq`, which locks the trip row. */

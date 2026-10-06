@@ -7,11 +7,13 @@ import {
 import { GoUnavailable, cardTap, catchUp, deleteFact, forgetPerson, getPerson, updateCarryOver, vaultLink } from '../domain/ask-go.js';
 import type { GoClient } from '../domain/ask-go.js';
 import { messageForApp } from '../domain/mappers.js';
+import { openPersonVote } from '../domain/votes-bookings.js';
 import type { MessageRow, ReactionRow } from '../domain/mappers.js';
 import { buildSnapshot } from '../domain/snapshot.js';
 import { SocketCallError } from '../go/go-socket.js';
 import type { LiveEvent } from '../live/live.js';
 import { signSession, verifySession } from './auth.js';
+import { checkOpenVote } from './bodies.js';
 import { corsHeaders } from './cors.js';
 
 export interface AppDeps {
@@ -76,11 +78,13 @@ export function buildApp({ ctx, go, sessionSecret, origins = [] }: AppDeps): Fas
   };
   const auth = { preHandler: needAuth };
   /** Runs `fn` for a person who is in the trip. The HTTP edge is loosely typed; the domain functions are not. */
-  const inTrip = (fn: (req: any, trip: string, me: string) => unknown) => ({
+  const inTrip = (fn: (req: any, trip: string, me: string) => unknown, status = 200) => ({
     preHandler: needAuth,
-    handler: async (req: any) => {
+    handler: async (req: any, reply: FastifyReply) => {
       await requireMember(ctx.pool, req.params.id, req.personId);
-      return fn(req, req.params.id, req.personId);
+      const out = await fn(req, req.params.id, req.personId);
+      if (status !== 200) reply.code(status);
+      return out;
     },
   });
 
@@ -146,6 +150,7 @@ export function buildApp({ ctx, go, sessionSecret, origins = [] }: AppDeps): Fas
     preHandler: needAuth,
     handler: async (req: any) => fn(req.params.id, req.personId, req),
   });
+  app.post('/app/trips/:id/decisions', inTrip((req, trip, me) => openPersonVote(ctx, trip, me, checkOpenVote(req.body)), 201));
   app.post('/app/trips/:id/decisions/:did/vote', withTrip((t, me, r) => castVote(ctx, t, me, r.params.did!, Number(r.body?.option_index))));
   app.post('/app/trips/:id/decisions/:did/close', withTrip((t, me, r) => closeVoteByPerson(ctx, t, me, r.params.did!)));
   app.post('/app/trips/:id/decisions/:did/cancel', withTrip((t, me, r) => cancelDecision(ctx, t, me, r.params.did!)));

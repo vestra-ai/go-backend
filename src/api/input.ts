@@ -10,6 +10,16 @@ import { invalid } from '../domain/errors.js';
 const ajv = new Ajv2020({ strict: true, allowUnionTypes: true, allErrors: false, coerceTypes: false, removeAdditional: false, useDefaults: false });
 addFormats.default(ajv);
 
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+
+/** Text the database cannot store: a NUL character or an unpaired surrogate, in any string or key of the body. */
+function unstorable(value: unknown): boolean {
+  if (typeof value === 'string') return value.includes('\u0000') || LONE_SURROGATE.test(value);
+  if (Array.isArray(value)) return value.some(unstorable);
+  if (value && typeof value === 'object') return Object.entries(value).some(([k, v]) => unstorable(k) || unstorable(v));
+  return false;
+}
+
 /** Names the field and the rule, never the value: a UPI id or a budget answer must not travel in an error message. */
 function describe(e: ErrorObject): string {
   const path = e.instancePath.split('/').filter(Boolean).join('.');
@@ -29,6 +39,7 @@ export function bodyChecker<T>(schema: object): (body: unknown) => T {
   return (body: unknown): T => {
     if (body === null || typeof body !== 'object' || Array.isArray(body)) throw invalid('body must be a JSON object');
     if (!validate(body)) throw invalid(describe(validate.errors![0]!));
+    if (unstorable(body)) throw invalid('body has a character that cannot be stored (a NUL or an unpaired surrogate)');
     return body as T;
   };
 }
