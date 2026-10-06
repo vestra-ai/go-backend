@@ -4347,6 +4347,638 @@
               "body": "[\n  {\n    \"kind\": \"vote\",\n    \"decision_id\": \"d_1\",\n    \"text\": \"Where do we stay?\"\n  },\n  {\n    \"kind\": \"mandate\",\n    \"decision_id\": \"d_1\",\n    \"text\": \"Where do we stay?\"\n  }\n]"
             }
           ]
+        },
+        {
+          "name": "Get my answers in this trip",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "me"
+              ]
+            },
+            "description": "Your join answers and your own budget answer (private), role and whether Go is paused for you."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "me"
+                  ]
+                },
+                "description": "Your join answers and your own budget answer (private), role and whether Go is paused for you."
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"from_city\": \"Delhi\",\n  \"earliest_leave\": \"Fri after 6 pm\",\n  \"know\": [\n    \"Vegetarian\"\n  ],\n  \"budget\": {\n    \"min_minor\": 1500000,\n    \"max_minor\": 2000000\n  },\n  \"role\": \"member\",\n  \"go_paused\": false\n}"
+            },
+            {
+              "name": "Not in this trip",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "me"
+                  ]
+                },
+                "description": "Your join answers and your own budget answer (private), role and whether Go is paused for you."
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"forbidden\",\n    \"message\": \"p_9 is not in trip t_1\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Edit my answers in this trip",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "me"
+              ]
+            },
+            "description": "Strict body, at least one of `from_city` and `earliest_leave` (≤60, `null` clears) and `know` (≤20 items of 1-80; `[]` clears). One `person.updated` in this trip only; `{ \"seq\": null }` when nothing changed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from_city\": \"Mumbai\",\n  \"know\": [\n    \"Window seat\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Updated",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "me"
+                  ]
+                },
+                "description": "Strict body, at least one of `from_city` and `earliest_leave` (≤60, `null` clears) and `know` (≤20 items of 1-80; `[]` clears). One `person.updated` in this trip only; `{ \"seq\": null }` when nothing changed.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"from_city\": \"Mumbai\",\n  \"know\": [\n    \"Window seat\"\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"seq\": 21\n}"
+            },
+            {
+              "name": "Nothing changed",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "me"
+                  ]
+                },
+                "description": "Strict body, at least one of `from_city` and `earliest_leave` (≤60, `null` clears) and `know` (≤20 items of 1-80; `[]` clears). One `person.updated` in this trip only; `{ \"seq\": null }` when nothing changed.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"from_city\": \"Mumbai\",\n  \"know\": [\n    \"Window seat\"\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"seq\": null\n}"
+            },
+            {
+              "name": "Nothing to change",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "me"
+                  ]
+                },
+                "description": "Strict body, at least one of `from_city` and `earliest_leave` (≤60, `null` clears) and `know` (≤20 items of 1-80; `[]` clears). One `person.updated` in this trip only; `{ \"seq\": null }` when nothing changed.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"invalid\",\n    \"message\": \"send at least one field\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Set my budget",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/me/budget",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "me",
+                "budget"
+              ]
+            },
+            "description": "Your whole budget answer, replaced each time; it cannot be withdrawn. Go only hears that the budget moved (naming nobody, no amount) and reads the lowest band. `{ \"seq\": null }` when it is the same answer.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"min_minor\": 1500000,\n  \"max_minor\": 2000000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Set",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/me/budget",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "me",
+                    "budget"
+                  ]
+                },
+                "description": "Your whole budget answer, replaced each time; it cannot be withdrawn. Go only hears that the budget moved (naming nobody, no amount) and reads the lowest band. `{ \"seq\": null }` when it is the same answer.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"min_minor\": 1500000,\n  \"max_minor\": 2000000\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"seq\": 22\n}"
+            },
+            {
+              "name": "Same answer",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/me/budget",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "me",
+                    "budget"
+                  ]
+                },
+                "description": "Your whole budget answer, replaced each time; it cannot be withdrawn. Go only hears that the budget moved (naming nobody, no amount) and reads the lowest band. `{ \"seq\": null }` when it is the same answer.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"min_minor\": 1500000,\n  \"max_minor\": 2000000\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"seq\": null\n}"
+            },
+            {
+              "name": "Maximum below minimum",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/me/budget",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "me",
+                    "budget"
+                  ]
+                },
+                "description": "Your whole budget answer, replaced each time; it cannot be withdrawn. Go only hears that the budget moved (naming nobody, no amount) and reads the lowest band. `{ \"seq\": null }` when it is the same answer.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"min_minor\": 500,\n  \"max_minor\": 100\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"invalid\",\n    \"message\": \"max_minor must not be below min_minor\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Edit trip details and status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}"
+              ]
+            },
+            "description": "Any member. Any of `title` (1-80), `dates` (`{start, end}`, start ≤ end), `itinerary` (whole replacement, ≤30 days, each a contract Day; item `booking_id`s must be this trip's), `status` (`planning|booked|on_trip|over`, any direction). Only what differs is written; Go hears one change by you.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Goa, again\",\n  \"status\": \"booked\",\n  \"dates\": {\n    \"start\": \"2026-11-07\",\n    \"end\": \"2026-11-10\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Updated",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}"
+                  ]
+                },
+                "description": "Any member. Any of `title` (1-80), `dates` (`{start, end}`, start ≤ end), `itinerary` (whole replacement, ≤30 days, each a contract Day; item `booking_id`s must be this trip's), `status` (`planning|booked|on_trip|over`, any direction). Only what differs is written; Go hears one change by you.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"Goa, again\",\n  \"status\": \"booked\",\n  \"dates\": {\n    \"start\": \"2026-11-07\",\n    \"end\": \"2026-11-10\"\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"seq\": 23\n}"
+            },
+            {
+              "name": "Nothing changed",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}"
+                  ]
+                },
+                "description": "Any member. Any of `title` (1-80), `dates` (`{start, end}`, start ≤ end), `itinerary` (whole replacement, ≤30 days, each a contract Day; item `booking_id`s must be this trip's), `status` (`planning|booked|on_trip|over`, any direction). Only what differs is written; Go hears one change by you.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"Goa, again\",\n  \"status\": \"booked\",\n  \"dates\": {\n    \"start\": \"2026-11-07\",\n    \"end\": \"2026-11-10\"\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"seq\": null\n}"
+            },
+            {
+              "name": "Dates the wrong way round",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}"
+                  ]
+                },
+                "description": "Any member. Any of `title` (1-80), `dates` (`{start, end}`, start ≤ end), `itinerary` (whole replacement, ≤30 days, each a contract Day; item `booking_id`s must be this trip's), `status` (`planning|booked|on_trip|over`, any direction). Only what differs is written; Go hears one change by you.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"dates\": {\n    \"start\": \"2026-11-10\",\n    \"end\": \"2026-11-07\"\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"invalid\",\n    \"message\": \"dates.start must be on or before dates.end\"\n  }\n}"
+            },
+            {
+              "name": "A booking of another trip",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}"
+                  ]
+                },
+                "description": "Any member. Any of `title` (1-80), `dates` (`{start, end}`, start ≤ end), `itinerary` (whole replacement, ≤30 days, each a contract Day; item `booking_id`s must be this trip's), `status` (`planning|booked|on_trip|over`, any direction). Only what differs is written; Go hears one change by you.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"itinerary\": [\n    {\n      \"date\": \"2026-11-07\",\n      \"items\": [\n        {\n          \"title\": \"Villa\",\n          \"category\": \"stay\",\n          \"status\": \"booked\",\n          \"booking_id\": \"b_9\"\n        }\n      ]\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"invalid\",\n    \"message\": \"itinerary: booking b_9 is not in this trip\"\n  }\n}"
+            }
+          ]
         }
       ]
     },
@@ -6308,6 +6940,240 @@
               "body": "{\n  \"error\": {\n    \"code\": \"conflict\",\n    \"message\": \"booking b_1 is already cancelled\"\n  }\n}"
             }
           ]
+        },
+        {
+          "name": "Settle up",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/settle-up",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "settle-up"
+              ]
+            },
+            "description": "Who you pay (with the payee's UPI id for *Pay by UPI*: only shown to people who owe that payee, `null` if none or they left) and who owes you, from the trip's fewest-payments list, read at one change number (`no-store`). `nudge_allowed_at` is when you may remind that person again, `null` if now."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/settle-up",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "settle-up"
+                  ]
+                },
+                "description": "Who you pay (with the payee's UPI id for *Pay by UPI*: only shown to people who owe that payee, `null` if none or they left) and who owes you, from the trip's fewest-payments list, read at one change number (`no-store`). `nudge_allowed_at` is when you may remind that person again, `null` if now."
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"seq\": 25,\n  \"you_pay\": [\n    {\n      \"to_person_id\": \"p_2\",\n      \"amount_minor\": 113334,\n      \"currency\": \"INR\",\n      \"upi_id\": \"kabir@upi\"\n    }\n  ],\n  \"owed_to_you\": [\n    {\n      \"from_person_id\": \"p_3\",\n      \"amount_minor\": 20000,\n      \"currency\": \"INR\",\n      \"nudge_allowed_at\": null\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Remind someone who owes you",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/settle-up/nudges",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "settle-up",
+                "nudges"
+              ]
+            },
+            "description": "Sends one notification, \"<your name> reminded you: you owe <amount>\". One per person per trip every 24 hours (`429` with `Retry-After` inside the window, also for a retry after a lost answer). `409` if that person does not owe you. Go is not told.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"person_id\": \"{{personId2}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Reminded",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/settle-up/nudges",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "settle-up",
+                    "nudges"
+                  ]
+                },
+                "description": "Sends one notification, \"<your name> reminded you: you owe <amount>\". One per person per trip every 24 hours (`429` with `Retry-After` inside the window, also for a retry after a lost answer). `409` if that person does not owe you. Go is not told.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"person_id\": \"{{personId2}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"reminded\": true,\n  \"nudge_allowed_at\": \"2026-11-08T10:00:00.000Z\"\n}"
+            },
+            {
+              "name": "Does not owe you",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/settle-up/nudges",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "settle-up",
+                    "nudges"
+                  ]
+                },
+                "description": "Sends one notification, \"<your name> reminded you: you owe <amount>\". One per person per trip every 24 hours (`429` with `Retry-After` inside the window, also for a retry after a lost answer). `409` if that person does not owe you. Go is not told.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"person_id\": \"{{personId2}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"conflict\",\n    \"message\": \"p_3 does not owe you money in this trip\"\n  }\n}"
+            },
+            {
+              "name": "Already reminded",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/settle-up/nudges",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "settle-up",
+                    "nudges"
+                  ]
+                },
+                "description": "Sends one notification, \"<your name> reminded you: you owe <amount>\". One per person per trip every 24 hours (`429` with `Retry-After` inside the window, also for a retry after a lost answer). `409` if that person does not owe you. Go is not told.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"person_id\": \"{{personId2}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Too Many Requests",
+              "code": 429,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Retry-After",
+                  "value": "86400"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"rate_limited\",\n    \"message\": \"p_3 was reminded recently: try again later\"\n  }\n}"
+            }
+          ]
         }
       ]
     },
@@ -7069,6 +7935,548 @@
                 }
               ],
               "body": "{\n  \"url\": \"https://brain.go.example/vault/add-card?link=lk_9Wm3Hc6Ty\",\n  \"expires_at\": \"2026-10-05T08:55:00Z\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get my profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "me"
+              ]
+            },
+            "description": "Your own name, photo link and UPI id (`no-store`). The UPI id never goes to Go."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "me"
+                  ]
+                },
+                "description": "Your own name, photo link and UPI id (`no-store`). The UPI id never goes to Go."
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"person_id\": \"p_1\",\n  \"name\": \"Rahul\",\n  \"photo_url\": null,\n  \"upi_id\": \"rahul@upi\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Edit my profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "me"
+              ]
+            },
+            "description": "Strict body, at least one of `name` (1-80), `photo_url` (http(s) link, `null` clears), `upi_id` (1-100, `null` clears). Go hears one `person.updated` per trip you are in (name, photo, and only whether a UPI id exists). The answer is your own values plus `seq`: the last change number written, or `null` if nothing was sent.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Rahul K\",\n  \"upi_id\": \"rahul@okbank\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Updated",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "me"
+                  ]
+                },
+                "description": "Strict body, at least one of `name` (1-80), `photo_url` (http(s) link, `null` clears), `upi_id` (1-100, `null` clears). Go hears one `person.updated` per trip you are in (name, photo, and only whether a UPI id exists). The answer is your own values plus `seq`: the last change number written, or `null` if nothing was sent.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Rahul K\",\n  \"upi_id\": \"rahul@okbank\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"person_id\": \"p_1\",\n  \"name\": \"Rahul K\",\n  \"photo_url\": null,\n  \"upi_id\": \"rahul@okbank\",\n  \"seq\": 14\n}"
+            },
+            {
+              "name": "Nothing changed",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "me"
+                  ]
+                },
+                "description": "Strict body, at least one of `name` (1-80), `photo_url` (http(s) link, `null` clears), `upi_id` (1-100, `null` clears). Go hears one `person.updated` per trip you are in (name, photo, and only whether a UPI id exists). The answer is your own values plus `seq`: the last change number written, or `null` if nothing was sent.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Rahul K\",\n  \"upi_id\": \"rahul@okbank\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"person_id\": \"p_1\",\n  \"name\": \"Rahul K\",\n  \"photo_url\": null,\n  \"upi_id\": \"rahul@okbank\",\n  \"seq\": null\n}"
+            },
+            {
+              "name": "Not an http link",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "me"
+                  ]
+                },
+                "description": "Strict body, at least one of `name` (1-80), `photo_url` (http(s) link, `null` clears), `upi_id` (1-100, `null` clears). Go hears one `person.updated` per trip you are in (name, photo, and only whether a UPI id exists). The answer is your own values plus `seq`: the last change number written, or `null` if nothing was sent.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"photo_url\": \"ftp://x.example/a.png\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"invalid\",\n    \"message\": \"photo_url must match pattern \\\"^https?://\\\"\"\n  }\n}"
+            },
+            {
+              "name": "UPI id too long",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "me"
+                  ]
+                },
+                "description": "Strict body, at least one of `name` (1-80), `photo_url` (http(s) link, `null` clears), `upi_id` (1-100, `null` clears). Go hears one `person.updated` per trip you are in (name, photo, and only whether a UPI id exists). The answer is your own values plus `seq`: the last change number written, or `null` if nothing was sent.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"upi_id\": \"uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"invalid\",\n    \"message\": \"upi_id must NOT have more than 100 characters\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get the push key",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/push/key",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "push",
+                "key"
+              ]
+            },
+            "description": "No sign-in. The public key a browser subscribes with. `503 unavailable` means the server has no push keys: do not offer notifications.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/push/key",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "push",
+                    "key"
+                  ]
+                },
+                "description": "No sign-in. The public key a browser subscribes with. `503 unavailable` means the server has no push keys: do not offer notifications.",
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"public_key\": \"BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U\"\n}"
+            },
+            {
+              "name": "Not set up",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/push/key",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "push",
+                    "key"
+                  ]
+                },
+                "description": "No sign-in. The public key a browser subscribes with. `503 unavailable` means the server has no push keys: do not offer notifications.",
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"unavailable\",\n    \"message\": \"push notifications are not set up on this server\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Subscribe this browser to pushes",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/push/subscription",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "push",
+                "subscription"
+              ]
+            },
+            "description": "Send `endpoint` and `keys` from the browser's `subscription.toJSON()` and leave out its `expirationTime` (the body is strict). The endpoint must be an https address on a known push service (FCM, Mozilla, Apple, Windows) and the keys a browser's own (65-byte `p256dh`, 16-byte `auth`, base64url). An address someone else registered moves to you. Returns 204 with no body.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"endpoint\": \"https://fcm.googleapis.com/fcm/send/abc123\",\n  \"keys\": {\n    \"p256dh\": \"BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM\",\n    \"auth\": \"tBHItJI5svbpez7KI4CCXg\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "No content",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/push/subscription",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "push",
+                    "subscription"
+                  ]
+                },
+                "description": "Send `endpoint` and `keys` from the browser's `subscription.toJSON()` and leave out its `expirationTime` (the body is strict). The endpoint must be an https address on a known push service (FCM, Mozilla, Apple, Windows) and the keys a browser's own (65-byte `p256dh`, 16-byte `auth`, base64url). An address someone else registered moves to you. Returns 204 with no body.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"endpoint\": \"https://fcm.googleapis.com/fcm/send/abc123\",\n  \"keys\": {\n    \"p256dh\": \"BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM\",\n    \"auth\": \"tBHItJI5svbpez7KI4CCXg\"\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "No Content",
+              "code": 204,
+              "header": [],
+              "body": ""
+            },
+            {
+              "name": "Not a known push service",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/push/subscription",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "push",
+                    "subscription"
+                  ]
+                },
+                "description": "Send `endpoint` and `keys` from the browser's `subscription.toJSON()` and leave out its `expirationTime` (the body is strict). The endpoint must be an https address on a known push service (FCM, Mozilla, Apple, Windows) and the keys a browser's own (65-byte `p256dh`, 16-byte `auth`, base64url). An address someone else registered moves to you. Returns 204 with no body.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"endpoint\": \"https://evil.example/push\",\n  \"keys\": {\n    \"p256dh\": \"x\",\n    \"auth\": \"y\"\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"invalid\",\n    \"message\": \"endpoint must be an https address on a known push service\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Unsubscribe this browser",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/push/unsubscribe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "push",
+                "unsubscribe"
+              ]
+            },
+            "description": "Removes only your own subscription for this address. Safe to repeat. Returns 204 with no body.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"endpoint\": \"https://fcm.googleapis.com/fcm/send/abc123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "No content",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/push/unsubscribe",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "push",
+                    "unsubscribe"
+                  ]
+                },
+                "description": "Removes only your own subscription for this address. Safe to repeat. Returns 204 with no body.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"endpoint\": \"https://fcm.googleapis.com/fcm/send/abc123\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "No Content",
+              "code": 204,
+              "header": [],
+              "body": ""
             }
           ]
         }

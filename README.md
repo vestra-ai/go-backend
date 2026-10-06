@@ -51,7 +51,7 @@ If a rule is unclear, the rulebook wins. Do not guess.
 | `src/domain/` | The business logic: trip snapshot for Go, what Go may/may not see, money maths, voting, spend check, what people do in the app, our requests to Go (`ask-go.ts`) |
 | `src/api/` | The API the phone app calls (`app.ts`) and the sign-in tokens (`auth.ts`) |
 | `src/jobs/` | Background jobs: close votes when time runs out, "vote closing soon" pushes |
-| `src/live/`, `src/push/` | Live updates to phones, and push notifications (push is a placeholder, see below) |
+| `src/live/`, `src/push/` | Live updates to phones, and push notifications to browsers (Web Push, `web-push.ts`; log-only when the VAPID keys are not set) |
 | `migrations/` | The database tables (SQL) |
 | `contract/` | Copies of the public rulebook files and test vectors from vestrago.vercel.app |
 | `tests/` | Automated tests (see below) |
@@ -73,7 +73,12 @@ pnpm start                # creates the tables, connects to Go, starts the app A
 
 Settings (see `.env.example`): `DATABASE_URL`, `GO_URL`, `GO_SIGNING_SECRET`, `GO_SPEND_PRIVATE_KEY`,
 `INSTANCE_NAME` (unique per server copy; defaults to `<hostname>-<pid>`), `PORT`, `PUBLIC_BASE_URL`,
-`APP_SESSION_SECRET`, `DB_POOL_MAX` (Postgres connections per server copy, default 30; the outbox uses at most a third).
+`APP_SESSION_SECRET`, `DB_POOL_MAX` (Postgres connections per server copy, default 30; the outbox uses at most a third),
+`APP_ORIGINS` (the exact addresses of the web app allowed to call the API from a browser, comma-separated, no wildcard; none by default),
+`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (Web Push: make the keys with `npx web-push generate-vapid-keys`; the subject is a
+`mailto:` or `https:` address the push services can reach you at, e.g. `mailto:ops@example.com`; all three, valid, or
+notifications are only written to the log, a warning says so at start-up and `GET /app/push/key` answers 503; changing the keys
+later invalidates every browser's subscription).
 
 ## Try it locally, with nothing to set up
 
@@ -119,14 +124,17 @@ is in [`docs/REVIEW.md`](docs/REVIEW.md).
 
 - Every change must go through `nextSeq` + `emit` (see `src/db/write-change.ts`) inside one transaction. That is how
   Go gets every change, in order.
-- Lock rows (a vote, an approval) **before** calling `nextSeq`, which locks the trip. This avoids deadlocks.
+- Lock rows (a vote, an approval) **before** calling `nextSeq`, which locks the trip. This avoids deadlocks. The full order is:
+  the person's row, then the person's membership row in a trip, then vote rows, then booking rows, then the trip's change
+  number. A path that closes a vote about a booking holds the booking before it takes a change number (`lockBooking` in
+  `src/domain/voting.ts`). A profile edit holds the person's row while it tells every trip they are in, in ascending trip id.
 - Go's cards are stored **exactly as Go sent them** (`raw.card`), so new card fields reach the app untouched.
 - Answer Go's requests from the database, never from memory: several server copies may run at once.
 - Each server copy needs its own `INSTANCE_NAME`, because Go accepts each connection signature only once.
 
 ## What is still a placeholder
 
-- **Push notifications:** `src/push/push.ts` only writes to the log. A real provider (FCM / APNs) is not connected.
+- **Push notifications:** real delivery (Web Push) exists but needs the VAPID keys and a browser that has subscribed; it has not yet been tried against a real browser or push service, only against a test stand-in and the library's request builder. Without the keys the server only writes pushes to the log.
 - **Sign-in:** `src/api/auth.ts` uses simple signed tokens. The rulebook leaves sign-in to us (could be Supabase Auth).
 - **The contract package:** the official `@go/contract` lives in a private repo we could not reach, so `src/contract/`
   is built from the public files. Same function names, so it can be swapped later.

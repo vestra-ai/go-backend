@@ -19,7 +19,7 @@ Import `docs/go-server.postman_collection.json` and `docs/go-server.postman_envi
   set a mandate, post a card, write a record line, ask for a spend approval).
 - **Reference folders:** one request per endpoint, with a description, an example body and example responses
   (success and error cases). Run **Create person** (saves `token`), then **Create trip** (saves `tripId`); every other
-  request uses them automatically. The collection covers all 36 endpoints plus `/health`. **Open a vote** and **Propose cancelling a booking** save `decisionId`; **Add booking** saves `bookingId`.
+  request uses them automatically. The collection covers all 47 endpoints plus `/health`. **Open a vote** and **Propose cancelling a booking** save `decisionId`; **Add booking** saves `bookingId`.
 
 ## Basics
 
@@ -34,9 +34,9 @@ Import `docs/go-server.postman_collection.json` and `docs/go-server.postman_envi
   before anything happens. A POST that needs no body can be sent with none.
 - **Change numbers (`seq`):** every change to a trip gets the trip's next number. Most write calls return the
   `seq` of the change they made.
-- **Strict bodies on the newer routes** (open a vote, add and update a booking, propose cancelling): a field that is not listed is refused, a value of the wrong type is refused (`"5"` is not `5`), `null` is accepted only where the route says it clears a field, and every refusal is `422` (except JSON that cannot be read at all, which is `400`). Nothing is converted or dropped silently.
+- **Strict bodies on the newer routes** (open a vote, bookings, propose cancelling, your profile, your answers and budget, trip details, remind, push subscriptions): a field that is not listed is refused, a value of the wrong type is refused (`"5"` is not `5`), `null` is accepted only where the route says it clears a field, and every refusal is `422` (except JSON that cannot be read at all, which is `400`). Nothing is converted or dropped silently.
 - **One `client_id` per press** on the three *create* calls (open a vote, add a booking, propose cancelling): make a new one (e.g. a UUID) for each press, and send the same one when you retry. A repeat returns the first answer and creates nothing more.
-- **`{ "seq": null }`** means "nothing changed" (an update that sets what is already there).
+- **`{ "seq": null }`** means "nothing changed" (an update that sets what is already there). (On `PATCH /app/me` it means no change number was written: see section 5.)
 
 ### Calling from a browser
 
@@ -58,8 +58,9 @@ Every error looks like this:
 | 403 | `forbidden` | Not in this trip (or no such trip), not the author of the message, not the payer |
 | 404 | `not_found` | Invite link, message, vote, line, expense, card, fact... not found, or no such route |
 | 409 | `conflict` | Clashes with current state (vote already closed or cancelled, message deleted, no mandate yet...) |
-| 422 | `invalid` | A rule about the trip is broken (not an option of the vote, someone not in the trip, unknown category, a bad attachment, a record card's button...); on the newer routes (open a vote, bookings, propose cancelling) **every** bad body is `422`, except JSON that cannot be read at all (`400`): an unknown field, a wrong type, a missing field, a time that cannot be stored |
-| 429 | `rate_limited` | Go is busy. Wait the `Retry-After` header (seconds). Only on calls that ask Go |
+| 422 | `invalid` | A rule about the trip is broken (not an option of the vote, someone not in the trip, unknown category, a bad attachment, a record card's button...); on the newer routes (open a vote, bookings, propose cancelling, your profile, answers and budget, trip details, remind, push subscriptions) **every** bad body is `422`, except JSON that cannot be read at all (`400`): an unknown field, a wrong type, a missing field, a time that cannot be stored |
+| 429 | `rate_limited` | Go is busy (calls that ask Go), or you already reminded this person in the last 24 hours (`POST .../settle-up/nudges`). Wait the `Retry-After` header (seconds) |
+| 503 | `unavailable` | Push notifications are not set up on this server (`GET /app/push/key` only) |
 | 502/503/504 | `go_unavailable` | Go did not answer in time or could not do it. Show "try again" and let the person retry. **Do not auto-retry** |
 | 500 | `internal` | Server bug (please report it) |
 
@@ -97,6 +98,18 @@ The whole trip for the Trip screens (home/record, itinerary, bookings, budget, m
 `trip_id, seq, title, status, organizer_person_id, invite_url, destination, dates, vibe, stay, budget, people[], decisions[], bookings[], expenses[], money, itinerary[], record[]`.
 `money` has the totals, per-category spend and the fewest-payments `transfers` (who pays whom). The server does all money maths.
 Note: `budget` is only the lowest band and counts, not the caller's own answer.
+
+### Your answers in this trip
+
+`GET /app/trips/:id/me` → `{ "from_city", "earliest_leave", "know", "budget", "role", "go_paused" }`: your join answers, your own budget answer (`{ "min_minor", "max_minor?" }`, or `null` if you have not answered), your role and whether Go is paused for you.
+
+`PATCH /app/trips/:id/me` · body (strict, at least one field): `from_city` and `earliest_leave` (≤60 characters; `null` clears), `know` (≤20 items of 1-80 characters; `[]` clears). Go is told in this trip only, and only what differs. → `{ "seq" }`, or `{ "seq": null }` if nothing changed. `403` not in the trip.
+
+`PUT /app/trips/:id/me/budget` · body `{ "min_minor" (whole paise ≥ 0), "max_minor?" (≥ min_minor) }`. It replaces your whole answer (leave out `max_minor` for "no upper limit") and **cannot be withdrawn** (`null` is `422`). → `{ "seq" }`, or `{ "seq": null }` when it is the same answer. Your answer is **private**: Go only learns that the budget moved (naming nobody, with no amount) and the lowest band of everyone's answers. Leaving the trip also moves the band.
+
+### Trip details and status
+
+`PATCH /app/trips/:id` · **any member**, not only the organizer. Body (strict, at least one field): `title` (1-80), `dates` (`{ "start", "end" }`, `YYYY-MM-DD`, start on or before end, from year 1), `itinerary`, `status` (`planning` | `booked` | `on_trip` | `over`, in any direction). Nothing can be cleared. `itinerary` replaces the **whole** itinerary: at most 30 days, each a contract `Day` (`{ date, title?, items[] }`, items up to 20 with `title`, `category`, `status`, and optionally `time` (`HH:MM`), `place`, `note`, `booking_id`, `item_id`); a `booking_id` must be a booking of this trip (`422` otherwise). The itinerary is stored exactly as sent, so fields you add are kept; sending the same itinerary back (even with keys in another order) changes nothing. Free-form fields may not nest deeper than 32 levels. If two people save at once, the later save wins. Go hears one change, by the person, naming only the fields that differed. → `{ "seq" }`, or `{ "seq": null }` if nothing changed. `403` not in the trip · `422` a rule or a field.
 
 ### `POST /app/trips/:id/leave`
 Leaves the trip. → `{ "seq" }`
@@ -206,6 +219,16 @@ The repeat key is the person and `client_id` only, not the booking: never reuse 
 
 The vote/mandate/record/expense **cards** in the room are drawn from the trip data (`GET /app/trips/:id`), so they always agree with the Trip screens.
 
+### Settle up
+
+`GET /app/trips/:id/settle-up` (`cache-control: no-store`) → `{ "seq", "you_pay": [{ "to_person_id", "amount_minor", "currency", "upi_id" }], "owed_to_you": [{ "from_person_id", "amount_minor", "currency", "nudge_allowed_at" }] }`. Both lists are **your** entries from the trip's fewest-payments list (`money.transfers`), never a share of one expense. `upi_id` is the payee's id for the *Pay by UPI* button and is `null` if they saved none or have left the trip; **it is shown only to people who owe that payee**, and never in `owed_to_you`. `nudge_allowed_at` is when you may remind that person again, or `null` if you may now. Everything is read at one change number (`seq`).
+
+### Remind someone who owes you
+
+`POST /app/trips/:id/settle-up/nudges` · body `{ "person_id" }`. Allowed only while that person owes you in the trip's list and is in the trip (`409` otherwise; `403` if you are not in the trip). → `200 { "reminded": true, "nudge_allowed_at" }`, meaning the reminder was *accepted*, not that it arrived: the person gets one notification, "<your name> reminded you: you owe <amount>", if they have notifications on; if delivery fails you are not told. **One reminder per person per trip every 24 hours**: inside the window the answer is `429 rate_limited` with `Retry-After` (also for a retry after a lost answer: show "already reminded"). Go is not told (no change number).
+
+
+
 ---
 
 ## 4. Asking Go (through the Server)
@@ -237,7 +260,11 @@ It is needed when the person was away 3 hours or more, or has 15+ unread. If thi
 | `PUT /app/me/carry-over` | `{ "carry_over": true|false }` | `{ ok: true }`. Remember me in future trips (off by default). |
 | `DELETE /app/me/facts/:fact` | none | `{ ok: true }`. Delete one fact. `404` (`not_found`) if Go has no such fact. |
 | `POST /app/me/forget` | `{ "trip_id?" }` | `{ deleted_facts, remaining_facts: 0 }`. With `trip_id`: forget in that trip; without: everywhere. Show how many were forgotten. |
+| `GET /app/me` | none | `{ person_id, name, photo_url, upi_id }`: your own values (`no-store`). |
+| `PATCH /app/me` | `{ name?, photo_url?, upi_id? }` | your own values plus `seq` (see below). |
 | `POST /app/me/vault-link` | `{ "start?": "home" \| "add_card" \| "add_login" }` | `{ url, expires_at }`. Open in the system browser sheet, only when the person taps. |
+
+`PATCH /app/me` body (strict, at least one field): `name` (1-80, cannot be cleared), `photo_url` (a lowercase `http://` or `https://` link; `null` clears), `upi_id` (1-100 characters, no format rule; `null` clears). The answer is your own values plus `seq`: the last change number written, or `null` when nothing was sent (the same values again, a UPI id replaced by another, which Go cannot see, or a change made by someone who is in no trip, which has nobody to tell): so `null` means "no change number", and your own values in the answer are always the saved ones. Go is told once in every trip you are in: a new name or photo, and only whether you *have* a UPI id, never the id. Phone and email cannot be edited. A stored photo link that is not a valid URL (older sign-ups were not checked) is left out of the trip data until a valid one is saved; `GET /app/me` still shows it.
 
 Pause Go is `POST /app/trips/:id/go-paused` (section 1). All of these act for the **signed-in person only**.
 
@@ -258,21 +285,25 @@ Content type `text/event-stream`. A `: ping` comment is sent every 20 s. Events:
 Rules of thumb: remember the highest `seq` / `updated_seq` you have seen. After a reconnect (phones sleep), or if a number jumps by more than one, re-read the messages (`after_seq`) and the trip before trusting the stream.
 `EventSource` in browsers cannot send an `Authorization` header, and the token must never go in the address. From a browser, read the stream with `fetch` and the `Authorization` header (a streamed response body), parse the events yourself, and **reconnect yourself** when it drops. A listed origin gets the cross-origin headers on the stream and on its `401` and `403` refusals. In Flutter, use the `http` package with a streamed request.
 
-## 7. Pushes
+## 7. Pushes (Web Push)
 
-**Not delivered yet.** Pushes are only written to the server log for now, and there is no call to register a device or a browser (`POST /app/devices` was removed). Real delivery is planned.
+The server sends a push only when someone needs to look now: **Go names you**, **a new Go card needs you**, **a vote you haven't voted in is about to close**, **you owe money** (an expense, or a reminder from someone you owe). Nothing for votes, bookings, edits or a cancellation. Each push is `{ "body" (≤300 characters), "data": { "trip_id", "message_id?" } }`: a tap should open the trip (at that message). There are no links in a push.
 
-The server sends a push only when someone needs to look now: **Go names you**, **a new Go card needs you**, **a vote you haven't voted in is about to close**, **you owe money**. Push data always has `trip_id` (and `message_id` when there is one) so a tap opens the room at that message. Never put Go links in pushes.
+How a browser gets them:
+1. `GET /app/push/key` (no sign-in) → `{ "public_key" }`, the key to subscribe with. `503 unavailable` means the server has no push keys: do not offer notifications.
+2. Ask permission **from a tap**, subscribe with that key, and send the subscription: `PUT /app/push/subscription` with `{ "endpoint", "keys": { "p256dh", "auth" } }` → `204`. Take those two fields from `subscription.toJSON()` and **leave out its `expirationTime`**: the body is strict and refuses any other field. The endpoint must be an `https` address on a known push service (Google FCM, Mozilla, Apple `*.push.apple.com`, Windows `*.notify.windows.com`; at most 2048 characters) and the keys must have a browser's shape, else `422`. An address someone else registered moves to you.
+3. `POST /app/push/unsubscribe` with `{ "endpoint" }` → `204`: removes only your own, safe to repeat. Call it at sign-out.
+
+Rules for the client: show a **visible notification for every push** and open the trip from `data`; re-register when the browser replaces the subscription or the key from step 1 changes (changing the server's keys invalidates every subscription); everything must be served over HTTPS; on iPhone and iPad notifications work only after the app is added to the Home Screen, on iOS 16.4 or later. Delivery is best-effort: a push the service refuses is not retried, and an address the service says is gone is deleted. **Real delivery has not yet been tried against a real browser or push service** (only against a test stand-in): check it end to end on staging before you rely on it. (The older `POST /app/devices` is removed.)
 
 ---
 
 ## Known gaps (not available yet)
 
-- No endpoints to **edit your profile** (name, photo, city, UPI id), **edit trip details** (title, dates, itinerary, status), or **answer/change the budget question after joining**.
-- No **settle-up** endpoints (the "Pay by UPI" button needs the payee's UPI id from the server; "Nudge").
 - No **attachment upload**: only URLs are accepted.
-- Sign-in is a stand-in, and push delivery only writes to a log until real delivery is connected (see section 7).
+- Sign-in is a stand-in (see Basics).
 - **A card Go updated while the phone was offline** (for example a pay card that became "paid") is sent on the live
   connection, but `GET .../messages?after_seq=` does not return it again, because the contract gives a card update no
   change number. Until we agree a fix, re-read the messages from `after_seq=0` after a long time offline.
+- A vote to cancel a booking is not marked as being about a booking, or which one, in the trip data (see the cancellation section). And Go posts no chat card for a vote a person opens until that is changed on Go's side.
 - The full review against the docs, with every known gap and open question, is in [`docs/REVIEW.md`](REVIEW.md).
