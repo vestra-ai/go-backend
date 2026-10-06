@@ -27,9 +27,10 @@ export const addBooking = (ctx: Ctx) => async (p: any, raw: Record<string, unkno
       if (problem) throw conflict(problem);
     }
     // Row locks before the change number (which locks the trip row): a person undoing this line at the same moment must not deadlock with us.
-    // When the vote already has a decided line, that line becomes the booked line.
+    // When the vote already has a decided line, that line becomes the booked line. A line a person undid stays
+    // undone (an undo is never written back), so the booking gets a new line of its own instead.
     const decided = p.decision_id
-      ? (await db.query<RecordLineRow>(`select * from record_lines where trip_id = $1 and decision_id = $2 and kind = 'decided' for update`, [p.trip_id, p.decision_id])).rows[0]
+      ? (await db.query<RecordLineRow>(`select * from record_lines where trip_id = $1 and decision_id = $2 and kind = 'decided' and status = 'active' for update`, [p.trip_id, p.decision_id])).rows[0]
       : undefined;
     const booking = (await db.query<BookingRow>(
       `insert into bookings (booking_id, trip_id, kind, title, vendor, ref, amount_minor, currency, payer_person_id, for_person_ids,
@@ -65,7 +66,7 @@ export const updateBooking = (ctx: Ctx) => async (p: any) =>
     await tripOf(db, p.trip_id);
     const current = (await db.query<BookingRow>('select * from bookings where trip_id = $1 and booking_id = $2 for update', [p.trip_id, p.booking_id])).rows[0];
     if (!current) throw notFound(`booking ${p.booking_id} does not exist in trip ${p.trip_id}`);
-    requireSomething(p, ['request_id', 'trip_id', 'booking_id']);
+    requireSomething(p, ['status', 'ref', 'refundable_until', 'starts_at', 'ends_at']);
     if (current.status === 'cancelled') throw conflict(`booking ${p.booking_id} is cancelled and cannot change`);
     const updated = (await db.query<BookingRow>(
       `update bookings set status = $2, ref = $3, refundable_until = $4, starts_at = $5, ends_at = $6 where booking_id = $1 returning *`,
@@ -133,6 +134,7 @@ export const cancelSpendApproval = (ctx: Ctx) => async (p: { request_id: string;
     await tripOf(db, p.trip_id);
     const found = await db.query('select 1 from spend_approvals where trip_id = $1 and approval_id = $2', [p.trip_id, p.approval_id]);
     if (!found.rowCount) throw notFound(`approval ${p.approval_id} does not exist in trip ${p.trip_id}`);
-    await db.query('update spend_approvals set cancelled_at = now() where approval_id = $1 and used_at is null and cancelled_at is null', [p.approval_id]);
+    // Used, already cancelled or expired: nothing to release, and nothing changes.
+    await db.query('update spend_approvals set cancelled_at = now() where approval_id = $1 and used_at is null and cancelled_at is null and expires_at > now()', [p.approval_id]);
     return { ok: true as const };
   });

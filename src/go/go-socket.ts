@@ -121,8 +121,12 @@ export class GoSocket {
     } catch {
       return ws.send(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'cannot read the frame' } }));
     }
+    if (frame.jsonrpc !== '2.0' || (typeof frame.method !== 'string' && !('result' in frame) && !('error' in frame))) {
+      // Neither a request, a notification nor an answer: not a JSON-RPC frame.
+      return ws.send(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'not a JSON-RPC 2.0 frame' } }));
+    }
     if (typeof frame.method !== 'string') {
-      // the answer to one of your requests
+      // the answer to one of your requests (an answer with an id we no longer wait for is ignored)
       const p = this.pending.get(frame.id);
       if (!frame.error) return p?.resolve(frame.result);
       const { code, message, data } = frame.error;

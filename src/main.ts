@@ -12,7 +12,7 @@ import type { Ctx } from './context.js';
 import { migrate } from '../scripts/migrate.js';
 
 const config = loadConfig();
-const pool = createPool(config.databaseUrl);
+const pool = createPool(config.databaseUrl, config.dbPoolMax);
 await migrate(pool);
 
 const live = new PgLive(pool);
@@ -35,12 +35,13 @@ const go = new GoSocket({
 go.start();
 
 // 2. The outbox: every trip change goes to Go with send_event, one at a time per trip, in change-number order.
+// Each trip being sent holds a connection while it waits for Go, so it gets at most a third of the pool.
 const sender = new OutboxSender({
   pool,
   send: (event) => go.request('send_event', event, { timeoutMs: 2500 }),
   ready: () => go.connected,
   log: (m, e) => console.error(`[outbox] ${m}`, e ?? ''),
-});
+}, { maxTrips: Math.max(1, Math.floor(config.dbPoolMax / 3)) });
 sender.start();
 
 // 3. Votes that run out of time, and the "closing soon" pushes.

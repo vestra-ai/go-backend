@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Go Server: App API",
-    "description": "Everything the app can call on the Go Server. Import this file and the environment file into Postman.\n\n**Quick start:** run *1. People, trips, joining > Create person* (saves `token`), then *Create trip* (saves `tripId`). Every other request uses `{{token}}` automatically.\n\nErrors always look like `{\"error\": {\"code\", \"message\"}}`. Money is whole paise. Full reference: docs/API.md.",
+    "description": "Everything the app can call on the Go Server. Import this file and the environment file into Postman.\n\n**Run it end to end:** start `pnpm dev:stack`, then run the folder *Run in order* (Collection Runner, or `pnpm postman`). It signs up two people, makes a trip and goes through every route, checking each answer.\n\n**Reference folders** hold one request per route with saved example answers. Run *Create person*, then *Create trip*, and every other request uses `{{token}}` and `{{tripId}}` automatically. Votes, mandates, record lines and Go's cards are made by Go, so their ids come from the *[Go]* requests in *Run in order*.\n\nErrors always look like `{\"error\": {\"code\", \"message\"}}`. Money is whole paise. Full reference: docs/API.md.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -20,11 +20,27 @@
       "value": "http://localhost:8080"
     },
     {
+      "key": "simUrl",
+      "value": "http://localhost:8090"
+    },
+    {
       "key": "token",
       "value": ""
     },
     {
       "key": "personId",
+      "value": ""
+    },
+    {
+      "key": "token2",
+      "value": ""
+    },
+    {
+      "key": "personId2",
+      "value": ""
+    },
+    {
+      "key": "token3",
       "value": ""
     },
     {
@@ -40,7 +56,15 @@
       "value": ""
     },
     {
+      "key": "messageId2",
+      "value": ""
+    },
+    {
       "key": "decisionId",
+      "value": ""
+    },
+    {
+      "key": "approvalId",
       "value": ""
     },
     {
@@ -53,12 +77,3560 @@
     },
     {
       "key": "factId",
-      "value": ""
+      "value": "f_demo"
     }
   ],
   "item": [
     {
-      "name": "0. Health",
+      "name": "Run in order",
+      "description": "The whole app API end to end, with checks on every answer. Start the local stack first (`pnpm dev:stack`: a temporary Postgres, a fake Go and the real server), then run this folder in order: in Postman with the Collection Runner, or `pnpm postman`. Requests marked **[Go]** act as Go through the stack's control port (`{{simUrl}}`), for what only Go can do: open a vote, set a mandate, post a card, write a record line, ask for a spend approval. Each run makes new people and a new trip, so it can be run again and again.",
+      "item": [
+        {
+          "name": "1. Setup: two people and a trip",
+          "item": [
+            {
+              "name": "Health: the server is up and connected to Go",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/health",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "health"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.ok === true && j.go === true', () => pm.expect(j.ok === true && j.go === true).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Create Rahul (sign in)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/people",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "people"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Rahul\",\n  \"phone\": \"+919999999999\",\n  \"email\": \"rahul@example.com\",\n  \"upi_id\": \"rahul@upi\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.token && j.person_id', () => pm.expect(j.token && j.person_id).to.be.ok);",
+                      "if (pm.response.code < 300) pm.collectionVariables.set('token', j.token);",
+                      "if (pm.response.code < 300) pm.collectionVariables.set('personId', j.person_id);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Create Priya",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/people",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "people"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Priya\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "if (pm.response.code < 300) pm.collectionVariables.set('token2', j.token);",
+                      "if (pm.response.code < 300) pm.collectionVariables.set('personId2', j.person_id);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Create a stranger (not in the trip)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/people",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "people"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Stranger\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "if (pm.response.code < 300) pm.collectionVariables.set('token3', j.token);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Rahul creates the trip",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"Goa 🌴\",\n  \"destination\": {\n    \"name\": \"Goa\"\n  },\n  \"dates\": {\n    \"start\": \"2026-11-06\",\n    \"end\": \"2026-11-09\"\n  },\n  \"plan_minor\": 7500000\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.trip_id && /\\/j\\//.test(j.invite_url)', () => pm.expect(j.trip_id && /\\/j\\//.test(j.invite_url)).to.be.ok);",
+                      "if (pm.response.code < 300) pm.collectionVariables.set('tripId', j.trip_id);",
+                      "if (pm.response.code < 300) pm.collectionVariables.set('inviteCode', j.invite_url.split('/j/')[1]);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Join preview (no sign-in)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/join/{{inviteCode}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "join",
+                    "{{inviteCode}}"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.title === \\'Goa 🌴\\' && j.people === 1', () => pm.expect(j.title === 'Goa 🌴' && j.people === 1).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Priya joins with her answers",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/join/{{inviteCode}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "join",
+                    "{{inviteCode}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"from_city\": \"Delhi\",\n  \"earliest_leave\": \"Fri after 6 pm\",\n  \"know\": [\n    \"Vegetarian\",\n    \"Window seat\"\n  ],\n  \"budget\": {\n    \"min_minor\": 1500000,\n    \"max_minor\": 2000000\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token2}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.already === false && j.trip_id === pm.collectionVariables.get(\\'tripId\\')', () => pm.expect(j.already === false && j.trip_id === pm.collectionVariables.get('tripId')).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Priya joins again: already in",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/join/{{inviteCode}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "join",
+                    "{{inviteCode}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token2}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.already === true', () => pm.expect(j.already === true).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Get trip (Trip screens)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.people.length === 2', () => pm.expect(j.people.length === 2).to.be.ok);",
+                      "pm.test('j.budget.answered === 1 && j.budget.of === 2', () => pm.expect(j.budget.answered === 1 && j.budget.of === 2).to.be.ok);",
+                      "pm.test('no contact details anywhere', () => pm.expect(pm.response.text()).to.not.match(/\\+919999999999|rahul@example\\.com|rahul@upi/));"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "2. Messages and reactions",
+          "item": [
+            {
+              "name": "Rahul posts a message",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "messages"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"client_id\": \"pm-msg-1\",\n  \"text\": \"North Goa?\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.message_id && j.seq > 0', () => pm.expect(j.message_id && j.seq > 0).to.be.ok);",
+                      "if (pm.response.code < 300) pm.collectionVariables.set('messageId', j.message_id);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "The same client_id again posts nothing new",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "messages"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"client_id\": \"pm-msg-1\",\n  \"text\": \"North Goa?\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.message_id === pm.collectionVariables.get(\\'messageId\\')', () => pm.expect(j.message_id === pm.collectionVariables.get('messageId')).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Priya asks Go (the fake Go answers)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "messages"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"client_id\": \"pm-msg-2\",\n  \"text\": \"@Go find us flights for Friday\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token2}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "if (pm.response.code < 300) pm.collectionVariables.set('messageId2', j.message_id);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Rahul edits his message",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages/{{messageId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "messages",
+                    "{{messageId}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"text\": \"North Goa? Anjuna maybe\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.seq > 0', () => pm.expect(j.seq > 0).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Priya cannot edit Rahul's message",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages/{{messageId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "messages",
+                    "{{messageId}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"text\": \"hacked\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token2}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 403', () => pm.response.to.have.status(403));",
+                      "pm.test('error has the standard shape', () => { const j = pm.response.json(); pm.expect(j.error).to.be.an('object'); pm.expect(j.error.code).to.be.a('string'); });",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Priya reacts 👍",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages/{{messageId}}/reactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "messages",
+                    "{{messageId}}",
+                    "reactions"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"emoji\": \"👍\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token2}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.seq > 0', () => pm.expect(j.seq > 0).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Priya takes the 👍 back",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages/{{messageId}}/reactions/%F0%9F%91%8D",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "messages",
+                    "{{messageId}}",
+                    "reactions",
+                    "%F0%9F%91%8D"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token2}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.seq > 0', () => pm.expect(j.seq > 0).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Rahul is typing",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/typing",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "typing"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"on\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.ok === true', () => pm.expect(j.ok === true).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "List messages: Go's ✅ and reply with a card are in the room",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages?after_seq=0&limit=100",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "messages"
+                  ],
+                  "query": [
+                    {
+                      "key": "after_seq",
+                      "value": "0"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "100"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "const q = j.messages.find((m) => m.message_id === pm.collectionVariables.get('messageId2'));",
+                      "pm.test('Go put a ✅ on the question, with no person', () => pm.expect(q.reactions).to.deep.include({ emoji: '✅' }));",
+                      "const reply = j.messages.find((m) => m.author.kind === 'go' && m.reply_to === q.message_id);",
+                      "pm.test('Go replied with a card', () => { pm.expect(reply).to.be.an('object'); pm.expect(reply.card.kind).to.be.a('string'); });",
+                      "pm.test('j.has_more === false', () => pm.expect(j.has_more === false).to.be.ok);"
+                    ]
+                  }
+                },
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "// Give the fake Go a moment to answer (typing, read_trip, ✅, reply).",
+                      "setTimeout(function () {}, 1500);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Rahul deletes his message",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages/{{messageId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "messages",
+                    "{{messageId}}"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.seq > 0', () => pm.expect(j.seq > 0).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "A reaction on a deleted message: 409",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages/{{messageId}}/reactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "messages",
+                    "{{messageId}}",
+                    "reactions"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"emoji\": \"👍\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token2}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('code conflict', () => pm.expect(j.error.code).to.eql('conflict'));"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "3. A vote",
+          "item": [
+            {
+              "name": "[Go] open_vote: Where do we stay?",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{simUrl}}/sim/open_vote",
+                  "host": [
+                    "{{simUrl}}"
+                  ],
+                  "path": [
+                    "sim",
+                    "open_vote"
+                  ]
+                },
+                "description": "Acts as Go through the dev stack's control port (pnpm dev:stack): sends Go's `open_vote` request to the server over the real socket. ",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"request_id\": \"pm-open-vote\",\n  \"trip_id\": \"{{tripId}}\",\n  \"question\": \"Where do we stay?\",\n  \"kind\": \"choice\",\n  \"anonymous\": false,\n  \"options\": [\n    {\n      \"label\": \"Villa Sol\",\n      \"price_minor\": 5420000,\n      \"currency\": \"INR\"\n    },\n    {\n      \"label\": \"Casa Azul\",\n      \"price_minor\": 6180000,\n      \"currency\": \"INR\"\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.decision_id && j.seq > 0', () => pm.expect(j.decision_id && j.seq > 0).to.be.ok);",
+                      "if (pm.response.code < 300) pm.collectionVariables.set('decisionId', j.decision_id);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "The vote is in Rahul's needs-you strip",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/needs-you",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "needs-you"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.some((x) => x.kind === \\'vote\\' && x.decision_id === pm.collectionVariables.get(\\'decisionId\\'))', () => pm.expect(j.some((x) => x.kind === 'vote' && x.decision_id === pm.collectionVariables.get('decisionId'))).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "A vote for an option that does not exist: 422",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/vote",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "decisions",
+                    "{{decisionId}}",
+                    "vote"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"option_index\": 9\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 422', () => pm.response.to.have.status(422));",
+                      "pm.test('error has the standard shape', () => { const j = pm.response.json(); pm.expect(j.error).to.be.an('object'); pm.expect(j.error.code).to.be.a('string'); });",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "A vote with no option: 400",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/vote",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "decisions",
+                    "{{decisionId}}",
+                    "vote"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                      "pm.test('error has the standard shape', () => { const j = pm.response.json(); pm.expect(j.error).to.be.an('object'); pm.expect(j.error.code).to.be.a('string'); });",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Rahul votes Villa Sol",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/vote",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "decisions",
+                    "{{decisionId}}",
+                    "vote"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"option_index\": 0\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Priya votes Villa Sol: everyone voted, it closes",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/vote",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "decisions",
+                    "{{decisionId}}",
+                    "vote"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"option_index\": 0\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token2}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Voting on a closed vote: 409",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/vote",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "decisions",
+                    "{{decisionId}}",
+                    "vote"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"option_index\": 1\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                      "pm.test('error has the standard shape', () => { const j = pm.response.json(); pm.expect(j.error).to.be.an('object'); pm.expect(j.error.code).to.be.a('string'); });",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Cancelling a closed vote: 409",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/cancel",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "decisions",
+                    "{{decisionId}}",
+                    "cancel"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                      "pm.test('error has the standard shape', () => { const j = pm.response.json(); pm.expect(j.error).to.be.an('object'); pm.expect(j.error.code).to.be.a('string'); });",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "The decided line is in the trip record",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.record.some((l) => l.kind === \\'decided\\' && l.text === \\'Villa Sol\\')', () => pm.expect(j.record.some((l) => l.kind === 'decided' && l.text === 'Villa Sol')).to.be.ok);",
+                      "pm.test('j.decisions.find((d) => d.decision_id === pm.collectionVariables.get(\\'decisionId\\')).status === \\'closed\\'', () => pm.expect(j.decisions.find((d) => d.decision_id === pm.collectionVariables.get('decisionId')).status === 'closed').to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "4. Mandate, spend approval and the pay card",
+          "item": [
+            {
+              "name": "\"Yes, book it\" before there is a mandate: 409",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/mandate/confirm",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "decisions",
+                    "{{decisionId}}",
+                    "mandate",
+                    "confirm"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                      "pm.test('error has the standard shape', () => { const j = pm.response.json(); pm.expect(j.error).to.be.an('object'); pm.expect(j.error.code).to.be.a('string'); });",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "[Go] set_mandate: Rahul pays, up to ₹55,000",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{simUrl}}/sim/set_mandate",
+                  "host": [
+                    "{{simUrl}}"
+                  ],
+                  "path": [
+                    "sim",
+                    "set_mandate"
+                  ]
+                },
+                "description": "Acts as Go through the dev stack's control port (pnpm dev:stack): sends Go's `set_mandate` request to the server over the real socket. ",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"request_id\": \"pm-mandate\",\n  \"trip_id\": \"{{tripId}}\",\n  \"decision_id\": \"{{decisionId}}\",\n  \"choice_index\": 0,\n  \"cap_minor\": 5500000,\n  \"currency\": \"INR\",\n  \"refundable_only\": true,\n  \"payer_person_id\": \"{{personId}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.seq > 0', () => pm.expect(j.seq > 0).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "The mandate is in Rahul's strip",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/needs-you",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "needs-you"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.some((x) => x.kind === \\'mandate\\')', () => pm.expect(j.some((x) => x.kind === 'mandate')).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "[Go] request_spend_approval: denied until Rahul says yes",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{simUrl}}/sim/request_spend_approval",
+                  "host": [
+                    "{{simUrl}}"
+                  ],
+                  "path": [
+                    "sim",
+                    "request_spend_approval"
+                  ]
+                },
+                "description": "Acts as Go through the dev stack's control port (pnpm dev:stack): sends Go's `request_spend_approval` request to the server over the real socket. ",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"request_id\": \"pm-spend-1\",\n  \"trip_id\": \"{{tripId}}\",\n  \"decision_id\": \"{{decisionId}}\",\n  \"amount_minor\": 5420000,\n  \"currency\": \"INR\",\n  \"merchant\": \"ixigo: Villa Sol\",\n  \"purpose\": \"Villa Sol, 3 nights\",\n  \"refundable_until\": \"2099-01-01T00:00:00Z\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.status === \\'denied\\' && j.reason === \\'payer_has_not_confirmed\\'', () => pm.expect(j.status === 'denied' && j.reason === 'payer_has_not_confirmed').to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Priya cannot answer the mandate: 403",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/mandate/confirm",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "decisions",
+                    "{{decisionId}}",
+                    "mandate",
+                    "confirm"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token2}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 403', () => pm.response.to.have.status(403));",
+                      "pm.test('error has the standard shape', () => { const j = pm.response.json(); pm.expect(j.error).to.be.an('object'); pm.expect(j.error.code).to.be.a('string'); });",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Rahul taps \"Not now\"",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/mandate/decline",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "decisions",
+                    "{{decisionId}}",
+                    "mandate",
+                    "decline"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Rahul taps \"Yes, book it\"",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions/{{decisionId}}/mandate/confirm",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "decisions",
+                    "{{decisionId}}",
+                    "mandate",
+                    "confirm"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "[Go] request_spend_approval: approved and signed",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{simUrl}}/sim/request_spend_approval",
+                  "host": [
+                    "{{simUrl}}"
+                  ],
+                  "path": [
+                    "sim",
+                    "request_spend_approval"
+                  ]
+                },
+                "description": "Acts as Go through the dev stack's control port (pnpm dev:stack): sends Go's `request_spend_approval` request to the server over the real socket. ",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"request_id\": \"pm-spend-2\",\n  \"trip_id\": \"{{tripId}}\",\n  \"decision_id\": \"{{decisionId}}\",\n  \"amount_minor\": 5420000,\n  \"currency\": \"INR\",\n  \"merchant\": \"ixigo: Villa Sol\",\n  \"purpose\": \"Villa Sol, 3 nights\",\n  \"refundable_until\": \"2099-01-01T00:00:00Z\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.status === \\'approved\\' && /^ap_/.test(j.approval_id) && j.approval.split(\\'.\\').length === 3 && j.approval.startsWith(\\'eyJhbGciOiJFZERTQSIsInR5cCI6ImdvLXNwZW5kK2p3cyJ9.\\')', () => pm.expect(j.status === 'approved' && /^ap_/.test(j.approval_id) && j.approval.split('.').length === 3 && j.approval.startsWith('eyJhbGciOiJFZERTQSIsInR5cCI6ImdvLXNwZW5kK2p3cyJ9.')).to.be.ok);",
+                      "if (pm.response.code < 300) pm.collectionVariables.set('approvalId', j.approval_id);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "[Go] post_message: the pay card for Rahul",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{simUrl}}/sim/post_message",
+                  "host": [
+                    "{{simUrl}}"
+                  ],
+                  "path": [
+                    "sim",
+                    "post_message"
+                  ]
+                },
+                "description": "Acts as Go through the dev stack's control port (pnpm dev:stack): sends Go's `post_message` request to the server over the real socket. ",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"request_id\": \"pm-pay-card\",\n  \"trip_id\": \"{{tripId}}\",\n  \"text\": \"Ready to pay for Villa Sol\",\n  \"card\": {\n    \"card_id\": \"c_pm_pay\",\n    \"kind\": \"pay\",\n    \"fallback_text\": \"Rahul, approve ₹54,200 for Villa Sol\",\n    \"for_person_ids\": [\n      \"{{personId}}\"\n    ],\n    \"approval_id\": \"{{approvalId}}\",\n    \"payer_person_id\": \"{{personId}}\",\n    \"amount_minor\": 5420000,\n    \"currency\": \"INR\",\n    \"merchant\": \"ixigo: Villa Sol\",\n    \"purpose\": \"Villa Sol, 3 nights\",\n    \"expires_at\": \"2099-01-01T00:00:00Z\",\n    \"state\": \"waiting\",\n    \"actions\": [\n      {\n        \"action_id\": \"approve\",\n        \"label\": \"Approve\",\n        \"style\": \"primary\",\n        \"only_for_person_ids\": [\n          \"{{personId}}\"\n        ]\n      }\n    ]\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.message_id && j.seq > 0', () => pm.expect(j.message_id && j.seq > 0).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "The pay card is in Rahul's strip",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/needs-you",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "needs-you"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.some((x) => x.kind === \\'card\\' && x.card_id === \\'c_pm_pay\\')', () => pm.expect(j.some((x) => x.kind === 'card' && x.card_id === 'c_pm_pay')).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Rahul taps Approve: the tap goes to Go",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/card-taps",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "card-taps"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"card_id\": \"c_pm_pay\",\n  \"action_id\": \"approve\",\n  \"tap_id\": \"pm-tap-1\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('[\\'done\\', \\'open\\', \\'refused\\'].includes(j.result)', () => pm.expect(['done', 'open', 'refused'].includes(j.result)).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "A tap on a card that does not exist: 404",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/card-taps",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "card-taps"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"card_id\": \"c_nope\",\n  \"action_id\": \"approve\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('code not_found', () => pm.expect(j.error.code).to.eql('not_found'));"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "A tap with a bad action id: 400",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/card-taps",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "card-taps"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"card_id\": \"c_pm_pay\",\n  \"action_id\": \"Approve!\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                      "pm.test('error has the standard shape', () => { const j = pm.response.json(); pm.expect(j.error).to.be.an('object'); pm.expect(j.error.code).to.be.a('string'); });",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "[Go] replace_card: the pay card is paid",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{simUrl}}/sim/replace_card",
+                  "host": [
+                    "{{simUrl}}"
+                  ],
+                  "path": [
+                    "sim",
+                    "replace_card"
+                  ]
+                },
+                "description": "Acts as Go through the dev stack's control port (pnpm dev:stack): sends Go's `replace_card` request to the server over the real socket. ",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"trip_id\": \"{{tripId}}\",\n  \"card\": {\n    \"card_id\": \"c_pm_pay\",\n    \"kind\": \"pay\",\n    \"fallback_text\": \"Paid ₹54,200 for Villa Sol\",\n    \"for_person_ids\": [],\n    \"approval_id\": \"{{approvalId}}\",\n    \"payer_person_id\": \"{{personId}}\",\n    \"amount_minor\": 5420000,\n    \"currency\": \"INR\",\n    \"merchant\": \"ixigo: Villa Sol\",\n    \"purpose\": \"Villa Sol, 3 nights\",\n    \"expires_at\": \"2099-01-01T00:00:00Z\",\n    \"state\": \"paid\",\n    \"actions\": []\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.message_id', () => pm.expect(j.message_id).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Rahul's strip no longer has the card",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/needs-you",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "needs-you"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('!j.some((x) => x.kind === \\'card\\' && x.card_id === \\'c_pm_pay\\')', () => pm.expect(!j.some((x) => x.kind === 'card' && x.card_id === 'c_pm_pay')).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "5. Trip record and expenses",
+          "item": [
+            {
+              "name": "[Go] add_record_line: an open question for Priya",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{simUrl}}/sim/add_record_line",
+                  "host": [
+                    "{{simUrl}}"
+                  ],
+                  "path": [
+                    "sim",
+                    "add_record_line"
+                  ]
+                },
+                "description": "Acts as Go through the dev stack's control port (pnpm dev:stack): sends Go's `add_record_line` request to the server over the real socket. ",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"request_id\": \"pm-line\",\n  \"trip_id\": \"{{tripId}}\",\n  \"kind\": \"open\",\n  \"text\": \"Scuba on Saturday?\",\n  \"proof\": [\n    {\n      \"message_id\": \"{{messageId2}}\"\n    }\n  ],\n  \"person_ids\": [\n    \"{{personId2}}\"\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "if (pm.response.code < 300) pm.collectionVariables.set('lineId', j.line_id);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "The open line is in Priya's strip",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/needs-you",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "needs-you"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token2}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.some((x) => x.kind === \\'record\\' && x.line_id === pm.collectionVariables.get(\\'lineId\\'))', () => pm.expect(j.some((x) => x.kind === 'record' && x.line_id === pm.collectionVariables.get('lineId'))).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Rahul undoes the line",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/record/{{lineId}}/undo",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "record",
+                    "{{lineId}}",
+                    "undo"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.seq > 0', () => pm.expect(j.seq > 0).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Undo again changes nothing",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/record/{{lineId}}/undo",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "record",
+                    "{{lineId}}",
+                    "undo"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.seq === null', () => pm.expect(j.seq === null).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Priya adds the airport cab",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/expenses",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "expenses"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"paid_by_person_id\": \"{{personId2}}\",\n  \"amount_minor\": 340000,\n  \"note\": \"Airport cab\",\n  \"category\": \"getting_around\",\n  \"split_person_ids\": [\n    \"{{personId}}\",\n    \"{{personId2}}\"\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token2}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "if (pm.response.code < 300) pm.collectionVariables.set('expenseId', j.expense_id);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Rahul now owes Priya ₹1,700 (money.transfers)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.money.transfers.some((t) => t.from_person_id === pm.collectionVariables.get(\\'personId\\') && t.to_person_id === pm.collectionVariables.get(\\'personId2\\') && t.amount_minor === 170000)', () => pm.expect(j.money.transfers.some((t) => t.from_person_id === pm.collectionVariables.get('personId') && t.to_person_id === pm.collectionVariables.get('personId2') && t.amount_minor === 170000)).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "An expense in a category that does not exist: 422",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/expenses",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "expenses"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"paid_by_person_id\": \"{{personId}}\",\n  \"amount_minor\": 100,\n  \"note\": \"x\",\n  \"category\": \"banana\",\n  \"split_person_ids\": [\n    \"{{personId}}\"\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 422', () => pm.response.to.have.status(422));",
+                      "pm.test('error has the standard shape', () => { const j = pm.response.json(); pm.expect(j.error).to.be.an('object'); pm.expect(j.error.code).to.be.a('string'); });",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "An expense of zero: 400",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/expenses",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "expenses"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"paid_by_person_id\": \"{{personId}}\",\n  \"amount_minor\": 0,\n  \"note\": \"x\",\n  \"category\": \"food\",\n  \"split_person_ids\": [\n    \"{{personId}}\"\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                      "pm.test('error has the standard shape', () => { const j = pm.response.json(); pm.expect(j.error).to.be.an('object'); pm.expect(j.error.code).to.be.a('string'); });",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Remove the expense",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/expenses/{{expenseId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "expenses",
+                    "{{expenseId}}"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Remove it again: 404",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/expenses/{{expenseId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "expenses",
+                    "{{expenseId}}"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                      "pm.test('error has the standard shape', () => { const j = pm.response.json(); pm.expect(j.error).to.be.an('object'); pm.expect(j.error.code).to.be.a('string'); });",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "6. Catch-up and the You screen",
+          "item": [
+            {
+              "name": "Catch-up: nothing to catch up on yet",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/catch-up",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "catch-up"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.needed === false', () => pm.expect(j.needed === false).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Catch-up forced: Go's summary",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/catch-up",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "catch-up"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"force\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.needed === true && typeof j.summary === \\'string\\'', () => pm.expect(j.needed === true && typeof j.summary === 'string').to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Mark the room as seen",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/seen",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "seen"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "What Go knows about me",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/me/go-knows",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "me",
+                    "go-knows"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.person_id === pm.collectionVariables.get(\\'personId\\')', () => pm.expect(j.person_id === pm.collectionVariables.get('personId')).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Carry-over on",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/me/carry-over",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "me",
+                    "carry-over"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"carry_over\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.ok === true', () => pm.expect(j.ok === true).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Delete one fact",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/me/facts/f_demo",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "me",
+                    "facts",
+                    "f_demo"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Vault link: add a card",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/me/vault-link",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "me",
+                    "vault-link"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"start\": \"add_card\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('/^https:/.test(j.url) && j.expires_at', () => pm.expect(/^https:/.test(j.url) && j.expires_at).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Vault link to a page that does not exist: 400",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/me/vault-link",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "me",
+                    "vault-link"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"start\": \"bogus\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                      "pm.test('error has the standard shape', () => { const j = pm.response.json(); pm.expect(j.error).to.be.an('object'); pm.expect(j.error.code).to.be.a('string'); });",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Register this phone for pushes",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/devices",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "devices"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"token\": \"pm-device-token\",\n  \"platform\": \"ios\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 204', () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Priya pauses Go",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/go-paused",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "go-paused"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"paused\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token2}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Priya unpauses Go",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/go-paused",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "go-paused"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"paused\": false\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token2}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Priya: forget me in this trip",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/me/forget",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "me",
+                    "forget"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"trip_id\": \"{{tripId}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token2}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.remaining_facts === 0', () => pm.expect(j.remaining_facts === 0).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "7. Errors the app must handle",
+          "item": [
+            {
+              "name": "No sign-in: 401",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 401', () => pm.response.to.have.status(401));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('code unauthorized', () => pm.expect(j.error.code).to.eql('unauthorized'));"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "A forged token: 401",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "s1.forged.token",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 401', () => pm.response.to.have.status(401));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('code unauthorized', () => pm.expect(j.error.code).to.eql('unauthorized'));"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Someone not in the trip: 403",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token3}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 403', () => pm.response.to.have.status(403));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('code forbidden', () => pm.expect(j.error.code).to.eql('forbidden'));"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "A message without client_id: 400",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "messages"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"text\": \"hi\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('code invalid', () => pm.expect(j.error.code).to.eql('invalid'));"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Broken JSON: 400",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "messages"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"client_id\": \"x\", ",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                      "pm.test('error has the standard shape', () => { const j = pm.response.json(); pm.expect(j.error).to.be.an('object'); pm.expect(j.error.code).to.be.a('string'); });",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "A message mentioning someone not in the trip: 422",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "messages"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"client_id\": \"pm-bad-mention\",\n  \"text\": \"hi\",\n  \"mentions\": [\n    \"p_nobody\"\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 422', () => pm.response.to.have.status(422));",
+                      "pm.test('error has the standard shape', () => { const j = pm.response.json(); pm.expect(j.error).to.be.an('object'); pm.expect(j.error.code).to.be.a('string'); });",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "A bad after_seq: 400",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/messages?after_seq=abc",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "messages"
+                  ],
+                  "query": [
+                    {
+                      "key": "after_seq",
+                      "value": "abc"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                      "pm.test('error has the standard shape', () => { const j = pm.response.json(); pm.expect(j.error).to.be.an('object'); pm.expect(j.error.code).to.be.a('string'); });",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "An unknown route: 404",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/nope",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "nope"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('code not_found', () => pm.expect(j.error.code).to.eql('not_found'));"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Join preview with a bad link: 404",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/join/nope",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "join",
+                    "nope"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                      "pm.test('error has the standard shape', () => { const j = pm.response.json(); pm.expect(j.error).to.be.an('object'); pm.expect(j.error.code).to.be.a('string'); });",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Join with a bad link: 404",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/join/nope",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "join",
+                    "nope"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                      "pm.test('error has the standard shape', () => { const j = pm.response.json(); pm.expect(j.error).to.be.an('object'); pm.expect(j.error.code).to.be.a('string'); });",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "A trip with no title: 400",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                      "pm.test('error has the standard shape', () => { const j = pm.response.json(); pm.expect(j.error).to.be.an('object'); pm.expect(j.error.code).to.be.a('string'); });",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "8. Leaving",
+          "item": [
+            {
+              "name": "Priya leaves the trip",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/leave",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "leave"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token2}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test('j.seq > 0', () => pm.expect(j.seq > 0).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Priya can no longer read it: 403",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token2}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 403', () => pm.response.to.have.status(403));",
+                      "pm.test('error has the standard shape', () => { const j = pm.response.json(); pm.expect(j.error).to.be.an('object'); pm.expect(j.error.code).to.be.a('string'); });",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Reference: 0. Health",
       "description": "Is the server up, and is its connection to Go open?",
       "item": [
         {
@@ -115,7 +3687,7 @@
       ]
     },
     {
-      "name": "1. People, trips, joining",
+      "name": "Reference: 1. People, trips, joining",
       "description": "Start here: create a person (saves `token` + `personId`), create a trip (saves `tripId` + `inviteCode`), join with another person.",
       "item": [
         {
@@ -233,7 +3805,7 @@
                 "description": "Creates a person and returns the sign-in token. **Saves `token` and `personId` automatically.** Phone, email and UPI id stay on the server; Go never sees them.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"name\": \"Rahul\",\n  \"photo_url\": \"https://cdn.example/p_rahul.jpg\",\n  \"phone\": \"+919999999999\",\n  \"email\": \"rahul@example.com\",\n  \"upi_id\": \"rahul@upi\"\n}",
+                  "raw": "{\n  \"photo_url\": \"https://cdn.example/p.jpg\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -294,8 +3866,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "const j = pm.response.json();",
-                  "pm.collectionVariables.set('tripId', j.trip_id);",
-                  "pm.collectionVariables.set('inviteCode', j.invite_url.split('/j/')[1]);"
+                  "if (j.trip_id) { pm.collectionVariables.set('tripId', j.trip_id); pm.collectionVariables.set('inviteCode', j.invite_url.split('/j/')[1]); }"
                 ]
               }
             }
@@ -819,7 +4390,7 @@
       ]
     },
     {
-      "name": "2. Messages",
+      "name": "Reference: 2. Messages",
       "description": "Chat. Every post needs your own `client_id` so retries never post twice.",
       "item": [
         {
@@ -937,7 +4508,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "const j = pm.response.json();",
-                  "pm.collectionVariables.set('messageId', j.message_id);"
+                  "if (j.message_id) pm.collectionVariables.set('messageId', j.message_id);"
                 ]
               }
             }
@@ -1388,7 +4959,7 @@
       ]
     },
     {
-      "name": "3. Votes, mandate, record, expenses",
+      "name": "Reference: 3. Votes, mandate, record, expenses",
       "description": "The Server's own buttons (record cards). They never go to Go. `decisionId` comes from the trip data (`decisions[]`) or the vote card.",
       "item": [
         {
@@ -2022,7 +5593,7 @@
       ]
     },
     {
-      "name": "4. Asking Go (via the Server)",
+      "name": "Reference: 4. Asking Go (via the Server)",
       "description": "Go may be slow or busy: show the error and let the person retry. **Never auto-retry.**",
       "item": [
         {
@@ -2270,6 +5841,10 @@
                 {
                   "key": "Content-Type",
                   "value": "application/json"
+                },
+                {
+                  "key": "Retry-After",
+                  "value": "5"
                 }
               ],
               "body": "{\n  \"error\": {\n    \"code\": \"rate_limited\",\n    \"message\": \"Go is busy. Try again in a moment.\"\n  }\n}"
@@ -2444,7 +6019,7 @@
       ]
     },
     {
-      "name": "5. You screen",
+      "name": "Reference: 5. You screen",
       "description": "All of these act for the signed-in person only.",
       "item": [
         {
@@ -2849,14 +6424,14 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{}"
+              "body": ""
             }
           ]
         }
       ]
     },
     {
-      "name": "6. Live connection (SSE)",
+      "name": "Reference: 6. Live connection (SSE)",
       "description": "Postman can open this but is awkward for streams; in the app use a streaming HTTP client.",
       "item": [
         {

@@ -1,6 +1,7 @@
 // The Server's own requests to Go (guides: "Your requests"): taps on Go's cards, catch-up, what Go
 // knows about a person, forget me and vault links. A person is waiting for each one, so none is
 // sent again on its own: a failure is shown to them and they try again.
+import { createHash } from 'node:crypto';
 import type { Ctx } from '../context.js';
 import { check, METHODS } from '../contract/index.js';
 import { newId } from '../db/ids.js';
@@ -8,7 +9,7 @@ import { withTx } from '../db/pool.js';
 import { change } from '../db/write-change.js';
 import { SocketCallError, SocketTimeoutError } from '../go/go-socket.js';
 import { Forbidden, requireMember } from './actions.js';
-import { invalid } from './errors.js';
+import { invalid, notFound } from './errors.js';
 import { personForGo } from './mappers.js';
 import { activePeople } from './snapshot.js';
 
@@ -16,12 +17,13 @@ export interface GoClient {
   request(method: string, params: object, opts?: { timeoutMs?: number }): Promise<object>;
 }
 
-/** What the app is told when Go cannot be asked or does not answer. */
+/** What the app is told when Go cannot be asked, does not answer, or answers with an error. */
 export class GoUnavailable extends Error {
   constructor(
     readonly status: number,
     message: string,
     readonly retryAfterSeconds?: number,
+    readonly code = status === 429 ? 'rate_limited' : status === 404 ? 'not_found' : status === 409 ? 'conflict' : 'go_unavailable',
   ) {
     super(message);
   }
@@ -31,7 +33,8 @@ export class GoUnavailable extends Error {
 export async function askGo<T = Record<string, unknown>>(go: GoClient, method: string, params: Record<string, unknown>): Promise<T> {
   const info = METHODS[method]!;
   const sent = check(info.params, params);
-  if (!sent.ok) throw new Error(`our ${method} request does not match the contract: ${sent.message}`);
+  // The params come from what the app sent: a value the contract refuses is the app's mistake, not ours.
+  if (!sent.ok) throw invalid(sent.message);
   let answer: object;
   try {
     // Wait a little longer than Go's limit, for the network.
@@ -40,8 +43,7 @@ export async function askGo<T = Record<string, unknown>>(go: GoClient, method: s
     if (err instanceof SocketTimeoutError) throw new GoUnavailable(504, 'Go did not answer in time. Try again.');
     if (err instanceof SocketCallError) {
       if (err.code === 429) throw new GoUnavailable(429, 'Go is busy. Try again in a moment.', err.retryAfterSeconds);
-      if (err.code === 404) throw new GoUnavailable(404, err.message);
-      if (err.code === 409) throw new GoUnavailable(409, err.message);
+      if (err.code === 404 || err.code === 409) throw new GoUnavailable(err.code, err.message);
       throw new GoUnavailable(503, 'Go could not do that right now. Try again.');
     }
     throw err;
@@ -52,6 +54,13 @@ export async function askGo<T = Record<string, unknown>>(go: GoClient, method: s
 }
 
 const GO_CARD_KINDS = new Set(['options', 'working', 'call', 'pay', 'notice']);
+
+/**
+ * The tap id sent to Go for the app's own press id. Go acts on each tap_id once and answers a repeat with its
+ * first answer, so the id is tied to the person: someone replaying another person's press id gets a different
+ * tap, never that person's answer (such as their vault link). The same press by the same person keeps its id.
+ */
+export const tapIdFor = (personId: string, appTapId: string) => `tap_${createHash('sha256').update(`${personId}:${appTapId}`).digest('hex').slice(0, 32)}`;
 
 /**
  * Someone tapped a button on one of Go's cards. The tap id comes from the app (so a double tap that
@@ -67,10 +76,10 @@ export async function cardTap(
 ) {
   await requireMember(ctx.pool, tripId, personId);
   const m = (await ctx.pool.query(`select card->>'kind' as kind from messages where trip_id = $1 and card_id = $2 and author_kind = 'go'`, [tripId, input.card_id])).rows[0];
-  if (!m) throw new GoUnavailable(404, `card ${input.card_id} is not one of Go's cards in this trip`);
+  if (!m) throw notFound(`card ${input.card_id} is not one of Go's cards in this trip`);
   if (!GO_CARD_KINDS.has(m.kind)) throw invalid(`${m.kind} cards are handled by the Server, not Go`);
   return askGo(go, 'card_tap', {
-    tap_id: input.tap_id ?? newId('tap'),
+    tap_id: input.tap_id ? tapIdFor(personId, input.tap_id) : newId('tap'),
     trip_id: tripId,
     card_id: input.card_id,
     action_id: input.action_id,

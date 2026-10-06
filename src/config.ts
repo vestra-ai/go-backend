@@ -1,3 +1,5 @@
+import { hostname } from 'node:os';
+
 export interface Config {
   databaseUrl: string;
   goUrl: string;
@@ -5,6 +7,8 @@ export interface Config {
   goSpendPrivateKey: string;
   instance: string;
   port: number;
+  /** Postgres connections per instance. The outbox uses at most a third of them, so Go's requests always find one. */
+  dbPoolMax: number;
 }
 
 function need(name: string): string {
@@ -22,8 +26,10 @@ export function loadConfig(): Config {
     goUrl: need('GO_URL').replace(/\/+$/, ''),
     goSigningSecret: need('GO_SIGNING_SECRET'),
     goSpendPrivateKey: pem(need('GO_SPEND_PRIVATE_KEY')),
-    instance: process.env.INSTANCE_NAME ?? `server-${process.pid}`,
+    // The host name too: in containers every process can be pid 1, and each instance needs its own name.
+    instance: process.env.INSTANCE_NAME ?? `${hostname()}-${process.pid}`,
     port: Number(process.env.PORT ?? 8080),
+    dbPoolMax: Math.max(4, Number(process.env.DB_POOL_MAX ?? 30)),
   };
 }
 

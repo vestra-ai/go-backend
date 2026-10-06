@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { check } from '../src/contract/index.js';
 import { signSession } from '../src/api/auth.js';
+import { tapIdFor } from '../src/domain/ask-go.js';
 import { closeDueVotes, pushClosingSoon } from '../src/jobs/votes.js';
 import { rows, startHarness, type Harness } from './helpers/harness.js';
 
@@ -262,7 +263,15 @@ describe('expenses', () => {
     expect(events('expense.changed').at(-1)!.data).toMatchObject({ change: 'added', by: { kind: 'person', person_id: kabir.id }, expense: { amount_minor: 340000, added_by_person_id: kabir.id } });
     const owed = h.push.sent.flatMap((s) => s.to);
     expect(owed.sort()).toEqual([priya.id, rahul.id].sort());
-    expect(h.push.sent[0]!.n.body).toBe('You owe Kabir ₹1,133.33 for Airport cab');
+    // From money.transfers: the extra paisa of ₹3,400 / 3 goes to the first person who joined, so the shares add up.
+    const body = (id: string) => h.push.sent.find((s) => s.to[0] === id)!.n.body;
+    expect(body(rahul.id)).toBe('You owe Kabir ₹1,133.34 for Airport cab');
+    expect(body(priya.id)).toBe('You owe Kabir ₹1,133.33 for Airport cab');
+    const snap = (await h.go.call('read_trip', { trip_id: trip })).result;
+    expect(snap.money.transfers).toEqual(expect.arrayContaining([
+      { from_person_id: rahul.id, to_person_id: kabir.id, amount_minor: 113334, currency: 'INR' },
+      { from_person_id: priya.id, to_person_id: kabir.id, amount_minor: 113333, currency: 'INR' },
+    ]));
     await api(kabir, 'DELETE', `/app/trips/${trip}/expenses/${r.body.expense_id}`);
     await h.flush();
     expect(events('expense.changed').at(-1)!.data.change).toBe('removed');
@@ -276,9 +285,13 @@ describe('asking Go', () => {
     await goCall('post_message', { text: 'Flights', card: { card_id: 'c_opts', kind: 'options', fallback_text: 'flights', title: 'Flights', option_kind: 'flight', checked_at: '2026-10-05T06:49:30Z', options: [{ option_id: 'o1', title: 'IndiGo', price_minor: 592000, currency: 'INR', highlights: ['Non-stop'] }], actions: [{ action_id: 'pick', label: 'Pick', style: 'primary', per_option: true }] } }, trip);
     const r = await tap(priya, { card_id: 'c_opts', action_id: 'pick', option_id: 'o1', tap_id: 'tap_press_1' });
     expect(r.body).toEqual({ result: 'done', toast: 'Noted. Go will reply in the room.' });
-    expect(h.go.requests.at(-1)).toEqual({ method: 'card_tap', params: { tap_id: 'tap_press_1', trip_id: trip, card_id: 'c_opts', action_id: 'pick', person_id: priya.id, option_id: 'o1' } });
+    const priyaTap = tapIdFor(priya.id, 'tap_press_1');
+    expect(h.go.requests.at(-1)).toEqual({ method: 'card_tap', params: { tap_id: priyaTap, trip_id: trip, card_id: 'c_opts', action_id: 'pick', person_id: priya.id, option_id: 'o1' } });
     await tap(priya, { card_id: 'c_opts', action_id: 'pick', option_id: 'o1', tap_id: 'tap_press_1' });
-    expect(h.go.requests.at(-1)!.params.tap_id).toBe('tap_press_1'); // the same tap keeps its id
+    expect(h.go.requests.at(-1)!.params.tap_id).toBe(priyaTap); // the same press keeps its id
+    // Someone else replaying Priya's press id is a different tap: they can never get Priya's answer from Go.
+    await tap(rahul, { card_id: 'c_opts', action_id: 'pick', option_id: 'o1', tap_id: 'tap_press_1' });
+    expect(h.go.requests.at(-1)!.params.tap_id).not.toBe(priyaTap);
   });
 
   it('makes a tap id when the app sent none, and refuses record cards, unknown cards and strangers', async () => {

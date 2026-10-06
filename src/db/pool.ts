@@ -7,7 +7,7 @@ pg.types.setTypeParser(1082, (v) => v);
 
 export type Db = pg.Pool | pg.PoolClient;
 
-export function createPool(connectionString: string, max = 20): pg.Pool {
+export function createPool(connectionString: string, max = 30): pg.Pool {
   return new pg.Pool({ connectionString, max });
 }
 

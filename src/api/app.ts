@@ -26,6 +26,11 @@ declare module 'fastify' {
 }
 
 const str = { type: 'string', minLength: 1, maxLength: 4000 } as const;
+const id = { type: 'string', minLength: 1, maxLength: 64 } as const;
+const bool = { type: 'boolean' } as const;
+const minor = { type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER } as const;
+/** A JSON body with these fields. The limits are the contract's, so what the app sends always fits Go's events. */
+const body = (properties: Record<string, object>, required: string[] = []) => ({ schema: { body: { type: 'object', required, properties } } });
 
 /** The app's API. The app talks only to this, never to Go. The paths are ours to design. */
 export function buildApp({ ctx, go, sessionSecret }: AppDeps): FastifyInstance {
@@ -35,14 +40,23 @@ export function buildApp({ ctx, go, sessionSecret }: AppDeps): FastifyInstance {
     if (err instanceof Forbidden) return reply.code(403).send({ error: { code: 'forbidden', message: err.message } });
     if (err instanceof GoUnavailable) {
       if (err.retryAfterSeconds) reply.header('retry-after', String(err.retryAfterSeconds));
-      return reply.code(err.status).send({ error: { code: err.status === 429 ? 'rate_limited' : 'go_unavailable', message: err.message } });
+      return reply.code(err.status).send({ error: { code: err.code, message: err.message } });
     }
     if (err instanceof SocketCallError && [404, 409, 422].includes(err.code)) {
       return reply.code(err.code).send({ error: { code: err.dataCode, message: err.message } });
     }
     if ((err as { validation?: unknown }).validation) return reply.code(400).send({ error: { code: 'invalid', message: err.message } });
+    // Fastify's own refusals before a handler runs: unreadable or empty JSON, a body too large, a wrong content type.
+    if (typeof err.statusCode === 'number' && err.statusCode >= 400 && err.statusCode < 500) {
+      return reply.code(err.statusCode).send({ error: { code: 'invalid', message: err.message } });
+    }
     console.error(err);
     return reply.code(500).send({ error: { code: 'internal', message: 'something went wrong' } });
+  });
+  app.setNotFoundHandler((req, reply) => reply.code(404).send({ error: { code: 'not_found', message: `no route ${req.method} ${req.url.split('?')[0]}` } }));
+  // A POST with no body is the same as an empty one, so a route's required fields are still checked by its schema.
+  app.addHook('preValidation', async (req) => {
+    if (req.body === undefined && ['POST', 'PUT', 'PATCH'].includes(req.method)) req.body = {};
   });
 
   const needAuth = async (req: FastifyRequest, reply: FastifyReply) => {
@@ -77,72 +91,114 @@ export function buildApp({ ctx, go, sessionSecret }: AppDeps): FastifyInstance {
     const trip = await tripByInvite(ctx, req.params.code);
     return trip ?? reply.code(404).send({ error: { code: 'not_found', message: 'no trip for this invite link' } });
   });
-  app.post('/app/join/:code', auth, async (req: any) => joinTrip(ctx, req.params.code, req.personId, (req.body ?? {}) as any));
+  app.post('/app/join/:code', {
+    ...auth,
+    ...body({
+      from_city: { type: 'string', maxLength: 60 },
+      earliest_leave: { type: 'string', maxLength: 60 },
+      know: { type: 'array', maxItems: 20, items: { type: 'string', minLength: 1, maxLength: 80 } },
+      budget: { type: 'object', required: ['min_minor'], properties: { min_minor: { type: 'integer', minimum: 0 }, max_minor: { type: 'integer', minimum: 0 } } },
+    }),
+  }, async (req: any) => joinTrip(ctx, req.params.code, req.personId, req.body));
 
   app.get('/app/trips/:id', inTrip((_req, trip) => buildSnapshot(ctx.pool, trip, ctx.publicBaseUrl)));
   app.post('/app/trips/:id/leave', inTrip((_r, trip, me) => leaveTrip(ctx, trip, me)));
-  app.post('/app/trips/:id/go-paused', inTrip((req, trip, me) => setGoPaused(ctx, trip, me, !!req.body?.paused)));
+  app.post('/app/trips/:id/go-paused', { ...body({ paused: bool }, ['paused']), ...inTrip((req, trip, me) => setGoPaused(ctx, trip, me, req.body.paused)) });
   app.post('/app/trips/:id/seen', inTrip(async (_r, trip, me) => (await markSeen(ctx, trip, me), { ok: true })));
   app.get('/app/trips/:id/needs-you', inTrip((_r, trip, me) => needsYou(ctx, trip, me)));
 
   // ---- messages
-  app.get('/app/trips/:id/messages', inTrip(async (req, trip) => {
-    const after = Number(req.query.after_seq ?? 0);
-    const limit = Math.min(200, Number(req.query.limit ?? 100));
-    const { rows } = await ctx.pool.query<MessageRow>('select * from messages where trip_id = $1 and updated_seq > $2 order by updated_seq limit $3', [trip, after, limit + 1]);
-    const page = rows.slice(0, limit);
-    const reactions = page.length ? (await ctx.pool.query<ReactionRow>('select message_id, person_id, emoji from reactions where message_id = any($1) order by created_at', [page.map((m) => m.message_id)])).rows : [];
-    return { messages: page.map((m) => messageForApp(m, reactions.filter((r) => r.message_id === m.message_id))), has_more: rows.length > limit };
-  }));
-  app.post('/app/trips/:id/messages', inTrip((req, trip, me) => postPersonMessage(ctx, trip, me, req.body)));
+  app.get('/app/trips/:id/messages', {
+    schema: { querystring: { type: 'object', properties: { after_seq: { type: 'integer', minimum: 0, default: 0 }, limit: { type: 'integer', minimum: 1, maximum: 200, default: 100 } } } },
+    ...inTrip(async (req, trip) => {
+      const { after_seq: after, limit } = req.query as { after_seq: number; limit: number };
+      const { rows } = await ctx.pool.query<MessageRow>('select * from messages where trip_id = $1 and updated_seq > $2 order by updated_seq limit $3', [trip, after, limit + 1]);
+      const page = rows.slice(0, limit);
+      const reactions = page.length ? (await ctx.pool.query<ReactionRow>('select message_id, person_id, emoji from reactions where message_id = any($1) order by created_at', [page.map((m) => m.message_id)])).rows : [];
+      return { messages: page.map((m) => messageForApp(m, reactions.filter((r) => r.message_id === m.message_id))), has_more: rows.length > limit };
+    }),
+  });
+  app.post('/app/trips/:id/messages', {
+    ...body({
+      client_id: id,
+      text: str,
+      attachments: { type: 'array', maxItems: 10, items: { type: 'object' } },
+      reply_to: id,
+      about_message_id: id,
+      mentions: { type: 'array', maxItems: 30, items: id },
+    }, ['client_id']),
+    ...inTrip((req, trip, me) => postPersonMessage(ctx, trip, me, req.body)),
+  });
   app.patch('/app/trips/:id/messages/:mid', {
+    ...body({ text: str }, ['text']),
     preHandler: needAuth,
-    handler: async (req: any) => editMessage(ctx, req.params.id, req.personId, req.params.mid, (req.body as any).text),
+    handler: async (req: any) => editMessage(ctx, req.params.id, req.personId, req.params.mid, req.body.text),
   });
   app.delete('/app/trips/:id/messages/:mid', {
     preHandler: needAuth,
     handler: async (req: any) => deleteMessage(ctx, req.params.id, req.personId, req.params.mid),
   });
   app.post('/app/trips/:id/messages/:mid/reactions', {
+    ...body({ emoji: { type: 'string', minLength: 1, maxLength: 16 } }, ['emoji']),
     preHandler: needAuth,
-    handler: async (req: any) => reactTo(ctx, req.params.id, req.personId, req.params.mid, (req.body as any).emoji, true),
+    handler: async (req: any) => reactTo(ctx, req.params.id, req.personId, req.params.mid, req.body.emoji, true),
   });
   app.delete('/app/trips/:id/messages/:mid/reactions/:emoji', {
+    schema: { params: { type: 'object', properties: { emoji: { type: 'string', minLength: 1, maxLength: 16 } } } },
     preHandler: needAuth,
     handler: async (req: any) => reactTo(ctx, req.params.id, req.personId, req.params.mid, decodeURIComponent(req.params.emoji), false),
   });
   /** People's typing is between the app and the Server only: Go does not need it. */
-  app.post('/app/trips/:id/typing', inTrip(async (req, trip, me) => {
-    const on = !!req.body?.on;
-    await ctx.live.publish(trip, { kind: 'typing', who: { kind: 'person', person_id: me }, on, ...(on ? { until: new Date(Date.now() + 5_000).toISOString() } : {}) });
-    return { ok: true };
-  }));
+  app.post('/app/trips/:id/typing', {
+    ...body({ on: bool }, ['on']),
+    ...inTrip(async (req, trip, me) => {
+      const on: boolean = req.body.on;
+      await ctx.live.publish(trip, { kind: 'typing', who: { kind: 'person', person_id: me }, on, ...(on ? { until: new Date(Date.now() + 5_000).toISOString() } : {}) });
+      return { ok: true };
+    }),
+  });
 
   // ---- votes, mandate, record, expenses (all the Server's own buttons: they never reach Go)
   const withTrip = (fn: (trip: string, me: string, req: any) => unknown) => ({
     preHandler: needAuth,
     handler: async (req: any) => fn(req.params.id, req.personId, req),
   });
-  app.post('/app/trips/:id/decisions/:did/vote', withTrip((t, me, r) => castVote(ctx, t, me, r.params.did!, Number(r.body?.option_index))));
+  app.post('/app/trips/:id/decisions/:did/vote', {
+    ...body({ option_index: { type: 'integer', minimum: 0 } }, ['option_index']),
+    ...withTrip((t, me, r) => castVote(ctx, t, me, r.params.did!, r.body.option_index)),
+  });
   app.post('/app/trips/:id/decisions/:did/close', withTrip((t, me, r) => closeVoteByPerson(ctx, t, me, r.params.did!)));
   app.post('/app/trips/:id/decisions/:did/cancel', withTrip((t, me, r) => cancelDecision(ctx, t, me, r.params.did!)));
   app.post('/app/trips/:id/decisions/:did/mandate/confirm', withTrip((t, me, r) => answerMandate(ctx, t, me, r.params.did!, 'confirm')));
   app.post('/app/trips/:id/decisions/:did/mandate/decline', withTrip((t, me, r) => answerMandate(ctx, t, me, r.params.did!, 'decline')));
   app.post('/app/trips/:id/record/:lid/undo', withTrip((t, me, r) => undoRecordLine(ctx, t, me, r.params.lid!)));
-  app.post('/app/trips/:id/expenses', withTrip((t, me, r) => addPersonExpense(ctx, t, me, r.body)));
+  app.post('/app/trips/:id/expenses', {
+    ...body({
+      paid_by_person_id: id,
+      amount_minor: minor,
+      note: { type: 'string', minLength: 1, maxLength: 120 },
+      category: { type: 'string', minLength: 1 },
+      split_person_ids: { type: 'array', minItems: 1, maxItems: 30, items: id },
+      booking_id: id,
+    }, ['paid_by_person_id', 'amount_minor', 'note', 'category', 'split_person_ids']),
+    ...withTrip((t, me, r) => addPersonExpense(ctx, t, me, r.body)),
+  });
   app.delete('/app/trips/:id/expenses/:eid', withTrip((t, me, r) => removePersonExpense(ctx, t, me, r.params.eid!)));
 
   // ---- asking Go: card taps and catch-up
-  app.post('/app/trips/:id/card-taps', inTrip((req, trip, me) => cardTap(ctx, go, trip, me, req.body)));
-  app.post('/app/trips/:id/catch-up', inTrip((req, trip, me) => catchUp(ctx, go, trip, me, !!req.body?.force)));
+  app.post('/app/trips/:id/card-taps', {
+    ...body({ card_id: id, action_id: { type: 'string', pattern: '^[a-z][a-z_]{0,31}$' }, option_id: id, tap_id: id }, ['card_id', 'action_id']),
+    ...inTrip((req, trip, me) => cardTap(ctx, go, trip, me, req.body)),
+  });
+  app.post('/app/trips/:id/catch-up', { ...body({ force: bool }), ...inTrip((req, trip, me) => catchUp(ctx, go, trip, me, !!req.body.force)) });
 
   // ---- the You screen
   app.get('/app/me/go-knows', auth, async (req) => getPerson(go, req.personId));
-  app.put('/app/me/carry-over', auth, async (req) => updateCarryOver(go, req.personId, !!(req.body as any)?.carry_over));
+  app.put('/app/me/carry-over', { ...auth, ...body({ carry_over: bool }, ['carry_over']) }, async (req: any) => updateCarryOver(go, req.personId, req.body.carry_over));
   app.delete('/app/me/facts/:fact', auth, async (req: any) => deleteFact(go, req.personId, req.params.fact));
-  app.post('/app/me/forget', auth, async (req) => forgetPerson(ctx, go, req.personId, (req.body as any)?.trip_id));
-  app.post('/app/me/vault-link', auth, async (req) => vaultLink(go, req.personId, (req.body as any)?.start));
-  app.post('/app/devices', auth, async (req, reply) => {
+  app.post('/app/me/forget', { ...auth, ...body({ trip_id: id }) }, async (req: any) => forgetPerson(ctx, go, req.personId, req.body.trip_id));
+  app.post('/app/me/vault-link', { ...auth, ...body({ start: { type: 'string', enum: ['home', 'add_card', 'add_login'] } }) }, async (req: any) => vaultLink(go, req.personId, req.body.start));
+  app.post('/app/devices', { ...auth, ...body({ token: { type: 'string', minLength: 1, maxLength: 4096 }, platform: { type: 'string', enum: ['ios', 'android'] } }, ['token', 'platform']) }, async (req, reply) => {
     const { token, platform } = req.body as { token: string; platform: string };
     await ctx.pool.query('insert into push_devices (token, person_id, platform) values ($1,$2,$3) on conflict (token) do update set person_id = excluded.person_id, platform = excluded.platform', [token, req.personId, platform]);
     return reply.code(204).send();

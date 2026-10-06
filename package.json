@@ -15,7 +15,9 @@
     "test": "vitest run",
     "gen:types": "openapi-typescript contract/go.json -o src/contract/schema.d.ts",
     "migrate": "tsx scripts/migrate.ts",
-    "pretest": "node scripts/prepare-test-pg.mjs"
+    "pretest": "node scripts/prepare-test-pg.mjs",
+    "dev:stack": "node scripts/prepare-test-pg.mjs && tsx scripts/dev-stack.ts",
+    "postman": "pnpm dlx newman@6 run docs/go-server.postman_collection.json -e docs/go-server.postman_environment.json --folder \"Run in order\""
   },
   "dependencies": {
     "ajv": "^8.20.0",

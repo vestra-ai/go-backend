@@ -23,9 +23,14 @@ const CHANNEL = 'go_live';
  */
 export class PgLive implements Live {
   private listener: pg.PoolClient | null = null;
+  private closed = false;
+  private retry: NodeJS.Timeout | undefined;
   private readonly subscribers = new Set<(tripId: string, event: LiveEvent) => void>();
 
-  constructor(private readonly pool: pg.Pool) {}
+  constructor(
+    private readonly pool: pg.Pool,
+    private readonly log: (msg: string) => void = (m) => console.error(`[live] ${m}`),
+  ) {}
 
   async publish(tripId: string, event: LiveEvent): Promise<void> {
     await this.pool.query('select pg_notify($1, $2)', [CHANNEL, JSON.stringify({ trip_id: tripId, ...event })]);
@@ -36,7 +41,12 @@ export class PgLive implements Live {
     return () => this.subscribers.delete(fn);
   }
 
+  /**
+   * Listens on one connection of its own. If that connection drops (a database restart, a network blip), it
+   * listens again on a new one, after 1, 2, 5, 10, then every 30 seconds, so live updates do not stop silently.
+   */
   async listen(): Promise<void> {
+    if (this.closed) return;
     const client = await this.pool.connect();
     this.listener = client;
     client.on('notification', (n) => {
@@ -44,12 +54,38 @@ export class PgLive implements Live {
       const { trip_id, ...event } = JSON.parse(n.payload);
       for (const fn of this.subscribers) fn(trip_id, event as LiveEvent);
     });
+    let lost = false;
+    const onLost = (why: string) => {
+      if (lost || this.closed) return;
+      lost = true;
+      this.log(`listen connection lost (${why}); listening again`);
+      client.removeAllListeners('notification');
+      client.release(true);
+      if (this.listener === client) this.listener = null;
+      this.again(0);
+    };
+    client.on('error', (err) => onLost(err.message));
+    client.on('end', () => onLost('ended'));
     await client.query(`listen ${CHANNEL}`);
+  }
+
+  private again(attempt: number): void {
+    const wait = [1, 2, 5, 10, 30][Math.min(attempt, 4)]! * 1000;
+    this.retry = setTimeout(() => {
+      this.listen().catch((err) => {
+        this.log(`listen failed: ${(err as Error).message}`);
+        this.again(attempt + 1);
+      });
+    }, wait);
   }
 
   /** Stops listening. The connection is destroyed, not returned to the pool, so it cannot keep a stale LISTEN. */
   async close(): Promise<void> {
+    this.closed = true;
+    clearTimeout(this.retry);
     this.listener?.removeAllListeners('notification');
+    this.listener?.removeAllListeners('error');
+    this.listener?.removeAllListeners('end');
     this.listener?.release(true);
     this.listener = null;
   }

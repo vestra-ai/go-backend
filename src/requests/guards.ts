@@ -38,10 +38,12 @@ export function assertCurrency(trip: TripRow, currency: string | undefined, fiel
   if (currency !== undefined && currency !== trip.currency) throw invalid(`${field} must be ${trip.currency}, the trip's currency`);
 }
 
-export const requireSomething = (params: Record<string, unknown>, besides: string[]): void => {
-  if (!Object.keys(params).some((k) => !besides.includes(k) && params[k] !== undefined)) {
-    throw invalid(`send at least one field besides ${besides.join(', ')}`);
-  }
+/**
+ * At least one of the fields this request can change must be sent. Fields the contract does not know (yet)
+ * do not count: checking the params drops them, so a request with only those changes nothing.
+ */
+export const requireSomething = (params: Record<string, unknown>, fields: readonly string[]): void => {
+  if (!fields.some((k) => params[k] !== undefined)) throw invalid(`send at least one of ${fields.join(', ')}`);
 };
 
 export { conflict, invalid, notFound };

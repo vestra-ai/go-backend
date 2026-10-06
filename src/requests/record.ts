@@ -36,7 +36,7 @@ export const updateRecordLine = (ctx: Ctx) => async (p: any) =>
     await tripOf(db, p.trip_id);
     const current = (await db.query<RecordLineRow>('select * from record_lines where trip_id = $1 and line_id = $2 for update', [p.trip_id, p.line_id])).rows[0];
     if (!current) throw notFound(`line ${p.line_id} does not exist in trip ${p.trip_id}`);
-    requireSomething(p, ['request_id', 'trip_id', 'line_id']);
+    requireSomething(p, ['kind', 'text', 'status', 'proof', 'person_ids', 'due_at']);
     if (p.status && !['active', 'done'].includes(p.status)) throw invalid('status must be active or done: Go cannot undo a line');
     if (p.proof || p.person_ids) await checkProof(db, p.trip_id, p.proof ?? [], p.person_ids ?? []);
     if (current.source !== 'go') throw conflict(`line ${p.line_id} is not Go's to change`);
