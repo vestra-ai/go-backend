@@ -35,7 +35,7 @@ const spend = JSON.parse(readFileSync(new URL('../../contract/test-vectors/spend
 export const SPEND_PUBLIC_KEY: string = spend.public_key_pem;
 
 /** The server wired to a real Postgres and a mock Go over a real, signed WebSocket. */
-export async function startHarness(opts: { seed?: boolean } = {}) {
+export async function startHarness(opts: { seed?: boolean; origins?: string[] } = {}) {
   const { pool, close } = await freshDb();
   const live = new RecordingLive();
   const push = new RecordingPush();
@@ -52,7 +52,7 @@ export async function startHarness(opts: { seed?: boolean } = {}) {
   await go.untilConnected();
   if (opts.seed !== false) await seedTrip(pool);
   const sessionSecret = 'test-session-secret';
-  const app = buildApp({ ctx, go: socket, sessionSecret });
+  const app = buildApp({ ctx, go: socket, sessionSecret, origins: opts.origins });
   await app.ready();
   const sender = new OutboxSender({ pool, send: (e) => socket.request('send_event', e, { timeoutMs: 2500 }), ready: () => socket.connected });
   /** Sends every pending event to Go now, in order. */

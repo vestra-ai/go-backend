@@ -47,7 +47,7 @@ sender.start();
 const stopJobs = startJobs(ctx);
 
 // 4. The app's API.
-const app = buildApp({ ctx, go, sessionSecret: process.env.APP_SESSION_SECRET ?? randomBytes(32).toString('hex') });
+const app = buildApp({ ctx, go, sessionSecret: process.env.APP_SESSION_SECRET ?? randomBytes(32).toString('hex'), origins: config.appOrigins });
 await app.listen({ port: config.port, host: '0.0.0.0' });
 console.log(`server ${config.instance} listening on :${config.port}`);
 

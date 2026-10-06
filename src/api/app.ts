@@ -12,11 +12,14 @@ import { buildSnapshot } from '../domain/snapshot.js';
 import { SocketCallError } from '../go/go-socket.js';
 import type { LiveEvent } from '../live/live.js';
 import { signSession, verifySession } from './auth.js';
+import { corsHeaders } from './cors.js';
 
 export interface AppDeps {
   ctx: Ctx;
   go: GoClient & { connected?: boolean };
   sessionSecret: string;
+  /** The exact origins of the web app that may call this server from a browser. None by default. */
+  origins?: string[];
 }
 
 declare module 'fastify' {
@@ -28,8 +31,23 @@ declare module 'fastify' {
 const str = { type: 'string', minLength: 1, maxLength: 4000 } as const;
 
 /** The app's API. The app talks only to this, never to Go. The paths are ours to design. */
-export function buildApp({ ctx, go, sessionSecret }: AppDeps): FastifyInstance {
-  const app = Fastify({ logger: false });
+export function buildApp({ ctx, go, sessionSecret, origins = [] }: AppDeps): FastifyInstance {
+  const app = Fastify({
+    logger: false,
+    // Fastify answers a malformed address (bad percent-encoding) itself, before any hook runs: give that answer the
+    // same headers and error shape as every other response.
+    frameworkErrors: (err, req, reply) => {
+      for (const [name, value] of Object.entries(corsHeaders(origins, req.headers.origin))) reply.header(name, value);
+      return (reply as FastifyReply).code(err.statusCode ?? 400).send({ error: { code: 'invalid', message: err.message } });
+    },
+  });
+
+  // Cross-origin headers on every response, and the preflight answered here, before any sign-in.
+  app.addHook('onRequest', async (req, reply) => {
+    const preflight = req.method === 'OPTIONS' && !!req.headers['access-control-request-method'];
+    for (const [name, value] of Object.entries(corsHeaders(origins, req.headers.origin, preflight))) reply.header(name, value);
+    if (preflight) return reply.code(204).send();
+  });
 
   app.setErrorHandler((err: any, _req, reply) => {
     if (err instanceof Forbidden) return reply.code(403).send({ error: { code: 'forbidden', message: err.message } });
@@ -37,10 +55,15 @@ export function buildApp({ ctx, go, sessionSecret }: AppDeps): FastifyInstance {
       if (err.retryAfterSeconds) reply.header('retry-after', String(err.retryAfterSeconds));
       return reply.code(err.status).send({ error: { code: err.status === 429 ? 'rate_limited' : 'go_unavailable', message: err.message } });
     }
-    if (err instanceof SocketCallError && [404, 409, 422].includes(err.code)) {
+    if (err instanceof SocketCallError && [404, 409, 422, 429, 503].includes(err.code)) {
+      if (err.retryAfterSeconds) reply.header('retry-after', String(err.retryAfterSeconds));
       return reply.code(err.code).send({ error: { code: err.dataCode, message: err.message } });
     }
     if ((err as { validation?: unknown }).validation) return reply.code(400).send({ error: { code: 'invalid', message: err.message } });
+    // The framework's own refusals of a bad request (malformed or empty JSON, a body that is too large): their own 4xx.
+    if (typeof err.code === 'string' && err.code.startsWith('FST_ERR_') && err.statusCode >= 400 && err.statusCode < 500) {
+      return reply.code(err.statusCode).send({ error: { code: 'invalid', message: err.message } });
+    }
     console.error(err);
     return reply.code(500).send({ error: { code: 'internal', message: 'something went wrong' } });
   });
@@ -151,7 +174,7 @@ export function buildApp({ ctx, go, sessionSecret }: AppDeps): FastifyInstance {
       await requireMember(ctx.pool, tripId, req.personId);
       reply.hijack();
       const res = reply.raw;
-      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
+      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', ...corsHeaders(origins, req.headers.origin) });
       const send = (type: string, data: unknown) => res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
       send('hello', { trip_id: tripId });
       const unsubscribe = ctx.live.subscribe(async (id: string, e: LiveEvent) => {

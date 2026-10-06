@@ -5,6 +5,7 @@ export interface Config {
   goSpendPrivateKey: string;
   instance: string;
   port: number;
+  appOrigins: string[];
 }
 
 function need(name: string): string {
@@ -24,6 +25,7 @@ export function loadConfig(): Config {
     goSpendPrivateKey: pem(need('GO_SPEND_PRIVATE_KEY')),
     instance: process.env.INSTANCE_NAME ?? `server-${process.pid}`,
     port: Number(process.env.PORT ?? 8080),
+    appOrigins: (process.env.APP_ORIGINS ?? '').split(',').map((o) => o.trim().replace(/\/+$/, '')).filter((o) => o && o !== '*' && o !== 'null'),
   };
 }
 
