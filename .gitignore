@@ -3,3 +3,5 @@ dist
 .env
 *.pem
 .pgdata
+logs
+.DS_Store

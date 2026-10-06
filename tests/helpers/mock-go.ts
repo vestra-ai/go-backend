@@ -5,6 +5,31 @@ import { SIGNATURE_HEADER, verifyRequest } from '../../src/contract/index.js';
 
 type Frame = Record<string, any>;
 
+const NOW = () => new Date().toISOString();
+
+/** One of Go's own cards, as the fake Go sends them: each matches the contract's schema for its kind. */
+export function fakeCard(kind: 'options' | 'working' | 'call' | 'pay' | 'notice', cardId: string, payerId: string): Frame {
+  const base = { card_id: cardId, kind };
+  switch (kind) {
+    case 'options':
+      return { ...base, fallback_text: '3 flights to Goa on Friday', title: 'Flights to Goa', option_kind: 'flight', checked_at: NOW(),
+        options: [{ option_id: 'opt_fl_1', title: 'IndiGo 6E 2134', price_minor: 592000, currency: 'INR', highlights: ['Non-stop'] }],
+        actions: [{ action_id: 'pick', label: 'Pick', style: 'primary', per_option: true }] };
+    case 'working':
+      return { ...base, fallback_text: 'Go is comparing villas', task_id: `task_${cardId}`, title: 'Comparing villas', state: 'running',
+        steps: [{ text: 'Searching 30 villas', state: 'doing' }], updated_at: NOW(), actions: [{ action_id: 'stop', label: 'Stop', style: 'secondary' }] };
+    case 'call':
+      return { ...base, fallback_text: 'Go is calling Villa Sol', call_id: `call_${cardId}`, business: 'Villa Sol', goal: 'Ask about late check-in',
+        state: 'dialing', actions: [{ action_id: 'stop', label: 'Stop', style: 'secondary' }] };
+    case 'pay':
+      return { ...base, fallback_text: 'Approve ₹54,200 for Villa Sol', for_person_ids: [payerId], approval_id: `ap_fake_${cardId}`, payer_person_id: payerId,
+        amount_minor: 5420000, currency: 'INR', merchant: 'ixigo', purpose: 'Villa Sol, 3 nights', expires_at: new Date(Date.now() + 600_000).toISOString(),
+        state: 'waiting', actions: [{ action_id: 'approve', label: 'Approve', style: 'primary', only_for_person_ids: [payerId] }, { action_id: 'decline', label: 'Not now', style: 'secondary', only_for_person_ids: [payerId] }] };
+    case 'notice':
+      return { ...base, fallback_text: 'Heads up: fares are rising', tone: 'heads_up', title: 'Fares are rising', body: 'Friday fares went up 8% today.' };
+  }
+}
+
 /**
  * A stand-in for Go, for tests only: a real WebSocket server that checks the signature on the upgrade
  * (and refuses a signature it has seen before, as Go does), answers send_event, and lets a test send
@@ -29,6 +54,16 @@ export class MockGo {
   };
   /** How send_event is answered. Return an error body to refuse. */
   onEvent: (params: Frame) => Frame | Promise<Frame> = () => ({ result: { accepted: true, duplicate: false } });
+  /**
+   * Behave like Keshav's fake Go (guides: "Work without the other side"): when a message.created mentions Go,
+   * send `typing`, then `read_trip`, add a ✅ with `add_reaction`, and `post_message` a reply with one of Go's
+   * own cards, a different kind each time (options, working, call, pay, notice). Off unless a test turns it on.
+   */
+  fakeGo = false;
+  /** What the fake Go did, in order, for tests to check: one entry per reply. */
+  readonly replies: Array<{ trip_id: string; to_message_id: string; card_kind: string; reply: Frame }> = [];
+  private seenEvents = new Set<string>();
+  private cardTurn = 0;
   private http!: Server;
   private wss = new WebSocketServer({ noServer: true });
   private used = new Set<string>();
@@ -36,7 +71,7 @@ export class MockGo {
   private waiting = new Map<string, (f: Frame) => void>();
   private n = 0;
 
-  async listen(): Promise<string> {
+  async listen(port = 0): Promise<string> {
     this.http = createServer();
     this.http.on('upgrade', (req, socket, head) => {
       const header = String(req.headers[SIGNATURE_HEADER] ?? '');
@@ -51,7 +86,7 @@ export class MockGo {
       this.targets.push(req.url!);
       this.wss.handleUpgrade(req, socket, head, (ws) => this.accept(ws));
     });
-    await new Promise<void>((r) => this.http.listen(0, r));
+    await new Promise<void>((r) => this.http.listen(port, r));
     return `ws://localhost:${(this.http.address() as AddressInfo).port}`;
   }
 
@@ -65,7 +100,21 @@ export class MockGo {
         // a request from the server to Go
         if (f.method === 'send_event') this.events.push(f.params);
         else this.requests.push({ method: f.method, params: f.params });
-        const body = f.method === 'send_event' ? await this.onEvent(f.params) : (this.answers[f.method]?.(f.params) ?? { error: { code: -32601, message: `unknown method ${f.method}` } });
+        let body: Frame | null;
+        if (f.method === 'send_event' && this.fakeGo) {
+          // The fake Go answers duplicate: true for an event_id it has seen, and reacts to messages that name it.
+          const dup = this.seenEvents.has(f.params.event_id);
+          this.seenEvents.add(f.params.event_id);
+          body = { result: { accepted: true, duplicate: dup } };
+          const m = f.params.data?.message;
+          if (!dup && f.params.type === 'message.created' && m?.mentions_go && m.author?.kind === 'person') {
+            setTimeout(() => void this.answerMention(f.params.trip_id, m.message_id).catch((err) => console.error('[fake go]', err)), 0);
+          }
+        } else {
+          const answer = this.answers[f.method];
+          // A handler that returns null never answers (Go is silent); a method with no handler is unknown.
+          body = f.method === 'send_event' ? await this.onEvent(f.params) : answer ? answer(f.params) : { error: { code: -32601, message: `unknown method ${f.method}` } };
+        }
         if (body) ws.send(JSON.stringify({ jsonrpc: '2.0', id: f.id, ...body }));
       } else if (f.id !== undefined) {
         this.waiting.get(f.id)?.(f);
@@ -107,6 +156,27 @@ export class MockGo {
       }, 10);
       ws.send(text);
     });
+  }
+
+  /** The fake Go's answer to a message that names it. */
+  private async answerMention(tripId: string, messageId: string): Promise<void> {
+    this.notify('typing', { trip_id: tripId, on: true });
+    const snap = await this.call('read_trip', { trip_id: tripId });
+    if (snap.error) throw new Error(`read_trip: ${JSON.stringify(snap.error)}`);
+    const n = ++this.n;
+    await this.call('add_reaction', { request_id: `rq_fake_react_${n}`, trip_id: tripId, message_id: messageId, emoji: '✅' });
+    const kinds = ['options', 'working', 'call', 'pay', 'notice'] as const;
+    const kind = kinds[this.cardTurn++ % kinds.length]!;
+    const payer = snap.result.people[0].person_id as string;
+    const reply = await this.call('post_message', {
+      request_id: `rq_fake_reply_${n}`,
+      trip_id: tripId,
+      text: `On it! Here is a ${kind} card.`,
+      reply_to: messageId,
+      card: fakeCard(kind, `c_fake_${n}`, payer),
+    });
+    if (reply.error) throw new Error(`post_message: ${JSON.stringify(reply.error)}`);
+    this.replies.push({ trip_id: tripId, to_message_id: messageId, card_kind: kind, reply: reply.result });
   }
 
   notify(method: string, params: Frame): void {

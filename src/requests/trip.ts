@@ -9,7 +9,7 @@ const FIELDS = ['title', 'destination', 'dates', 'vibe', 'stay', 'itinerary'] as
 export const updateTrip = (ctx: Ctx) => async (p: any, raw: Record<string, unknown>) =>
   once(ctx.pool, p.trip_id, p.request_id, async (db, after) => {
     await tripOf(db, p.trip_id);
-    requireSomething(p, ['request_id', 'trip_id']);
+    requireSomething(p, FIELDS);
     if (p.dates && p.dates.start > p.dates.end) throw invalid('dates.start must be on or before dates.end');
     if (p.itinerary) {
       const ids = new Set<string>();

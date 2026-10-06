@@ -77,6 +77,24 @@ describe('request errors', () => {
   });
 });
 
+describe('the newer routes and unknown paths in the merged server', () => {
+  it('a strict route answers 422 for no body or empty JSON and 400 for unreadable JSON', async () => {
+    const send = (payload: string | undefined, headers: Record<string, string>) =>
+      h.app.inject({ method: 'POST', url: '/app/trips/t_goa/decisions', payload, headers: { authorization: `Bearer ${t.as('p_rahul').token}`, ...headers } });
+    expect((await send(undefined, {})).statusCode).toBe(422);
+    expect((await send('', { 'content-type': 'application/json' })).statusCode).toBe(422);
+    const bad = await send('{"question": ', { 'content-type': 'application/json' });
+    expect([bad.statusCode, JSON.parse(bad.body).error.code]).toEqual([400, 'invalid']);
+  });
+
+  it('an unknown path answers 404 in the standard shape and a listed origin still gets its headers, including on a preflight', async () => {
+    const missing = await t.api(null, 'GET', '/app/no-such-route', undefined, { origin: PWA });
+    expect([missing.status, missing.body.error.code, missing.headers['access-control-allow-origin']]).toEqual([404, 'not_found', PWA]);
+    const pre = await t.api(null, 'OPTIONS', '/app/no-such-route', undefined, { origin: PWA, 'access-control-request-method': 'POST' });
+    expect([pre.status, pre.headers['access-control-allow-origin']]).toEqual([204, PWA]);
+  });
+});
+
 describe('the strict body checker', () => {
   const check = bodyChecker<Record<string, any>>({
     type: 'object',

@@ -10,11 +10,16 @@ sees Go's address or secrets. Source of truth for the code: `src/api/app.ts`. De
 
 ## Try it in Postman
 
-Import `docs/go-server.postman_collection.json` (and optionally `docs/go-server.postman_environment.json`) into Postman.
-Set `baseUrl` (default `http://localhost:8080`). Then run **1. People, trips, joining > Create person**: it saves `token`
-and `personId`, and every other request uses the token automatically. **Create trip** saves `tripId` and `inviteCode`;
-**Post message** saves `messageId`; **Add expense** saves `expenseId`. Each request has a description, an example body
-and example responses (success and error cases). The collection covers all 36 endpoints plus `/health`. **Open a vote** and **Propose cancelling a booking** save `decisionId`; **Add booking** saves `bookingId`.
+Import `docs/go-server.postman_collection.json` and `docs/go-server.postman_environment.json` into Postman.
+
+- **Run in order:** start the local stack with `pnpm dev:stack` (a temporary Postgres, a fake Go and the real server
+  on `:8080`, plus an "act as Go" port on `:8090`). Then run the folder **Run in order** with the Collection Runner, or
+  `pnpm postman` from a terminal. It signs up two people, makes a trip, goes through every endpoint (and the errors the
+  app must handle), and checks every answer. Requests marked **[Go]** act as Go for what only Go can do (open a vote,
+  set a mandate, post a card, write a record line, ask for a spend approval).
+- **Reference folders:** one request per endpoint, with a description, an example body and example responses
+  (success and error cases). Run **Create person** (saves `token`), then **Create trip** (saves `tripId`); every other
+  request uses them automatically. The collection covers all 36 endpoints plus `/health`. **Open a vote** and **Propose cancelling a booking** save `decisionId`; **Add booking** saves `bookingId`.
 
 ## Basics
 
@@ -23,10 +28,13 @@ and example responses (success and error cases). The collection covers all 36 en
   (valid 90 days). *This is a simple stand-in and may be replaced by a real sign-in (e.g. Supabase Auth).*
 - **Ids** are opaque strings (don't parse them). **Money** is a whole number in paise (₹54,200 = `5420000`),
   never a decimal. **Times** are ISO 8601 (`2026-11-06T18:10:00Z`; on the strict routes a time must end in `Z` or an offset, otherwise `422`); dates are `YYYY-MM-DD`.
-- **Trip membership:** every `/app/trips/:id/...` call needs the person to be in that trip, otherwise `403`.
+- **Trip membership:** every `/app/trips/:id/...` call needs the person to be in that trip, otherwise `403`. A trip
+  id that does not exist is also `403` (so ids cannot be probed).
+- **Bodies are checked** against the limits on this page (the contract's own limits). A body that breaks them is `400`
+  before anything happens. A POST that needs no body can be sent with none.
 - **Change numbers (`seq`):** every change to a trip gets the trip's next number. Most write calls return the
   `seq` of the change they made.
-- **Strict bodies on the newer routes** (open a vote, add and update a booking, propose cancelling): a field that is not listed is refused, a value of the wrong type is refused (`"5"` is not `5`), `null` is accepted only where the route says it clears a field, and every refusal is `422`. Nothing is converted or dropped silently.
+- **Strict bodies on the newer routes** (open a vote, add and update a booking, propose cancelling): a field that is not listed is refused, a value of the wrong type is refused (`"5"` is not `5`), `null` is accepted only where the route says it clears a field, and every refusal is `422` (except JSON that cannot be read at all, which is `400`). Nothing is converted or dropped silently.
 - **One `client_id` per press** on the three *create* calls (open a vote, add a booking, propose cancelling): make a new one (e.g. a UUID) for each press, and send the same one when you retry. A repeat returns the first answer and creates nothing more.
 - **`{ "seq": null }`** means "nothing changed" (an update that sets what is already there).
 
@@ -45,17 +53,17 @@ Every error looks like this:
 
 | HTTP | `code` | When |
 |---|---|---|
-| 400 | `invalid` | Body failed basic validation (`POST /app/people`, `POST /app/trips`); also, on **every** route, a request that cannot be read: malformed JSON, an empty body sent as JSON, a broken web address (e.g. a stray `%`) are `400`, and an oversized body `413`, all with code `invalid` |
+| 400 | `invalid` | The body or query breaks the limits on this page: a field missing (such as `client_id`), too long, the wrong type, or unreadable JSON; also, on every route, a broken web address (e.g. a stray `%`). An oversized body is `413` (code `invalid`) |
 | 401 | `unauthorized` | Missing, forged or expired token |
-| 403 | `forbidden` | Not in this trip, not the author of the message, not the payer |
-| 404 | `not_found` | Trip, message, vote, line, card... not found |
-| 409 | `conflict` | Clashes with current state (vote already closed, message deleted...) |
-| 422 | `invalid` | Rule broken (not an option of the vote, amount ≤ 0, someone not in the trip, an unknown field or wrong type on a strict body, a time that cannot be stored...) |
+| 403 | `forbidden` | Not in this trip (or no such trip), not the author of the message, not the payer |
+| 404 | `not_found` | Invite link, message, vote, line, expense, card, fact... not found, or no such route |
+| 409 | `conflict` | Clashes with current state (vote already closed or cancelled, message deleted, no mandate yet...) |
+| 422 | `invalid` | A rule about the trip is broken (not an option of the vote, someone not in the trip, unknown category, a bad attachment, a record card's button...); on the newer routes (open a vote, bookings, propose cancelling) **every** bad body is `422`, except JSON that cannot be read at all (`400`): an unknown field, a wrong type, a missing field, a time that cannot be stored |
 | 429 | `rate_limited` | Go is busy. Wait the `Retry-After` header (seconds). Only on calls that ask Go |
 | 502/503/504 | `go_unavailable` | Go did not answer in time or could not do it. Show "try again" and let the person retry. **Do not auto-retry** |
-| 500 | `internal` | Server bug |
+| 500 | `internal` | Server bug (please report it) |
 
-A path that does not exist (for example the removed `POST /app/devices`) answers a plain `404` in the web framework's own shape (`{ "message", "error", "statusCode" }`), not the one above.
+A path that does not exist (for example the removed `POST /app/devices`) answers `404 not_found` in this same shape.
 
 ---
 
@@ -105,7 +113,7 @@ The "needs you" strip for this person. → array of items, each with `kind` and 
 | `kind` | extra fields | Tap opens |
 |---|---|---|
 | `vote` | `decision_id` | the vote card (open vote you haven't voted in) |
-| `mandate` | `decision_id` | the mandate card (you are the payer and haven't answered) |
+| `mandate` | `decision_id`, `question` | the mandate card (you are the payer and haven't answered). `text` is what to confirm, e.g. "Yes, book it? Villa Sol, up to ₹55,000"; `question` is the vote it came from |
 | `card` | `card_id`, `message_id` | a Go card that names you |
 | `record` | `line_id` | an open trip-record line that asks you |
 
@@ -139,10 +147,10 @@ Edit your own message. Body: `{ "text" }`. → `{ "seq" }` · `403` not yours ·
 Delete your own message. → `{ "seq" }`
 
 ### `POST /app/trips/:id/messages/:mid/reactions`
-Body: `{ "emoji" }` (1-16 chars). → `{ "seq" }` (or `{ "seq": null }` if you already had that reaction).
+Body: `{ "emoji" }` (1-16 characters). → `{ "seq" }` (or `{ "seq": null }` if you already had that reaction) · `404` no such message · `409` deleted.
 
 ### `DELETE /app/trips/:id/messages/:mid/reactions/:emoji`
-Takes your reaction back. `:emoji` must be URL-encoded. → `{ "seq" }` (or `null` if you had none).
+Takes your reaction back. `:emoji` must be URL-encoded. → `{ "seq" }` (or `null` if you had none) · `404` no such message · `409` deleted.
 
 ### `POST /app/trips/:id/typing`
 Body: `{ "on": true|false }`. Shows "<you> is typing..." to the room (runs out after 5 s). Not sent to Go. → `{ "ok": true }`
@@ -157,16 +165,18 @@ These buttons belong to the **Server** (record cards). They never go to Go.
 |---|---|---|---|
 | `POST /app/trips/:id/decisions/:did/vote` | `{ "option_index": 0 }` | `{ seq }` | You can change your vote until it closes. `422` bad index, `409` not open. The vote closes by itself when everyone has voted. |
 | `POST .../decisions/:did/close` | none | `{ decision, seq }` | Anyone can close early. `409` already closed. |
-| `POST .../decisions/:did/cancel` | none | `{ seq }` | Calls the vote off. |
-| `POST .../decisions/:did/mandate/confirm` | none | `{ seq }` | **"Yes, book it".** Payer only (`403` otherwise). |
-| `POST .../decisions/:did/mandate/decline` | none | `{ seq }` | **"Not now".** Payer only. |
-| `POST /app/trips/:id/record/:lid/undo` | none | `{ seq }` (or `null` if already undone) | Undo a trip-record line. Go never undoes one. |
+| `POST .../decisions/:did/cancel` | none | `{ seq }` | Calls the vote off. `409` already closed or cancelled. |
+| `POST .../decisions/:did/mandate/confirm` | none | `{ seq }` | **"Yes, book it".** Payer only (`403` otherwise). `409` no mandate yet. |
+| `POST .../decisions/:did/mandate/decline` | none | `{ seq }` | **"Not now".** Payer only. `409` no mandate yet. |
+| `POST /app/trips/:id/record/:lid/undo` | none | `{ seq }` (or `null` if already undone) | Undo a trip-record line. Go never undoes one. `404` no such line. |
 | `POST /app/trips/:id/expenses` | see below | `{ expense_id, seq }` | Add an expense. |
-| `DELETE /app/trips/:id/expenses/:eid` | none | `{ seq }` | Remove an expense (to "fix split": remove, then add again). |
+| `DELETE /app/trips/:id/expenses/:eid` | none | `{ seq }` | Remove an expense (to "fix split": remove, then add again). `404` no such expense (or already removed). |
 
-`POST .../expenses` body: `paid_by_person_id`, `amount_minor` (> 0, paise), `note` (≤120), `category`
-(`stay` | `food` | `getting_around` | `activities` | `other`), `split_person_ids` (shared equally), `booking_id?`.
-The currency is the trip's. The people who now owe money are due a push (see section 7: not delivered yet).
+`POST .../expenses` body: `paid_by_person_id`, `amount_minor` (whole number > 0, paise), `note` (1-120), `category`
+(`stay` | `food` | `getting_around` | `activities` | `other`, else `422`), `split_person_ids` (1-30, shared equally),
+`booking_id?` (a booking in this trip, else `422`). The currency is the trip's.
+The people in the split who **owe money overall** afterwards get a push, worked out from the trip's `money.transfers`
+(for example "You owe Kabir ₹1,133.34 for Airport cab"). Someone who is still owed money overall gets none.
 
 ### Open a vote
 
@@ -202,14 +212,14 @@ The vote/mandate/record/expense **cards** in the room are drawn from the trip da
 
 ### `POST /app/trips/:id/card-taps`
 A tap on a button of a **Go card** (`options`, `working`, `call`, `pay`, `notice`). Not for record cards (`422`).
-Body: `card_id`, `action_id`, `option_id?` (when the button was on one option), `tap_id?` (your own id for this press, e.g. a UUID: a double tap with the same id counts once; if omitted, the server makes one).
+Body: `card_id`, `action_id` (lowercase letters and `_`, as on the button), `option_id?` (when the button was on one option), `tap_id?` (your own id for this press, e.g. a UUID: a double tap with the same id counts once; if omitted, the server makes one). The server ties the tap id to the signed-in person, so nobody can replay someone else's press.
 Disable the button while the tap is on its way. **Do not retry a tap yourself.** A new press = a new `tap_id`.
 `200` → one of:
 - `{ "result": "done", "toast?" }` show the toast.
 - `{ "result": "open", "url", "expires_at" }` open the URL in the **system browser sheet** (Flutter `url_launcher`, `LaunchMode.inAppBrowserView`). **Never a WebView** (passkeys/Face ID would not work). The link expires in 5 minutes: open it straight away, never store it.
 - `{ "result": "refused", "toast?" }` show the toast.
 
-Errors: `404` card not found, `422` not a Go card, `504/503/502` Go problem, `429` Go busy (`Retry-After`).
+Errors: `400` bad body, `404` (`not_found`) card not found, `422` not a Go card, `504/503/502` Go problem, `429` Go busy (`Retry-After`). For any of these, show a short toast such as "Go didn't answer. Try again." and enable the button again.
 
 ### `POST /app/trips/:id/catch-up`
 For a person returning to the room. Body: `{ "force?": true }`.
@@ -225,7 +235,7 @@ It is needed when the person was away 3 hours or more, or has 15+ unread. If thi
 |---|---|---|
 | `GET /app/me/go-knows` | none | `{ person_id, carry_over, facts: [{ fact_id, topic, text, trip_id, message_id?, said_at }] }` (what Go knows about you, and where each fact came from). A fact with `message_id` opens that message; one without came from the join answers. |
 | `PUT /app/me/carry-over` | `{ "carry_over": true|false }` | `{ ok: true }`. Remember me in future trips (off by default). |
-| `DELETE /app/me/facts/:fact` | none | `{ ok: true }`. Delete one fact. |
+| `DELETE /app/me/facts/:fact` | none | `{ ok: true }`. Delete one fact. `404` (`not_found`) if Go has no such fact. |
 | `POST /app/me/forget` | `{ "trip_id?" }` | `{ deleted_facts, remaining_facts: 0 }`. With `trip_id`: forget in that trip; without: everywhere. Show how many were forgotten. |
 | `POST /app/me/vault-link` | `{ "start?": "home" \| "add_card" \| "add_login" }` | `{ url, expires_at }`. Open in the system browser sheet, only when the person taps. |
 
@@ -262,4 +272,7 @@ The server sends a push only when someone needs to look now: **Go names you**, *
 - No **settle-up** endpoints (the "Pay by UPI" button needs the payee's UPI id from the server; "Nudge").
 - No **attachment upload**: only URLs are accepted.
 - Sign-in is a stand-in, and push delivery only writes to a log until real delivery is connected (see section 7).
-- The older routes do light input checks only. Send values within the limits above. (The newer routes are strict; see Basics.)
+- **A card Go updated while the phone was offline** (for example a pay card that became "paid") is sent on the live
+  connection, but `GET .../messages?after_seq=` does not return it again, because the contract gives a card update no
+  change number. Until we agree a fix, re-read the messages from `after_seq=0` after a long time offline.
+- The full review against the docs, with every known gap and open question, is in [`docs/REVIEW.md`](REVIEW.md).

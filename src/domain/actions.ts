@@ -3,6 +3,7 @@
 import { randomBytes } from 'node:crypto';
 import type pg from 'pg';
 import type { Ctx } from '../context.js';
+import { check } from '../contract/index.js';
 import { newId } from '../db/ids.js';
 import { once } from '../db/once.js';
 import { withTx } from '../db/pool.js';
@@ -129,7 +130,7 @@ export async function joinTrip(ctx: Ctx, code: string, personId: string, answers
 export async function leaveTrip(ctx: Ctx, tripId: string, personId: string) {
   return withTx(ctx.pool, async (db, after) => {
     await requireMember(db, tripId, personId);
-    await db.query('update trip_people set left_at = now() where trip_id = $1 and person_id = $2', [tripId, personId]);
+    const left = (await db.query('update trip_people set left_at = now() where trip_id = $1 and person_id = $2 returning budget_min_minor', [tripId, personId])).rows[0];
     // Someone who left can no longer vote, so an open vote no longer waits for them.
     await db.query(
       `update decisions set of_count = greatest(1, of_count - 1)
@@ -144,8 +145,11 @@ export async function leaveTrip(ctx: Ctx, tripId: string, personId: string) {
         order by booking_id for update`,
       [tripId],
     );
-    const seq = await change(db, tripId, 'person.left', { person_id: personId });
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
+    let seq = await change(db, tripId, 'person.left', { person_id: personId });
+    // Their budget answer no longer counts, so the band (and how many answered) moved: say so, naming nobody.
+    if (left.budget_min_minor !== null) seq = await change(db, tripId, 'trip.updated', { by: { kind: 'system' }, changed: ['budget'] });
+    const lastSeq = seq;
+    after(() => ctx.live.publish(tripId, { kind: 'trip', seq: lastSeq }));
     // A vote that was only waiting for the person who left has now been voted on by everyone.
     const ready = await db.query(
       `select d.decision_id from decisions d where d.trip_id = $1 and d.status = 'open'
@@ -189,6 +193,10 @@ export async function postPersonMessage(ctx: Ctx, tripId: string, personId: stri
   return once(ctx.pool, tripId, `app:msg:${personId}:${input.client_id}`, async (db, after) => {
     const member = await requireMember(db, tripId, personId);
     if (!input.text && !(input.attachments?.length)) throw invalid('text or an attachment is required');
+    for (const [i, a] of (input.attachments ?? []).entries()) {
+      const ok = check('Attachment', a);
+      if (!ok.ok) throw invalid(`attachments.${i}: ${ok.message}`);
+    }
     const mentions = [...new Set(input.mentions ?? [])];
     if (mentions.length) {
       const found = await db.query('select person_id from trip_people where trip_id = $1 and left_at is null and person_id = any($2)', [tripId, mentions]);
@@ -368,9 +376,14 @@ export async function addPersonExpense(ctx: Ctx, tripId: string, personId: strin
     await requireMember(db, tripId, personId);
     const trip = (await db.query('select currency from trips where trip_id = $1', [tripId])).rows[0];
     if (input.amount_minor <= 0) throw invalid('amount_minor must be more than zero');
+    if (!check('Category', input.category).ok) throw invalid('category must be stay, food, getting_around, activities or other');
     const ids = [...new Set([input.paid_by_person_id, ...input.split_person_ids])];
     const found = await db.query('select person_id from trip_people where trip_id = $1 and left_at is null and person_id = any($2)', [tripId, ids]);
     if (found.rowCount !== ids.length) throw invalid('paid_by_person_id/split_person_ids: someone is not in the trip');
+    if (input.booking_id) {
+      const b = await db.query('select 1 from bookings where trip_id = $1 and booking_id = $2', [tripId, input.booking_id]);
+      if (!b.rowCount) throw invalid(`booking_id: ${input.booking_id} is not a booking in this trip`);
+    }
     const expense = (await db.query<ExpenseRow>(
       `insert into expenses (expense_id, trip_id, paid_by_person_id, amount_minor, currency, note, category, split_person_ids, booking_id, added_by_person_id)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *`,
@@ -394,16 +407,25 @@ export async function removePersonExpense(ctx: Ctx, tripId: string, personId: st
   });
 }
 
-/** Pushes a person who now owes money for an expense: who and how much, such as "You owe Kabir ₹680 for the airport cab". */
+/** An amount for people to read, in the trip's currency: ₹1,133.34, or ₹680 when there are no paise. */
+export function formatMoney(amountMinor: number, currency: string): string {
+  const whole = amountMinor % 100 === 0;
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency, minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: whole ? 0 : 2 }).format(amountMinor / 100);
+}
+
+/**
+ * After an expense is added, pushes the people in its split who now owe money, from the trip's
+ * `money.transfers` (guides: "Pushes"): who and how much, such as "You owe Kabir ₹680 for the airport cab".
+ * Someone whose balance is settled or in credit after the whole trip's expenses gets no push.
+ */
 export async function pushOwed(ctx: Ctx, tripId: string, expense: ExpenseRow): Promise<void> {
-  const people = await activePeople(ctx.pool, tripId);
-  const names = new Map(people.map((p) => [p.person_id, p.name]));
-  const share = Math.floor(expense.amount_minor / Math.max(1, expense.split_person_ids.length));
-  const payerName = names.get(expense.paid_by_person_id) ?? 'someone';
-  const owing = expense.split_person_ids.filter((id) => id !== expense.paid_by_person_id && names.has(id));
-  for (const id of owing) {
-    await ctx.push.send([id], {
-      body: `You owe ${payerName} ₹${(share / 100).toLocaleString('en-IN')} for ${expense.note}`,
+  const snap = await buildSnapshot(ctx.pool, tripId, ctx.publicBaseUrl);
+  const names = new Map(snap.people.map((p) => [p.person_id, p.name]));
+  const inSplit = new Set(expense.split_person_ids.filter((id) => id !== expense.paid_by_person_id));
+  for (const t of snap.money.transfers) {
+    if (!inSplit.has(t.from_person_id)) continue;
+    await ctx.push.send([t.from_person_id], {
+      body: `You owe ${names.get(t.to_person_id) ?? 'someone'} ${formatMoney(t.amount_minor, t.currency)} for ${expense.note}`,
       data: { trip_id: tripId },
     });
   }
@@ -424,7 +446,7 @@ export async function needsYou(ctx: Ctx, tripId: string, personId: string) {
     [tripId, personId],
   );
   const mandates = await ctx.pool.query(
-    `select decision_id, question from decisions
+    `select decision_id, question, options, mandate from decisions
       where trip_id = $1 and status = 'closed' and mandate->>'payer_person_id' = $2
         and mandate->>'confirmed_at' is null and mandate->>'declined_at' is null`,
     [tripId, personId],
@@ -440,7 +462,13 @@ export async function needsYou(ctx: Ctx, tripId: string, personId: string) {
   );
   return [
     ...votes.rows.map((r) => ({ kind: 'vote', decision_id: r.decision_id, text: r.question })),
-    ...mandates.rows.map((r) => ({ kind: 'mandate', decision_id: r.decision_id, text: r.question })),
+    // What the payer is asked to confirm, such as "Yes, book it? Villa Sol, up to ₹55,000", and the vote it came from.
+    ...mandates.rows.map((r) => ({
+      kind: 'mandate',
+      decision_id: r.decision_id,
+      text: `Yes, book it? ${r.options[r.mandate.choice_index]?.label ?? r.question}, up to ${formatMoney(r.mandate.cap_minor, r.mandate.currency)}`,
+      question: r.question,
+    })),
     ...cards.rows.map((r) => ({ kind: 'card', card_id: r.card_id, message_id: r.message_id, text: r.text })),
     ...lines.rows.map((r) => ({ kind: 'record', line_id: r.line_id, text: r.text })),
   ];

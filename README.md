@@ -55,7 +55,7 @@ If a rule is unclear, the rulebook wins. Do not guess.
 | `migrations/` | The database tables (SQL) |
 | `contract/` | Copies of the public rulebook files and test vectors from vestrago.vercel.app |
 | `tests/` | Automated tests (see below) |
-| `scripts/` | Small helpers (run migrations, test setup) |
+| `scripts/` | Small helpers: run migrations, test setup, and `dev-stack.ts` (the whole stack locally, with a fake Go) |
 | `.env.example` | The settings the server needs |
 
 ---
@@ -72,7 +72,31 @@ pnpm start                # creates the tables, connects to Go, starts the app A
 ```
 
 Settings (see `.env.example`): `DATABASE_URL`, `GO_URL`, `GO_SIGNING_SECRET`, `GO_SPEND_PRIVATE_KEY`,
-`INSTANCE_NAME` (unique per server copy), `PORT`, `PUBLIC_BASE_URL`, `APP_SESSION_SECRET`.
+`INSTANCE_NAME` (unique per server copy; defaults to `<hostname>-<pid>`), `PORT`, `PUBLIC_BASE_URL`,
+`APP_SESSION_SECRET`, `DB_POOL_MAX` (Postgres connections per server copy, default 30; the outbox uses at most a third).
+
+## Try it locally, with nothing to set up
+
+```bash
+pnpm dev:stack    # a temporary Postgres + a fake Go + the real server on :8080 (Ctrl-C stops all of it)
+pnpm postman      # in another terminal: runs the Postman collection's "Run in order" folder against it
+```
+
+The fake Go behaves as the docs' "Work without the other side" describes: when a message names Go (`@Go ...`) it
+shows "Go is typing...", reads the trip, adds a ✅ and replies with one of its cards. Port `:8090` lets you (or
+Postman) act as Go for the rest: `POST http://localhost:8090/sim/<method>` with Go's params, for example
+`/sim/open_vote`. `GET /sim/state` shows what the fake Go has received.
+
+## Run it against the real Go
+
+```bash
+pnpm dev:real     # reads .env, keeps a local Postgres in .pgdata/, connects to the real Go (Ctrl-C stops)
+pnpm inspect      # what happened on the socket: outbox per trip, refused events, our errors, latencies
+```
+
+`.env` needs `GO_URL`, `GO_SIGNING_SECRET`, `GO_SPEND_PRIVATE_KEY` and a unique `INSTANCE_NAME`. With
+`LOG_GO_TRAFFIC=1`, every socket frame is written to `logs/go-traffic.jsonl` (no secrets). Results so far are in
+[`docs/REAL-GO-TESTING.md`](docs/REAL-GO-TESTING.md).
 
 ## Test it
 
@@ -83,7 +107,11 @@ pnpm typecheck
 
 The tests check our signing against the official test vectors, check every message we send against the rulebook's
 own schemas, and run the real connection against a **mock Go** (`tests/helpers/mock-go.ts`). The mock is only a test
-tool, it is not the real Go.
+tool, it is not the real Go. `tests/flows.e2e.test.ts` walks through each flow page of the docs end to end, and
+`tests/fake-go.e2e.test.ts` runs the real server process against the fake Go, watched from the app's side.
+
+The full review of this server against every page of the docs (what is covered, what was fixed, what is still open)
+is in [`docs/REVIEW.md`](docs/REVIEW.md).
 
 ---
 
@@ -102,4 +130,5 @@ tool, it is not the real Go.
 - **Sign-in:** `src/api/auth.ts` uses simple signed tokens. The rulebook leaves sign-in to us (could be Supabase Auth).
 - **The contract package:** the official `@go/contract` lives in a private repo we could not reach, so `src/contract/`
   is built from the public files. Same function names, so it can be swapped later.
-- **Real Go:** never tested against the real or Keshav's fake Go yet, only the mock.
+- **Real Go:** never tested against the real or Keshav's fake Go yet, only our mock and our own fake Go (built to the
+  docs' description of Keshav's fake).

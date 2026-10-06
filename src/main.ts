@@ -1,8 +1,9 @@
 import { randomBytes } from 'node:crypto';
+import { createWriteStream, mkdirSync } from 'node:fs';
 import { buildApp } from './api/app.js';
 import { loadConfig, socketUrl } from './config.js';
 import { createPool } from './db/pool.js';
-import { GoSocket } from './go/go-socket.js';
+import { GoSocket, type TrafficEntry } from './go/go-socket.js';
 import { goRequestHandlers } from './requests/index.js';
 import { startJobs } from './jobs/votes.js';
 import { PgLive } from './live/live.js';
@@ -12,7 +13,7 @@ import type { Ctx } from './context.js';
 import { migrate } from '../scripts/migrate.js';
 
 const config = loadConfig();
-const pool = createPool(config.databaseUrl);
+const pool = createPool(config.databaseUrl, config.dbPoolMax);
 await migrate(pool);
 
 const live = new PgLive(pool);
@@ -26,21 +27,30 @@ const ctx: Ctx = {
 };
 
 // 1. The socket to Go, with a fresh signature on every connect. Any instance can answer any of Go's requests.
+// LOG_GO_TRAFFIC=1: one JSON line per frame on the socket in logs/go-traffic.jsonl, for testing against a real Go.
+let traffic: ((e: TrafficEntry) => void) | undefined;
+if (process.env.LOG_GO_TRAFFIC === '1') {
+  mkdirSync('logs', { recursive: true });
+  const out = createWriteStream('logs/go-traffic.jsonl', { flags: 'a' });
+  traffic = (e) => out.write(`${JSON.stringify({ at: new Date().toISOString(), instance: config.instance, ...e })}\n`);
+}
 const go = new GoSocket({
   url: socketUrl(config.goUrl, config.instance),
   secret: config.goSigningSecret,
   handlers: goRequestHandlers(ctx),
   log: (m) => console.log(`[go] ${m}`),
+  traffic,
 });
 go.start();
 
 // 2. The outbox: every trip change goes to Go with send_event, one at a time per trip, in change-number order.
+// Each trip being sent holds a connection while it waits for Go, so it gets at most a third of the pool.
 const sender = new OutboxSender({
   pool,
   send: (event) => go.request('send_event', event, { timeoutMs: 2500 }),
   ready: () => go.connected,
   log: (m, e) => console.error(`[outbox] ${m}`, e ?? ''),
-});
+}, { maxTrips: Math.max(1, Math.floor(config.dbPoolMax / 3)) });
 sender.start();
 
 // 3. Votes that run out of time, and the "closing soon" pushes.
