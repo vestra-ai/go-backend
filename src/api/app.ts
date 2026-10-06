@@ -142,11 +142,6 @@ export function buildApp({ ctx, go, sessionSecret }: AppDeps): FastifyInstance {
   app.delete('/app/me/facts/:fact', auth, async (req: any) => deleteFact(go, req.personId, req.params.fact));
   app.post('/app/me/forget', auth, async (req) => forgetPerson(ctx, go, req.personId, (req.body as any)?.trip_id));
   app.post('/app/me/vault-link', auth, async (req) => vaultLink(go, req.personId, (req.body as any)?.start));
-  app.post('/app/devices', auth, async (req, reply) => {
-    const { token, platform } = req.body as { token: string; platform: string };
-    await ctx.pool.query('insert into push_devices (token, person_id, platform) values ($1,$2,$3) on conflict (token) do update set person_id = excluded.person_id, platform = excluded.platform', [token, req.personId, platform]);
-    return reply.code(204).send();
-  });
 
   // ---- the live connection (server-sent events): messages, reactions, typing, "the trip changed"
   app.get('/app/trips/:id/live', {

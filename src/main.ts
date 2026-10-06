@@ -20,7 +20,7 @@ await live.listen();
 const ctx: Ctx = {
   pool,
   live,
-  push: new LogPush(pool),
+  push: new LogPush(),
   publicBaseUrl: process.env.PUBLIC_BASE_URL ?? 'https://go.example',
   spendPrivateKey: config.goSpendPrivateKey,
 };
