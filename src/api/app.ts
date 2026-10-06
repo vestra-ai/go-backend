@@ -16,7 +16,10 @@ import { buildSnapshot } from '../domain/snapshot.js';
 import { SocketCallError } from '../go/go-socket.js';
 import type { LiveEvent } from '../live/live.js';
 import { signSession, verifySession } from './auth.js';
-import { checkAddBooking, checkCancelVote, checkOpenVote, checkPatchMe, checkNudge, checkPatchTrip, checkPatchTripMe, checkPutBudget, checkUpdateBooking } from './bodies.js';
+import { isAllowedPushEndpoint, isValidSubscriptionKeys } from '../push/web-push.js';
+import { removeSubscription, saveSubscription } from '../push/subscriptions.js';
+import { unavailable } from '../domain/errors.js';
+import { checkAddBooking, checkCancelVote, checkOpenVote, checkPatchMe, checkNudge, checkPatchTrip, checkPatchTripMe, checkPutBudget, checkPutSubscription, checkUnsubscribe, checkUpdateBooking } from './bodies.js';
 import { corsHeaders } from './cors.js';
 
 export interface AppDeps {
@@ -25,6 +28,8 @@ export interface AppDeps {
   sessionSecret: string;
   /** The exact origins of the web app that may call this server from a browser. None by default. */
   origins?: string[];
+  /** The server's VAPID public key, given to browsers so they can subscribe. Without it the key route answers 503. */
+  pushPublicKey?: string;
 }
 
 declare module 'fastify' {
@@ -41,7 +46,7 @@ const minor = { type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER } 
 const body = (properties: Record<string, object>, required: string[] = []) => ({ schema: { body: { type: 'object', required, properties } } });
 
 /** The app's API. The app talks only to this, never to Go. The paths are ours to design. */
-export function buildApp({ ctx, go, sessionSecret, origins = [] }: AppDeps): FastifyInstance {
+export function buildApp({ ctx, go, sessionSecret, origins = [], pushPublicKey }: AppDeps): FastifyInstance {
   const app = Fastify({
     logger: false,
     // Fastify answers a malformed address (bad percent-encoding) itself, before any hook runs: give that answer the
@@ -260,6 +265,29 @@ export function buildApp({ ctx, go, sessionSecret, origins = [] }: AppDeps): Fas
     ...inTrip((req, trip, me) => cardTap(ctx, go, trip, me, req.body)),
   });
   app.post('/app/trips/:id/catch-up', { ...body({ force: bool }), ...inTrip((req, trip, me) => catchUp(ctx, go, trip, me, !!req.body.force)) });
+
+  // ---- push notifications (Web Push): the key the browser subscribes with, and the browser's address
+  app.get('/app/push/key', async () => {
+    if (!pushPublicKey) throw unavailable('push notifications are not set up on this server');
+    return { public_key: pushPublicKey };
+  });
+  app.put('/app/push/subscription', {
+    preHandler: needAuth,
+    handler: async (req: any, reply) => {
+      const sub = checkPutSubscription(req.body);
+      if (!isAllowedPushEndpoint(sub.endpoint)) throw invalid('endpoint must be an https address on a known push service');
+      if (!isValidSubscriptionKeys(sub.keys)) throw invalid('keys must be the browser\'s p256dh (65 bytes) and auth (16 bytes) values, base64url');
+      await saveSubscription(ctx.pool, req.personId, sub);
+      return reply.code(204).send();
+    },
+  });
+  app.post('/app/push/unsubscribe', {
+    preHandler: needAuth,
+    handler: async (req: any, reply) => {
+      await removeSubscription(ctx.pool, req.personId, checkUnsubscribe(req.body).endpoint);
+      return reply.code(204).send();
+    },
+  });
 
   // ---- the You screen
   app.get('/app/me', auth, async (req, reply) => (reply.header('cache-control', 'no-store'), getMyProfile(ctx, req.personId))); // it holds the UPI id

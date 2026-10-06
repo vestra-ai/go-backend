@@ -11,6 +11,8 @@ export interface Notification {
  */
 export interface Push {
   send(personIds: string[], notification: Notification): Promise<void>;
+  /** Waits (for a bounded time) for notifications still being delivered: called once when the server shuts down. */
+  drain?(): Promise<void>;
 }
 
 /** Until real delivery exists: writes the push to the log. */

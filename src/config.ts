@@ -8,6 +8,10 @@ export interface Config {
   instance: string;
   port: number;
   appOrigins: string[];
+  /** Web Push keys (VAPID). All three are needed; without them notifications are only written to the log. */
+  vapidPublicKey?: string;
+  vapidPrivateKey?: string;
+  vapidSubject?: string;
   /** Postgres connections per instance. The outbox uses at most a third of them, so Go's requests always find one. */
   dbPoolMax: number;
 }
@@ -30,6 +34,9 @@ export function loadConfig(): Config {
     // The host name too: in containers every process can be pid 1, and each instance needs its own name.
     instance: process.env.INSTANCE_NAME ?? `${hostname()}-${process.pid}`,
     port: Number(process.env.PORT ?? 8080),
+    vapidPublicKey: process.env.VAPID_PUBLIC_KEY || undefined,
+    vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || undefined,
+    vapidSubject: process.env.VAPID_SUBJECT || undefined,
     appOrigins: (process.env.APP_ORIGINS ?? '').split(',').map((o) => o.trim().replace(/\/+$/, '')).filter((o) => o && o !== '*' && o !== 'null'),
     dbPoolMax: Math.max(4, Number(process.env.DB_POOL_MAX ?? 30)),
   };

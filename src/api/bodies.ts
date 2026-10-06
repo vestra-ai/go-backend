@@ -175,8 +175,33 @@ const nudge = {
   properties: { person_id: id },
 } as const;
 
+// A browser's push address and its two keys. The address must be an https address on a known push service (checked in the route);
+// 2048 characters is a technical bound (the address is an index key and a database index entry cannot be much larger; real addresses
+// are a few hundred). The keys are 256 characters at most (owner decision 6): real ones are far shorter.
+const putSubscription = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['endpoint', 'keys'],
+  properties: {
+    endpoint: { type: 'string', format: 'uri', maxLength: 2048 },
+    keys: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['p256dh', 'auth'],
+      properties: { p256dh: { type: 'string', minLength: 1, maxLength: 256 }, auth: { type: 'string', minLength: 1, maxLength: 256 } },
+    },
+  },
+} as const;
+
+const unsubscribe = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['endpoint'],
+  properties: { endpoint: { type: 'string', format: 'uri', maxLength: 2048 } },
+} as const;
+
 /** Every route's body definition, by name. */
-export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, patchTripMe, putBudget, patchTrip, nudge } as const;
+export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, patchTripMe, putBudget, patchTrip, nudge, putSubscription, unsubscribe } as const;
 
 /** Nodes the walk in tests/bodies.test.ts does not enter: they are checked against the contract's own definitions elsewhere. */
 export const PASSTHROUGH: readonly string[] = ['patchTrip.itinerary[]'];
@@ -246,6 +271,11 @@ export interface NudgeBody {
   person_id: string;
 }
 
+export interface SubscriptionBody {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}
+
 export interface CancelVoteBody {
   client_id: string;
 }
@@ -259,3 +289,5 @@ export const checkPatchTripMe = bodyChecker<PatchTripMeBody>(bodies.patchTripMe)
 export const checkPutBudget = bodyChecker<PutBudgetBody>(bodies.putBudget);
 export const checkPatchTrip = bodyChecker<PatchTripBody>(bodies.patchTrip);
 export const checkNudge = bodyChecker<NudgeBody>(bodies.nudge);
+export const checkPutSubscription = bodyChecker<SubscriptionBody>(bodies.putSubscription);
+export const checkUnsubscribe = bodyChecker<{ endpoint: string }>(bodies.unsubscribe);

@@ -8,7 +8,7 @@ import { goRequestHandlers } from './requests/index.js';
 import { startJobs } from './jobs/votes.js';
 import { PgLive } from './live/live.js';
 import { OutboxSender } from './outbox/sender.js';
-import { LogPush } from './push/push.js';
+import { createPush } from './push/web-push.js';
 import type { Ctx } from './context.js';
 import { migrate } from '../scripts/migrate.js';
 
@@ -16,12 +16,15 @@ const config = loadConfig();
 const pool = createPool(config.databaseUrl, config.dbPoolMax);
 await migrate(pool);
 
+// Web Push when the three VAPID settings are present; otherwise a warning and the log-only sender.
+const { push, publicKey: pushPublicKey } = createPush({ pool, keys: { publicKey: config.vapidPublicKey, privateKey: config.vapidPrivateKey, subject: config.vapidSubject } });
+
 const live = new PgLive(pool);
 await live.listen();
 const ctx: Ctx = {
   pool,
   live,
-  push: new LogPush(),
+  push,
   publicBaseUrl: process.env.PUBLIC_BASE_URL ?? 'https://go.example',
   spendPrivateKey: config.goSpendPrivateKey,
 };
@@ -57,7 +60,7 @@ sender.start();
 const stopJobs = startJobs(ctx);
 
 // 4. The app's API.
-const app = buildApp({ ctx, go, sessionSecret: process.env.APP_SESSION_SECRET ?? randomBytes(32).toString('hex'), origins: config.appOrigins });
+const app = buildApp({ ctx, go, sessionSecret: process.env.APP_SESSION_SECRET ?? randomBytes(32).toString('hex'), origins: config.appOrigins, pushPublicKey: pushPublicKey ?? undefined });
 await app.listen({ port: config.port, host: '0.0.0.0' });
 console.log(`server ${config.instance} listening on :${config.port}`);
 
@@ -68,6 +71,7 @@ const shutdown = async () => {
   await sender.idle(); // let an event that is on the way get its answer
   go.stop();
   await app.close();
+  await push.drain?.(); // nothing can start a notification now: the ones on the way get a bounded time to be sent
   await live.close();
   await pool.end();
   process.exit(0);
