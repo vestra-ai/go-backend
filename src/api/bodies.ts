@@ -109,8 +109,15 @@ const updateBooking = {
   },
 } as const;
 
+const cancelVote = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['client_id'],
+  properties: { client_id: id },
+} as const;
+
 /** Every route's body definition, by name. */
-export const bodies = { openVote, addBooking, updateBooking } as const;
+export const bodies = { openVote, addBooking, updateBooking, cancelVote } as const;
 
 /** The only places `null` is a valid value ("clear this field"): `<definition>.<dotted path>`. */
 export const CLEARABLE: readonly string[] = ['updateBooking.refundable_until', 'updateBooking.starts_at', 'updateBooking.ends_at'];
@@ -149,6 +156,11 @@ export interface UpdateBookingBody {
   ends_at?: string | null;
 }
 
+export interface CancelVoteBody {
+  client_id: string;
+}
+
 export const checkOpenVote = bodyChecker<OpenVoteBody>(bodies.openVote);
 export const checkAddBooking = bodyChecker<AddBookingBody>(bodies.addBooking);
 export const checkUpdateBooking = bodyChecker<UpdateBookingBody>(bodies.updateBooking);
+export const checkCancelVote = bodyChecker<CancelVoteBody>(bodies.cancelVote);

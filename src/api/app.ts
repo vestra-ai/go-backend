@@ -7,14 +7,14 @@ import {
 import { GoUnavailable, cardTap, catchUp, deleteFact, forgetPerson, getPerson, updateCarryOver, vaultLink } from '../domain/ask-go.js';
 import type { GoClient } from '../domain/ask-go.js';
 import { messageForApp } from '../domain/mappers.js';
-import { addPersonBooking, openPersonVote, updatePersonBooking } from '../domain/votes-bookings.js';
+import { addPersonBooking, openPersonVote, proposeCancelBooking, updatePersonBooking } from '../domain/votes-bookings.js';
 import { invalid } from '../domain/errors.js';
 import type { MessageRow, ReactionRow } from '../domain/mappers.js';
 import { buildSnapshot } from '../domain/snapshot.js';
 import { SocketCallError } from '../go/go-socket.js';
 import type { LiveEvent } from '../live/live.js';
 import { signSession, verifySession } from './auth.js';
-import { checkAddBooking, checkOpenVote, checkUpdateBooking } from './bodies.js';
+import { checkAddBooking, checkCancelVote, checkOpenVote, checkUpdateBooking } from './bodies.js';
 import { corsHeaders } from './cors.js';
 
 export interface AppDeps {
@@ -158,6 +158,7 @@ export function buildApp({ ctx, go, sessionSecret, origins = [] }: AppDeps): Fas
     if (Object.keys(body).length === 0) throw invalid('send at least one field');
     return updatePersonBooking(ctx, trip, me, req.params.bid, body);
   }));
+  app.post('/app/trips/:id/bookings/:bid/cancel-vote', inTrip((req, trip, me) => proposeCancelBooking(ctx, trip, me, req.params.bid, checkCancelVote(req.body)), 201));
   app.post('/app/trips/:id/decisions/:did/vote', withTrip((t, me, r) => castVote(ctx, t, me, r.params.did!, Number(r.body?.option_index))));
   app.post('/app/trips/:id/decisions/:did/close', withTrip((t, me, r) => closeVoteByPerson(ctx, t, me, r.params.did!)));
   app.post('/app/trips/:id/decisions/:did/cancel', withTrip((t, me, r) => cancelDecision(ctx, t, me, r.params.did!)));

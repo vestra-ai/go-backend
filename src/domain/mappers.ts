@@ -73,6 +73,8 @@ export interface DecisionRow {
   decision_id: string; question: string; kind: 'choice' | 'yesno'; anonymous: boolean; status: 'open' | 'closed' | 'cancelled';
   opened_by_person_id: string | null; options: unknown[]; of_count: number; closes_at: Date | null; closed_at: Date | null;
   result_index: number | null; mandate: Mandate | null; opened_at: Date;
+  /** Only the Server uses this link; it is never in an event or a snapshot. */
+  cancels_booking_id: string | null;
 }
 export interface VoteRow { person_id: string; option_index: number }
 

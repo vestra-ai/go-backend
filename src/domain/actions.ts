@@ -11,7 +11,7 @@ import { conflict, invalid, notFound } from './errors.js';
 import { expenseOf, messageForGo, personForGo, recordLineOf } from './mappers.js';
 import type { ExpenseRow, MessageRow, RecordLineRow } from './mappers.js';
 import { activePeople, buildSnapshot } from './snapshot.js';
-import { closeDecision, lockDecision, votesOf } from './voting.js';
+import { closeDecision, lockBooking, lockDecision, votesOf } from './voting.js';
 
 export class Forbidden extends Error {}
 
@@ -135,6 +135,14 @@ export async function leaveTrip(ctx: Ctx, tripId: string, personId: string) {
       `update decisions set of_count = greatest(1, of_count - 1)
         where trip_id = $1 and status = 'open' and not exists (select 1 from votes v where v.decision_id = decisions.decision_id and v.person_id = $2)`,
       [tripId, personId],
+    );
+    // A vote that completes below may be about cancelling a booking: hold those bookings (in a fixed order) before this path
+    // takes a change number, as the closing code expects.
+    await db.query(
+      `select booking_id from bookings
+        where trip_id = $1 and booking_id in (select cancels_booking_id from decisions where trip_id = $1 and status = 'open' and cancels_booking_id is not null)
+        order by booking_id for update`,
+      [tripId],
     );
     const seq = await change(db, tripId, 'person.left', { person_id: personId });
     after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
@@ -270,6 +278,8 @@ export async function castVote(ctx: Ctx, tripId: string, personId: string, decis
     await requireMember(db, tripId, personId);
     const d = await lockDecision(db, tripId, decisionId);
     if (d.status !== 'open') throw conflict(`decision ${decisionId} is ${d.status}`);
+    // A vote about cancelling a booking may close below: hold the booking before this path takes a change number.
+    if (d.cancels_booking_id) await lockBooking(db, tripId, d.cancels_booking_id);
     if (!Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= d.options.length) throw invalid('option_index is not one of the options');
     await db.query(
       `insert into votes (decision_id, person_id, option_index) values ($1,$2,$3)

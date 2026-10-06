@@ -6,12 +6,12 @@ import { newId } from '../db/ids.js';
 import { once } from '../db/once.js';
 import { withTx } from '../db/pool.js';
 import { change, emit, nextSeq } from '../db/write-change.js';
-import type { AddBookingBody, OpenVoteBody, UpdateBookingBody } from '../api/bodies.js';
+import type { AddBookingBody, CancelVoteBody, OpenVoteBody, UpdateBookingBody } from '../api/bodies.js';
 import { assertPeopleInTrip } from '../requests/guards.js';
 import { conflict, invalid, notFound } from './errors.js';
 import { bookingOf, compact, decisionOf, recordLineOf } from './mappers.js';
 import type { BookingRow, RecordLineRow } from './mappers.js';
-import { openDecision } from './voting.js';
+import { lockBooking, openDecision } from './voting.js';
 import { requireMember } from './actions.js';
 
 /**
@@ -129,5 +129,40 @@ export async function updatePersonBooking(ctx: Ctx, tripId: string, personId: st
     const seq = await change(db, tripId, 'booking.changed', { booking: bookingOf(updated), change: 'updated', by: by(personId) });
     after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
     return { seq };
+  });
+}
+
+/** The first `max` characters (code points, as the contract counts them), never half of a pair. */
+const cut = (text: string, max: number) => Array.from(text).slice(0, max).join('');
+export const CANCEL_VOTE_HOURS = 24;
+
+/**
+ * A member proposes cancelling a booking: the server opens a yes/no vote (not anonymous, closing in 24 hours) worded
+ * with the booking's title cut to fit the contract's limits. It locks the booking row first, then checks it, so of two
+ * proposals at the same moment the second sees the first's vote and answers 409 naming it. The vote carries a
+ * server-side link to the booking (never sent to Go). Whether the booking is cancelled is decided when the vote closes
+ * (see `closeDecision`). Cancelling records the group's decision only: nothing is cancelled with the vendor.
+ */
+export async function proposeCancelBooking(ctx: Ctx, tripId: string, personId: string, bookingId: string, input: CancelVoteBody) {
+  return once(ctx.pool, tripId, `app:cancel:${personId}:${input.client_id}`, async (db, after) => {
+    await requireMember(db, tripId, personId);
+    const booking = await lockBooking(db, tripId, bookingId);
+    if (!booking) throw notFound(`booking ${bookingId} does not exist in trip ${tripId}`);
+    if (booking.status === 'cancelled') throw conflict(`booking ${bookingId} is already cancelled`);
+    if (booking.approval_id) throw conflict(`booking ${bookingId} was paid through Go's vault and cannot be cancelled by a vote`);
+    const open = (await db.query(`select decision_id from decisions where cancels_booking_id = $1 and status = 'open'`, [bookingId])).rows[0];
+    if (open) throw conflict(`a vote to cancel booking ${bookingId} is already open: ${open.decision_id}`);
+    const row = await openDecision(db, tripId, {
+      question: `Cancel this booking? ${booking.title}`,
+      kind: 'yesno',
+      anonymous: false,
+      options: [{ label: `Cancel: ${cut(booking.title, 112)}` }, { label: `Keep: ${cut(booking.title, 112)}` }],
+      closesAt: new Date(Date.now() + CANCEL_VOTE_HOURS * 3_600_000).toISOString(),
+      openedBy: personId,
+      cancelsBookingId: bookingId,
+    });
+    const seq = await change(db, tripId, 'decision.opened', { decision: decisionOf(row, []), by: by(personId) });
+    after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
+    return { decision_id: row.decision_id, seq };
   });
 }

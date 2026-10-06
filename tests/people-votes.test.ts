@@ -1,13 +1,18 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { check } from '../src/contract/index.js';
+import { closeDueVotes } from '../src/jobs/votes.js';
 import { appApi } from './helpers/app-api.js';
+import { cancelFlow } from './helpers/cancel-flow.js';
 import { rows, startHarness, type Harness } from './helpers/harness.js';
+import { seedTrip } from './helpers/seed.js';
 
 let h: Harness;
 let t: ReturnType<typeof appApi>;
+let f: ReturnType<typeof cancelFlow>;
 beforeAll(async () => {
   h = await startHarness(); // t_goa: p_rahul (organizer), p_priya, p_arjun, p_meher, p_kabir
   t = appApi(h);
+  f = cancelFlow(h, t);
 });
 afterAll(() => h.stop());
 
@@ -71,3 +76,159 @@ describe('a member opens a vote', () => {
     expect((await post('9999-12-31T23:30:00Z')).status).toBe(201);
   });
 });
+
+describe('cancelling a booking by group vote', () => {
+  const refused = (r: { status: number; body: any }) => [r.status, r.body.error.code];
+  const closedEvent = (did: string) => t.events('decision.closed').find((e) => e.data.decision.decision_id === did)!;
+
+  it('passes with 3 of 5 for "Cancel": the booking is cancelled in the closing transaction, as the next change, and Go hears it all in order', async () => {
+    const bid = await f.addBooking('t_goa', { title: 'Villa Sol' });
+    const p = await f.propose(bid);
+    expect(p.status).toBe(201);
+    const did = p.body.decision_id;
+    for (const who of ['p_rahul', 'p_priya', 'p_arjun']) await f.castVote(did, who, 0);
+    await f.closeEarly(did);
+    await h.flush();
+    const opened = t.events('decision.opened').find((e) => e.data.decision.decision_id === did)!;
+    const closed = closedEvent(did);
+    const booking = f.cancelledEvents(bid)[0]!;
+    const line = t.events('record.changed').find((e) => e.data.line.decision_id === did)!;
+    expect(opened.data).toMatchObject({ by: { kind: 'person', person_id: 'p_priya' }, decision: { kind: 'yesno', anonymous: false, of: 5, question: 'Cancel this booking? Villa Sol', options: [{ label: 'Cancel: Villa Sol' }, { label: 'Keep: Villa Sol' }] } });
+    expect(Math.abs(Date.parse(opened.data.decision.closes_at) - Date.parse(opened.data.decision.opened_at) - 24 * 3_600_000)).toBeLessThan(60_000);
+    expect([opened, closed, booking, line].map((e) => check('Event', e).ok)).toEqual([true, true, true, true]);
+    expect(closed.data).toMatchObject({ reason: 'closed_by_person', decision: { status: 'closed', result_index: 0, tally: [3, 0] } });
+    expect([booking.seq, line.seq]).toEqual([closed.seq + 1, closed.seq + 2]); // decision.closed, booking.changed, then the decided line
+    expect(booking.data).toMatchObject({ change: 'cancelled', by: { kind: 'system' }, booking: { booking_id: bid, status: 'cancelled' } });
+    expect(line.data.line).toMatchObject({ kind: 'decided', text: 'Cancel: Villa Sol' });
+    expect(await f.bookingStatus(bid)).toBe('cancelled');
+    const everything = JSON.stringify([(await rows(h.pool, 'select body from outbox')).map((r) => r.body), (await t.api(t.as('p_rahul'), 'GET', '/app/trips/t_goa')).body]); // Go's events and the app's own trip read
+    expect([everything.includes('cancels_booking'), h.push.sent.length]).toEqual([false, 0]); // the link is in no event; no push
+  });
+
+  it('2 of 5 closed early leaves the booking standing and a new proposal succeeds; one "Cancel" vote closed early does not cancel', async () => {
+    const a = await f.addBooking();
+    const pa = await f.propose(a);
+    for (const who of ['p_rahul', 'p_priya']) await f.castVote(pa.body.decision_id, who, 0);
+    await f.closeEarly(pa.body.decision_id);
+    const again = await f.propose(a);
+    await h.flush();
+    expect([await f.bookingStatus(a), f.cancelledEvents(a).length, again.status]).toEqual(['confirmed', 0, 201]);
+    const b = await f.addBooking();
+    const pb = await f.propose(b);
+    await f.castVote(pb.body.decision_id, 'p_rahul', 0);
+    await f.closeEarly(pb.body.decision_id);
+    await h.flush();
+    expect([await f.bookingStatus(b), f.cancelledEvents(b).length]).toEqual(['confirmed', 0]);
+  });
+
+  it('a 2-2 tie, time running out, and calling off each leave the booking standing with no booking event', async () => {
+    const outcome = async (bid: string, did: string) => {
+      await h.flush();
+      const [d] = await rows(h.pool, 'select status, result_index from decisions where decision_id = $1', [did]);
+      return [await f.bookingStatus(bid), f.cancelledEvents(bid).length, d.status, d.result_index];
+    };
+    const tie = await f.addBooking();
+    const pt = (await f.propose(tie)).body.decision_id;
+    for (const [who, option] of [['p_rahul', 0], ['p_priya', 0], ['p_arjun', 1], ['p_meher', 1]] as const) await f.castVote(pt, who, option);
+    await f.closeEarly(pt);
+    expect(await outcome(tie, pt)).toEqual(['confirmed', 0, 'closed', null]);
+    const late = await f.addBooking();
+    const pl = (await f.propose(late)).body.decision_id;
+    await f.castVote(pl, 'p_rahul', 0);
+    await h.pool.query(`update decisions set closes_at = now() - interval '1 minute' where decision_id = $1`, [pl]);
+    await closeDueVotes(h.ctx);
+    expect(await outcome(late, pl)).toEqual(['confirmed', 0, 'closed', null]);
+    const off = await f.addBooking();
+    const po = (await f.propose(off)).body.decision_id;
+    await t.api(t.as('p_rahul'), 'POST', `/app/trips/t_goa/decisions/${po}/cancel`);
+    expect(await outcome(off, po)).toEqual(['confirmed', 0, 'cancelled', null]);
+  });
+
+  it('a 2-1 lead for "Cancel" among 5 closes with no result, whether a person or Go closes it; "Keep" leading gives "Keep"', async () => {
+    const lead = async (close: (did: string) => Promise<unknown>) => {
+      const bid = await f.addBooking();
+      const did = (await f.propose(bid)).body.decision_id;
+      for (const [who, option] of [['p_rahul', 0], ['p_priya', 0], ['p_arjun', 1]] as const) await f.castVote(did, who, option);
+      await close(did);
+      await h.flush();
+      return [await f.bookingStatus(bid), closedEvent(did).data.decision.result_index];
+    };
+    expect(await lead((did) => f.closeEarly(did))).toEqual(['confirmed', undefined]);
+    expect(await lead((did) => h.go.call('close_vote', { request_id: `rq_cv_${f.next()}`, trip_id: 't_goa', decision_id: did }))).toEqual(['confirmed', undefined]);
+    const bid = await f.addBooking('t_goa', { title: 'Casa Azul' });
+    const did = (await f.propose(bid)).body.decision_id;
+    for (const [who, option] of [['p_rahul', 0], ['p_priya', 1], ['p_arjun', 1]] as const) await f.castVote(did, who, option);
+    await f.closeEarly(did);
+    await h.flush();
+    expect([await f.bookingStatus(bid), closedEvent(did).data.decision.result_index, t.events('record.changed').find((e) => e.data.line.decision_id === did)!.data.line.text]).toEqual(['confirmed', 1, 'Keep: Casa Azul']);
+  });
+
+  it('two proposals at the same moment give one 201 and one 409 naming the open vote; a repeated client id, in sequence or at once, gets the first answer', async () => {
+    const bid = await f.addBooking();
+    const two = await Promise.all([f.propose(bid, 't_goa', 'p_priya', 'race-a'), f.propose(bid, 't_goa', 'p_arjun', 'race-b')]);
+    const [won, lost] = two[0].status === 201 ? two : [two[1]!, two[0]!];
+    expect([won.status, lost.status, lost.body.error.code, lost.body.error.message.includes(won.body.decision_id)]).toEqual([201, 409, 'conflict', true]);
+    const other = await f.addBooking();
+    const first = await f.propose(other, 't_goa', 'p_priya', 'same-press');
+    const second = await f.propose(other, 't_goa', 'p_priya', 'same-press');
+    expect([second.status, second.body]).toEqual([201, first.body]);
+    const third = await f.addBooking();
+    const both = await Promise.all([f.propose(third, 't_goa', 'p_priya', 'same-tap'), f.propose(third, 't_goa', 'p_priya', 'same-tap')]);
+    expect([both[0].status, both[1].status, both[1].body]).toEqual([201, 201, both[0].body]);
+  });
+
+  it('refuses a cancelled booking and one paid through Go\'s vault with 409, and a 120-character title (with characters outside the basic plane) gives a contract-valid vote', async () => {
+    const gone = await f.addBooking();
+    await h.pool.query(`update bookings set status = 'cancelled' where booking_id = $1`, [gone]);
+    expect(refused(await f.propose(gone))).toEqual([409, 'conflict']);
+    const vault = await f.addBooking();
+    await h.pool.query(`update bookings set approval_id = 'ap_vault' where booking_id = $1`, [vault]);
+    expect(refused(await f.propose(vault))).toEqual([409, 'conflict']);
+    const title = 'a' + '🌴'.repeat(119); // 120 characters; cutting it by UTF-16 units at 112 would end on half a pair
+    const long = await f.addBooking('t_goa', { title });
+    const p = await f.propose(long);
+    await h.flush();
+    const opened = t.events('decision.opened').find((e) => e.data.decision.decision_id === p.body.decision_id)!;
+    expect([p.status, check('Event', opened).ok, opened.data.decision.options.map((o: any) => Array.from(o.label).length)]).toEqual([201, true, [120, 118]]); // "Cancel: " or "Keep: " plus 112
+  });
+
+  it('refuses an unsigned caller, someone outside the trip, an unknown field, and another trip\'s booking', async () => {
+    await seedTrip(h.pool, 't_other', [{ id: 'p_orgx', name: 'Orgx', role: 'organizer' }]);
+    await h.pool.query(`insert into bookings (booking_id, trip_id, kind, title, vendor, ref, amount_minor, currency, payer_person_id) values ('b_elsewhere', 't_other', 'stay', 'Villa', 'V', 'R', 1, 'INR', 'p_orgx')`);
+    const bid = await f.addBooking();
+    const post = (who: any, id: string, body: unknown) => t.api(who, 'POST', `/app/trips/t_goa/bookings/${id}/cancel-vote`, body);
+    expect(refused(await post(null, bid, { client_id: 'x' }))).toEqual([401, 'unauthorized']);
+    expect(refused(await post(t.as('p_stranger'), bid, { client_id: 'x' }))).toEqual([403, 'forbidden']);
+    expect(refused(await post(t.as('p_priya'), bid, { client_id: 'x', extra: 1 }))).toEqual([422, 'invalid']);
+    expect(refused(await post(t.as('p_priya'), 'b_elsewhere', { client_id: 'x' }))).toEqual([404, 'not_found']);
+  });
+
+  it('when Go cancels the booking while the vote is open and the vote then passes, there is no second booking event', async () => {
+    const bid = await f.addBooking();
+    const did = (await f.propose(bid)).body.decision_id;
+    await h.go.call('update_booking', { request_id: `rq_gc_${f.next()}`, trip_id: 't_goa', booking_id: bid, status: 'cancelled' });
+    for (const who of ['p_rahul', 'p_priya', 'p_arjun']) await f.castVote(did, who, 0);
+    await f.closeEarly(did);
+    await h.flush();
+    expect([f.cancelledEvents(bid).map((e) => e.data.by.kind), closedEvent(did).data.decision.result_index]).toEqual([['go'], 0]);
+  });
+
+  it('the proposer leaving mid-vote does not stop it, and a "Cancel" voter who then left still counts in the tally and the head count', async () => {
+    await seedTrip(h.pool, 't_leave1');
+    await seedTrip(h.pool, 't_leave2');
+    const a = await f.addBooking('t_leave1');
+    const pa = (await f.propose(a, 't_leave1', 'p_priya')).body.decision_id;
+    await t.api(t.as('p_priya'), 'POST', '/app/trips/t_leave1/leave');
+    for (const who of ['p_rahul', 'p_arjun', 'p_meher']) await f.castVote(pa, who, 0, 't_leave1');
+    await f.closeEarly(pa, 't_leave1');
+    const b = await f.addBooking('t_leave2');
+    const pb = (await f.propose(b, 't_leave2', 'p_priya')).body.decision_id;
+    await f.castVote(pb, 'p_kabir', 0, 't_leave2');
+    await t.api(t.as('p_kabir'), 'POST', '/app/trips/t_leave2/leave');
+    for (const who of ['p_rahul', 'p_arjun']) await f.castVote(pb, who, 0, 't_leave2');
+    await f.closeEarly(pb, 't_leave2');
+    await h.flush();
+    expect([await f.bookingStatus(a), closedEvent(pa).data.decision.of, await f.bookingStatus(b), closedEvent(pb).data.decision.tally, closedEvent(pb).data.decision.of]).toEqual(['cancelled', 4, 'cancelled', [3, 0], 5]);
+  });
+});
+
