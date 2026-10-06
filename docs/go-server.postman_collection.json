@@ -40,6 +40,10 @@
       "value": ""
     },
     {
+      "key": "bookingId",
+      "value": ""
+    },
+    {
       "key": "decisionId",
       "value": ""
     },
@@ -1389,8 +1393,187 @@
     },
     {
       "name": "3. Votes, mandate, record, expenses",
-      "description": "The Server's own buttons (record cards). They never go to Go. `decisionId` comes from the trip data (`decisions[]`) or the vote card.",
+      "description": "The Server's own buttons (record cards) and the calls that open votes and bookings. They never go to Go. `decisionId` comes from the trip data (`decisions[]`), the vote card, or is saved by *Open a vote* / *Propose cancelling a booking*; `bookingId` is saved by *Add booking* (or take one from `bookings[]`).",
       "item": [
+        {
+          "name": "Open a vote",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "decisions"
+              ]
+            },
+            "description": "Any member opens a vote. Strict body: unknown fields, wrong types and `null` are `422`. `client_id`: a new one per press, the same one on a retry (a repeat returns the first answer). `options`: 2-10, each `label` (1-120, required), `image_url?` (URL: render only http/https), `price_minor?` (paise, shown in the trip's currency), `note?` (≤120). `closes_at?`: ISO time in the future. The server posts no vote card in the chat (Go does) and sends no push. **Saves `decisionId`.**",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{$guid}}\",\n  \"question\": \"Where do we stay?\",\n  \"kind\": \"choice\",\n  \"anonymous\": false,\n  \"options\": [\n    {\n      \"label\": \"Villa Sol, Anjuna\",\n      \"price_minor\": 5420000\n    },\n    {\n      \"label\": \"Casa Azul, Vagator\",\n      \"price_minor\": 6180000,\n      \"note\": \"Pool\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  const j = pm.response.json();",
+                  "  pm.collectionVariables.set('decisionId', j.decision_id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "decisions"
+                  ]
+                },
+                "description": "Any member opens a vote. Strict body: unknown fields, wrong types and `null` are `422`. `client_id`: a new one per press, the same one on a retry (a repeat returns the first answer). `options`: 2-10, each `label` (1-120, required), `image_url?` (URL: render only http/https), `price_minor?` (paise, shown in the trip's currency), `note?` (≤120). `closes_at?`: ISO time in the future. The server posts no vote card in the chat (Go does) and sends no push. **Saves `decisionId`.**",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"client_id\": \"{{$guid}}\",\n  \"question\": \"Where do we stay?\",\n  \"kind\": \"choice\",\n  \"anonymous\": false,\n  \"options\": [\n    {\n      \"label\": \"Villa Sol, Anjuna\",\n      \"price_minor\": 5420000\n    },\n    {\n      \"label\": \"Casa Azul, Vagator\",\n      \"price_minor\": 6180000,\n      \"note\": \"Pool\"\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"decision_id\": \"d_1\",\n  \"seq\": 12\n}"
+            },
+            {
+              "name": "Unknown field",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "decisions"
+                  ]
+                },
+                "description": "Any member opens a vote. Strict body: unknown fields, wrong types and `null` are `422`. `client_id`: a new one per press, the same one on a retry (a repeat returns the first answer). `options`: 2-10, each `label` (1-120, required), `image_url?` (URL: render only http/https), `price_minor?` (paise, shown in the trip's currency), `note?` (≤120). `closes_at?`: ISO time in the future. The server posts no vote card in the chat (Go does) and sends no push. **Saves `decisionId`.**",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"client_id\": \"{{$guid}}\",\n  \"question\": \"Where do we stay?\",\n  \"kind\": \"choice\",\n  \"anonymous\": false,\n  \"options\": [\n    {\n      \"label\": \"Villa Sol, Anjuna\",\n      \"price_minor\": 5420000\n    },\n    {\n      \"label\": \"Casa Azul, Vagator\",\n      \"price_minor\": 6180000,\n      \"note\": \"Pool\"\n    }\n  ],\n  \"extra\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"invalid\",\n    \"message\": \"extra is not a known field\"\n  }\n}"
+            },
+            {
+              "name": "One option",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/decisions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "decisions"
+                  ]
+                },
+                "description": "Any member opens a vote. Strict body: unknown fields, wrong types and `null` are `422`. `client_id`: a new one per press, the same one on a retry (a repeat returns the first answer). `options`: 2-10, each `label` (1-120, required), `image_url?` (URL: render only http/https), `price_minor?` (paise, shown in the trip's currency), `note?` (≤120). `closes_at?`: ISO time in the future. The server posts no vote card in the chat (Go does) and sends no push. **Saves `decisionId`.**",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"client_id\": \"{{$guid}}\",\n  \"question\": \"Where do we stay?\",\n  \"kind\": \"choice\",\n  \"anonymous\": false,\n  \"options\": [\n    {\n      \"label\": \"Villa Sol, Anjuna\",\n      \"price_minor\": 5420000\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"invalid\",\n    \"message\": \"options must NOT have fewer than 2 items\"\n  }\n}"
+            }
+          ]
+        },
         {
           "name": "Vote",
           "request": {
@@ -2016,6 +2199,585 @@
                 }
               ],
               "body": "{\n  \"seq\": 37\n}"
+            }
+          ]
+        },
+        {
+          "name": "Add booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "bookings"
+              ]
+            },
+            "description": "Any member adds a booking they made. Stored as confirmed in the trip's currency, with you as the person who added it. **Creates no expense.** `kind`: `stay | flight | train | bus | cab | table | activity | other`. `title` 1-120, `vendor` and `ref` 1-80, `amount_minor` ≥ 0 (paise), `for_person_ids` 1-30. Optional: `refundable_until`, `starts_at`, `ends_at` (ISO times; `ends_at` may not be before `starts_at`), `journey`, `place`, `image_url`, `decision_id` (must be a **closed** vote of this trip, not a vote about cancelling a booking). `client_id`: a new one per press. **Saves `bookingId`.**",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{$guid}}\",\n  \"kind\": \"stay\",\n  \"title\": \"Villa Sol, 3 nights\",\n  \"vendor\": \"ixigo\",\n  \"ref\": \"IXG-7Q2K9\",\n  \"amount_minor\": 5420000,\n  \"payer_person_id\": \"{{personId}}\",\n  \"for_person_ids\": [\n    \"{{personId}}\"\n  ],\n  \"starts_at\": \"2026-11-06T08:00:00Z\",\n  \"ends_at\": \"2026-11-09T08:00:00Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  const j = pm.response.json();",
+                  "  pm.collectionVariables.set('bookingId', j.booking_id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/bookings",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "bookings"
+                  ]
+                },
+                "description": "Any member adds a booking they made. Stored as confirmed in the trip's currency, with you as the person who added it. **Creates no expense.** `kind`: `stay | flight | train | bus | cab | table | activity | other`. `title` 1-120, `vendor` and `ref` 1-80, `amount_minor` ≥ 0 (paise), `for_person_ids` 1-30. Optional: `refundable_until`, `starts_at`, `ends_at` (ISO times; `ends_at` may not be before `starts_at`), `journey`, `place`, `image_url`, `decision_id` (must be a **closed** vote of this trip, not a vote about cancelling a booking). `client_id`: a new one per press. **Saves `bookingId`.**",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"client_id\": \"{{$guid}}\",\n  \"kind\": \"stay\",\n  \"title\": \"Villa Sol, 3 nights\",\n  \"vendor\": \"ixigo\",\n  \"ref\": \"IXG-7Q2K9\",\n  \"amount_minor\": 5420000,\n  \"payer_person_id\": \"{{personId}}\",\n  \"for_person_ids\": [\n    \"{{personId}}\"\n  ],\n  \"starts_at\": \"2026-11-06T08:00:00Z\",\n  \"ends_at\": \"2026-11-09T08:00:00Z\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"booking_id\": \"b_1\",\n  \"seq\": 14\n}"
+            },
+            {
+              "name": "Vote is not closed",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/bookings",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "bookings"
+                  ]
+                },
+                "description": "Any member adds a booking they made. Stored as confirmed in the trip's currency, with you as the person who added it. **Creates no expense.** `kind`: `stay | flight | train | bus | cab | table | activity | other`. `title` 1-120, `vendor` and `ref` 1-80, `amount_minor` ≥ 0 (paise), `for_person_ids` 1-30. Optional: `refundable_until`, `starts_at`, `ends_at` (ISO times; `ends_at` may not be before `starts_at`), `journey`, `place`, `image_url`, `decision_id` (must be a **closed** vote of this trip, not a vote about cancelling a booking). `client_id`: a new one per press. **Saves `bookingId`.**",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"client_id\": \"{{$guid}}\",\n  \"kind\": \"stay\",\n  \"title\": \"Villa Sol, 3 nights\",\n  \"vendor\": \"ixigo\",\n  \"ref\": \"IXG-7Q2K9\",\n  \"amount_minor\": 5420000,\n  \"payer_person_id\": \"{{personId}}\",\n  \"for_person_ids\": [\n    \"{{personId}}\"\n  ],\n  \"starts_at\": \"2026-11-06T08:00:00Z\",\n  \"ends_at\": \"2026-11-09T08:00:00Z\",\n  \"decision_id\": \"d_1\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"invalid\",\n    \"message\": \"decision_id: d_1 is not a closed vote\"\n  }\n}"
+            },
+            {
+              "name": "Ends before it starts",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/bookings",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "bookings"
+                  ]
+                },
+                "description": "Any member adds a booking they made. Stored as confirmed in the trip's currency, with you as the person who added it. **Creates no expense.** `kind`: `stay | flight | train | bus | cab | table | activity | other`. `title` 1-120, `vendor` and `ref` 1-80, `amount_minor` ≥ 0 (paise), `for_person_ids` 1-30. Optional: `refundable_until`, `starts_at`, `ends_at` (ISO times; `ends_at` may not be before `starts_at`), `journey`, `place`, `image_url`, `decision_id` (must be a **closed** vote of this trip, not a vote about cancelling a booking). `client_id`: a new one per press. **Saves `bookingId`.**",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"client_id\": \"{{$guid}}\",\n  \"kind\": \"stay\",\n  \"title\": \"Villa Sol, 3 nights\",\n  \"vendor\": \"ixigo\",\n  \"ref\": \"IXG-7Q2K9\",\n  \"amount_minor\": 5420000,\n  \"payer_person_id\": \"{{personId}}\",\n  \"for_person_ids\": [\n    \"{{personId}}\"\n  ],\n  \"starts_at\": \"2026-11-09T08:00:00Z\",\n  \"ends_at\": \"2026-11-06T08:00:00Z\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"invalid\",\n    \"message\": \"ends_at must not be before starts_at\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Update booking",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/bookings/{{bookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "bookings",
+                "{{bookingId}}"
+              ]
+            },
+            "description": "Any member updates any booking's `ref` or dates. Send at least one of `ref` (not clearable), `refundable_until`, `starts_at`, `ends_at` (`null` clears the three times). Only what differs is written; `{ \"seq\": null }` means nothing changed. `404` not in this trip, `409` the booking is cancelled, `422` an empty body or the result would end before it starts.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ref\": \"IXG-7Q2K9-B\",\n  \"ends_at\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Updated",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/bookings/{{bookingId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "bookings",
+                    "{{bookingId}}"
+                  ]
+                },
+                "description": "Any member updates any booking's `ref` or dates. Send at least one of `ref` (not clearable), `refundable_until`, `starts_at`, `ends_at` (`null` clears the three times). Only what differs is written; `{ \"seq\": null }` means nothing changed. `404` not in this trip, `409` the booking is cancelled, `422` an empty body or the result would end before it starts.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"ref\": \"IXG-7Q2K9-B\",\n  \"ends_at\": null\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"seq\": 15\n}"
+            },
+            {
+              "name": "Nothing changed",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/bookings/{{bookingId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "bookings",
+                    "{{bookingId}}"
+                  ]
+                },
+                "description": "Any member updates any booking's `ref` or dates. Send at least one of `ref` (not clearable), `refundable_until`, `starts_at`, `ends_at` (`null` clears the three times). Only what differs is written; `{ \"seq\": null }` means nothing changed. `404` not in this trip, `409` the booking is cancelled, `422` an empty body or the result would end before it starts.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"ref\": \"IXG-7Q2K9-B\",\n  \"ends_at\": null\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"seq\": null\n}"
+            },
+            {
+              "name": "Cancelled",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/bookings/{{bookingId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "bookings",
+                    "{{bookingId}}"
+                  ]
+                },
+                "description": "Any member updates any booking's `ref` or dates. Send at least one of `ref` (not clearable), `refundable_until`, `starts_at`, `ends_at` (`null` clears the three times). Only what differs is written; `{ \"seq\": null }` means nothing changed. `404` not in this trip, `409` the booking is cancelled, `422` an empty body or the result would end before it starts.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"ref\": \"IXG-7Q2K9-B\",\n  \"ends_at\": null\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"conflict\",\n    \"message\": \"booking b_1 is cancelled and cannot change\"\n  }\n}"
+            },
+            {
+              "name": "Empty body",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/bookings/{{bookingId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "bookings",
+                    "{{bookingId}}"
+                  ]
+                },
+                "description": "Any member updates any booking's `ref` or dates. Send at least one of `ref` (not clearable), `refundable_until`, `starts_at`, `ends_at` (`null` clears the three times). Only what differs is written; `{ \"seq\": null }` means nothing changed. `404` not in this trip, `409` the booking is cancelled, `422` an empty body or the result would end before it starts.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"invalid\",\n    \"message\": \"send at least one field\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Propose cancelling a booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app/trips/{{tripId}}/bookings/{{bookingId}}/cancel-vote",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app",
+                "trips",
+                "{{tripId}}",
+                "bookings",
+                "{{bookingId}}",
+                "cancel-vote"
+              ]
+            },
+            "description": "Any member proposes cancelling a booking; the group decides. Opens a yes/no vote that is not anonymous and closes 24 hours later. The booking is cancelled only if \"Cancel\" gets MORE THAN HALF of everyone in the trip when the vote closes (people who do not vote count against; a tie does not cancel); otherwise it stands. Nothing is cancelled with the vendor. `404` not in this trip; `409` already cancelled, paid through Go's vault, or a cancellation vote is already open. **Saves `decisionId`.**",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{$guid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  const j = pm.response.json();",
+                  "  pm.collectionVariables.set('decisionId', j.decision_id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/bookings/{{bookingId}}/cancel-vote",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "bookings",
+                    "{{bookingId}}",
+                    "cancel-vote"
+                  ]
+                },
+                "description": "Any member proposes cancelling a booking; the group decides. Opens a yes/no vote that is not anonymous and closes 24 hours later. The booking is cancelled only if \"Cancel\" gets MORE THAN HALF of everyone in the trip when the vote closes (people who do not vote count against; a tie does not cancel); otherwise it stands. Nothing is cancelled with the vendor. `404` not in this trip; `409` already cancelled, paid through Go's vault, or a cancellation vote is already open. **Saves `decisionId`.**",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"client_id\": \"{{$guid}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"decision_id\": \"d_2\",\n  \"seq\": 16\n}"
+            },
+            {
+              "name": "Already open",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/bookings/{{bookingId}}/cancel-vote",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "bookings",
+                    "{{bookingId}}",
+                    "cancel-vote"
+                  ]
+                },
+                "description": "Any member proposes cancelling a booking; the group decides. Opens a yes/no vote that is not anonymous and closes 24 hours later. The booking is cancelled only if \"Cancel\" gets MORE THAN HALF of everyone in the trip when the vote closes (people who do not vote count against; a tie does not cancel); otherwise it stands. Nothing is cancelled with the vendor. `404` not in this trip; `409` already cancelled, paid through Go's vault, or a cancellation vote is already open. **Saves `decisionId`.**",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"client_id\": \"{{$guid}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"conflict\",\n    \"message\": \"a vote to cancel booking b_1 is already open: d_2\"\n  }\n}"
+            },
+            {
+              "name": "Booking cancelled",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app/trips/{{tripId}}/bookings/{{bookingId}}/cancel-vote",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app",
+                    "trips",
+                    "{{tripId}}",
+                    "bookings",
+                    "{{bookingId}}",
+                    "cancel-vote"
+                  ]
+                },
+                "description": "Any member proposes cancelling a booking; the group decides. Opens a yes/no vote that is not anonymous and closes 24 hours later. The booking is cancelled only if \"Cancel\" gets MORE THAN HALF of everyone in the trip when the vote closes (people who do not vote count against; a tie does not cancel); otherwise it stands. Nothing is cancelled with the vendor. `404` not in this trip; `409` already cancelled, paid through Go's vault, or a cancellation vote is already open. **Saves `decisionId`.**",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"client_id\": \"{{$guid}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"conflict\",\n    \"message\": \"booking b_1 is already cancelled\"\n  }\n}"
             }
           ]
         }
@@ -2775,81 +3537,6 @@
                 }
               ],
               "body": "{\n  \"url\": \"https://brain.go.example/vault/add-card?link=lk_9Wm3Hc6Ty\",\n  \"expires_at\": \"2026-10-05T08:55:00Z\"\n}"
-            }
-          ]
-        },
-        {
-          "name": "Register device for pushes",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/app/devices",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "app",
-                "devices"
-              ]
-            },
-            "description": "Returns 204 with no body.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"token\": \"fcm-or-apns-device-token\",\n  \"platform\": \"ios\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": [
-            {
-              "name": "No content",
-              "originalRequest": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/app/devices",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "app",
-                    "devices"
-                  ]
-                },
-                "description": "Returns 204 with no body.",
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"token\": \"fcm-or-apns-device-token\",\n  \"platform\": \"ios\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "status": "No Content",
-              "code": 204,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{}"
             }
           ]
         }
