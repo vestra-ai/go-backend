@@ -127,11 +127,33 @@ const patchMe = {
   },
 } as const;
 
+// A person's answers in one trip. `know` replaces the list (an empty list clears it); the two text answers clear with null.
+const patchTripMe = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    from_city: { type: ['string', 'null'], maxLength: 60 },
+    earliest_leave: { type: ['string', 'null'], maxLength: 60 },
+    know: { type: 'array', maxItems: 20, items: { type: 'string', minLength: 1, maxLength: 80 } },
+  },
+} as const;
+
+// The whole budget answer, replaced each time. It cannot be withdrawn, so nothing here is clearable.
+const putBudget = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['min_minor'],
+  properties: {
+    min_minor: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+    max_minor: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+  },
+} as const;
+
 /** Every route's body definition, by name. */
-export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe } as const;
+export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, patchTripMe, putBudget } as const;
 
 /** The only places `null` is a valid value ("clear this field"): `<definition>.<dotted path>`. */
-export const CLEARABLE: readonly string[] = ['updateBooking.refundable_until', 'updateBooking.starts_at', 'updateBooking.ends_at', 'patchMe.photo_url', 'patchMe.upi_id'];
+export const CLEARABLE: readonly string[] = ['updateBooking.refundable_until', 'updateBooking.starts_at', 'updateBooking.ends_at', 'patchMe.photo_url', 'patchMe.upi_id', 'patchTripMe.from_city', 'patchTripMe.earliest_leave'];
 
 export interface OpenVoteBody {
   client_id: string;
@@ -173,6 +195,17 @@ export interface PatchMeBody {
   upi_id?: string | null;
 }
 
+export interface PatchTripMeBody {
+  from_city?: string | null;
+  earliest_leave?: string | null;
+  know?: string[];
+}
+
+export interface PutBudgetBody {
+  min_minor: number;
+  max_minor?: number;
+}
+
 export interface CancelVoteBody {
   client_id: string;
 }
@@ -182,3 +215,5 @@ export const checkAddBooking = bodyChecker<AddBookingBody>(bodies.addBooking);
 export const checkUpdateBooking = bodyChecker<UpdateBookingBody>(bodies.updateBooking);
 export const checkCancelVote = bodyChecker<CancelVoteBody>(bodies.cancelVote);
 export const checkPatchMe = bodyChecker<PatchMeBody>(bodies.patchMe);
+export const checkPatchTripMe = bodyChecker<PatchTripMeBody>(bodies.patchTripMe);
+export const checkPutBudget = bodyChecker<PutBudgetBody>(bodies.putBudget);
