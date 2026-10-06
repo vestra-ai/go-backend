@@ -168,8 +168,15 @@ const patchTrip = {
   },
 } as const;
 
+const nudge = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['person_id'],
+  properties: { person_id: id },
+} as const;
+
 /** Every route's body definition, by name. */
-export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, patchTripMe, putBudget, patchTrip } as const;
+export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, patchTripMe, putBudget, patchTrip, nudge } as const;
 
 /** Nodes the walk in tests/bodies.test.ts does not enter: they are checked against the contract's own definitions elsewhere. */
 export const PASSTHROUGH: readonly string[] = ['patchTrip.itinerary[]'];
@@ -235,6 +242,10 @@ export interface PatchTripBody {
   status?: 'planning' | 'booked' | 'on_trip' | 'over';
 }
 
+export interface NudgeBody {
+  person_id: string;
+}
+
 export interface CancelVoteBody {
   client_id: string;
 }
@@ -247,3 +258,4 @@ export const checkPatchMe = bodyChecker<PatchMeBody>(bodies.patchMe);
 export const checkPatchTripMe = bodyChecker<PatchTripMeBody>(bodies.patchTripMe);
 export const checkPutBudget = bodyChecker<PutBudgetBody>(bodies.putBudget);
 export const checkPatchTrip = bodyChecker<PatchTripBody>(bodies.patchTrip);
+export const checkNudge = bodyChecker<NudgeBody>(bodies.nudge);

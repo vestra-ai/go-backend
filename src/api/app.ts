@@ -7,6 +7,7 @@ import {
 import { GoUnavailable, cardTap, catchUp, deleteFact, forgetPerson, getPerson, updateCarryOver, vaultLink } from '../domain/ask-go.js';
 import type { GoClient } from '../domain/ask-go.js';
 import { messageForApp } from '../domain/mappers.js';
+import { getSettleUp, nudgePerson } from '../domain/settle-up.js';
 import { getMyProfile, getMyTripAnswers, setMyBudget, updateMyProfile, updateMyTripAnswers, updateTripDetails } from '../domain/person-edits.js';
 import { addPersonBooking, openPersonVote, proposeCancelBooking, updatePersonBooking } from '../domain/votes-bookings.js';
 import { invalid } from '../domain/errors.js';
@@ -15,7 +16,7 @@ import { buildSnapshot } from '../domain/snapshot.js';
 import { SocketCallError } from '../go/go-socket.js';
 import type { LiveEvent } from '../live/live.js';
 import { signSession, verifySession } from './auth.js';
-import { checkAddBooking, checkCancelVote, checkOpenVote, checkPatchMe, checkPatchTrip, checkPatchTripMe, checkPutBudget, checkUpdateBooking } from './bodies.js';
+import { checkAddBooking, checkCancelVote, checkOpenVote, checkPatchMe, checkNudge, checkPatchTrip, checkPatchTripMe, checkPutBudget, checkUpdateBooking } from './bodies.js';
 import { corsHeaders } from './cors.js';
 
 export interface AppDeps {
@@ -153,6 +154,15 @@ export function buildApp({ ctx, go, sessionSecret, origins = [] }: AppDeps): Fas
     if (Object.keys(body).length === 0) throw invalid('send at least one field');
     return updateTripDetails(ctx, trip, me, body);
   }));
+  app.get('/app/trips/:id/settle-up', {
+    preHandler: needAuth,
+    handler: async (req: any, reply) => {
+      await requireMember(ctx.pool, req.params.id, req.personId);
+      reply.header('cache-control', 'no-store'); // it carries payees' UPI ids
+      return getSettleUp(ctx, req.params.id, req.personId);
+    },
+  });
+  app.post('/app/trips/:id/settle-up/nudges', inTrip((req, trip, me) => nudgePerson(ctx, trip, me, checkNudge(req.body))));
   app.post('/app/trips/:id/leave', inTrip((_r, trip, me) => leaveTrip(ctx, trip, me)));
   app.post('/app/trips/:id/go-paused', { ...body({ paused: bool }, ['paused']), ...inTrip((req, trip, me) => setGoPaused(ctx, trip, me, req.body.paused)) });
   app.post('/app/trips/:id/seen', inTrip(async (_r, trip, me) => (await markSeen(ctx, trip, me), { ok: true })));
