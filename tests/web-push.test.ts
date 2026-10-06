@@ -64,7 +64,7 @@ describe('subscribing', () => {
     const warned: string[] = [];
     const partial = createPush({ pool: h.pool, keys: { publicKey: 'SECRETPUBLIC123', subject: 'mailto:a@b.co' }, warn: (m) => warned.push(m) });
     const invalid = createPush({ pool: h.pool, keys: { publicKey: 'SECRETPUBLIC123', privateKey: 'SECRETPRIVATE456', subject: 'mailto:a@b.co' }, warn: (m) => warned.push(m) });
-    expect([partial.push instanceof LogPush, partial.publicKey, invalid.push instanceof LogPush, invalid.publicKey, warned.length, /SECRET/.test(warned.join(' '))]).toEqual([true, null, true, null, 2, false]);
+    expect([partial.push instanceof LogPush, partial.publicKey, invalid.push instanceof LogPush, invalid.publicKey, warned.length, /SECRET/.test(warned.join(' ')), warned.every((m) => m.includes('VAPID'))]).toEqual([true, null, true, null, 2, false, true]); // the warning names the settings (the release test relies on that word)
     const good = webpush.generateVAPIDKeys();
     const real = createPush({ pool: h.pool, keys: { ...good, subject: 'mailto:a@b.co' }, warn: (m) => warned.push(m) });
     expect([real.push instanceof WebPushSender, real.publicKey === good.publicKey]).toEqual([true, true]);
