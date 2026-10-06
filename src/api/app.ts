@@ -7,6 +7,7 @@ import {
 import { GoUnavailable, cardTap, catchUp, deleteFact, forgetPerson, getPerson, updateCarryOver, vaultLink } from '../domain/ask-go.js';
 import type { GoClient } from '../domain/ask-go.js';
 import { messageForApp } from '../domain/mappers.js';
+import { getMyProfile, updateMyProfile } from '../domain/person-edits.js';
 import { addPersonBooking, openPersonVote, proposeCancelBooking, updatePersonBooking } from '../domain/votes-bookings.js';
 import { invalid } from '../domain/errors.js';
 import type { MessageRow, ReactionRow } from '../domain/mappers.js';
@@ -14,7 +15,7 @@ import { buildSnapshot } from '../domain/snapshot.js';
 import { SocketCallError } from '../go/go-socket.js';
 import type { LiveEvent } from '../live/live.js';
 import { signSession, verifySession } from './auth.js';
-import { checkAddBooking, checkCancelVote, checkOpenVote, checkUpdateBooking } from './bodies.js';
+import { checkAddBooking, checkCancelVote, checkOpenVote, checkPatchMe, checkUpdateBooking } from './bodies.js';
 import { corsHeaders } from './cors.js';
 
 export interface AppDeps {
@@ -239,6 +240,13 @@ export function buildApp({ ctx, go, sessionSecret, origins = [] }: AppDeps): Fas
   app.post('/app/trips/:id/catch-up', { ...body({ force: bool }), ...inTrip((req, trip, me) => catchUp(ctx, go, trip, me, !!req.body.force)) });
 
   // ---- the You screen
+  app.get('/app/me', auth, async (req, reply) => (reply.header('cache-control', 'no-store'), getMyProfile(ctx, req.personId))); // it holds the UPI id
+  app.patch('/app/me', auth, async (req, reply) => {
+    const body = checkPatchMe(req.body);
+    if (Object.keys(body).length === 0) throw invalid('send at least one field');
+    reply.header('cache-control', 'no-store');
+    return updateMyProfile(ctx, req.personId, body);
+  });
   app.get('/app/me/go-knows', auth, async (req) => getPerson(go, req.personId));
   app.put('/app/me/carry-over', { ...auth, ...body({ carry_over: bool }, ['carry_over']) }, async (req: any) => updateCarryOver(go, req.personId, req.body.carry_over));
   app.delete('/app/me/facts/:fact', auth, async (req: any) => deleteFact(go, req.personId, req.params.fact));

@@ -33,6 +33,15 @@ export interface NewPerson {
   upi_id?: string;
 }
 
+/**
+ * A shared lock on the person's row, taken first. A profile edit holds the row while it tells every trip the person is in,
+ * so a join or a new trip that starts meanwhile waits for it and then reads the new name, never the old one.
+ * (Lock order: person row first, always.)
+ */
+export async function lockPersonForRead(db: pg.PoolClient, personId: string): Promise<void> {
+  await db.query('select 1 from people where person_id = $1 for share', [personId]);
+}
+
 export async function createPerson(ctx: Ctx, input: NewPerson): Promise<{ person_id: string }> {
   const person_id = newId('p');
   await ctx.pool.query('insert into people (person_id, name, photo_url, phone, email, upi_id) values ($1, $2, $3, $4, $5, $6)', [
@@ -54,6 +63,7 @@ export interface NewTrip {
 /** Creates the trip with the organizer in it, and sends `trip.created` (change number 1) with the whole trip. */
 export async function createTrip(ctx: Ctx, organizerId: string, input: NewTrip) {
   return withTx(ctx.pool, async (db, after) => {
+    await lockPersonForRead(db, organizerId);
     const trip_id = newId('t');
     const invite_code = randomBytes(6).toString('base64url');
     await db.query(
@@ -95,6 +105,7 @@ export async function tripByInvite(ctx: Ctx, code: string) {
  */
 export async function joinTrip(ctx: Ctx, code: string, personId: string, answers: JoinAnswers) {
   return withTx(ctx.pool, async (db, after) => {
+    await lockPersonForRead(db, personId);
     const t = (await db.query('select trip_id from trips where invite_code = $1', [code])).rows[0];
     if (!t) throw notFound('no trip for this invite link');
     const tripId: string = t.trip_id;

@@ -32,6 +32,10 @@ const ajv = new Ajv2020({ strict: false, allErrors: false, discriminator: true }
 addFormats.default(ajv);
 ajv.addSchema({ $id: 'go', components: { schemas } });
 
+const uriOk = ajv.compile({ type: 'string', format: 'uri' });
+/** True when the text passes the contract's own URL test: the same one every event is checked with. */
+export const isContractUri = (value: unknown): value is string => typeof value === 'string' && uriOk(value);
+
 const cache = new Map<string, ValidateFunction>();
 export function validator(schemaName: string): ValidateFunction {
   let v = cache.get(schemaName);

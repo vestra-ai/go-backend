@@ -116,11 +116,22 @@ const cancelVote = {
   properties: { client_id: id },
 } as const;
 
+// The account profile. `upi_id` has a length limit only (no format rule): 1-100. A photo link must be an http(s) URL.
+const patchMe = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    name: { type: 'string', minLength: 1, maxLength: 80 },
+    photo_url: { type: ['string', 'null'], format: 'uri', pattern: '^https?://' },
+    upi_id: { type: ['string', 'null'], minLength: 1, maxLength: 100 },
+  },
+} as const;
+
 /** Every route's body definition, by name. */
-export const bodies = { openVote, addBooking, updateBooking, cancelVote } as const;
+export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe } as const;
 
 /** The only places `null` is a valid value ("clear this field"): `<definition>.<dotted path>`. */
-export const CLEARABLE: readonly string[] = ['updateBooking.refundable_until', 'updateBooking.starts_at', 'updateBooking.ends_at'];
+export const CLEARABLE: readonly string[] = ['updateBooking.refundable_until', 'updateBooking.starts_at', 'updateBooking.ends_at', 'patchMe.photo_url', 'patchMe.upi_id'];
 
 export interface OpenVoteBody {
   client_id: string;
@@ -156,6 +167,12 @@ export interface UpdateBookingBody {
   ends_at?: string | null;
 }
 
+export interface PatchMeBody {
+  name?: string;
+  photo_url?: string | null;
+  upi_id?: string | null;
+}
+
 export interface CancelVoteBody {
   client_id: string;
 }
@@ -164,3 +181,4 @@ export const checkOpenVote = bodyChecker<OpenVoteBody>(bodies.openVote);
 export const checkAddBooking = bodyChecker<AddBookingBody>(bodies.addBooking);
 export const checkUpdateBooking = bodyChecker<UpdateBookingBody>(bodies.updateBooking);
 export const checkCancelVote = bodyChecker<CancelVoteBody>(bodies.cancelVote);
+export const checkPatchMe = bodyChecker<PatchMeBody>(bodies.patchMe);

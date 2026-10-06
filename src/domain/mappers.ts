@@ -1,4 +1,5 @@
 // Rows from our database as the contract's objects, the way Go may see them.
+import { isContractUri } from '../contract/index.js';
 import type { Actor, Booking, Decision, Expense, Mandate, Message, Person, Reaction, RecordLine } from './types.js';
 
 export const iso = (d: Date | string | null | undefined): string | undefined =>
@@ -54,12 +55,15 @@ export interface PersonRow {
   joined_at: Date; from_city: string | null; earliest_leave: string | null; know: string[]; go_paused: boolean;
 }
 
-/** A person as Go may see them: no phone, email or UPI id, no budget answer. */
+/**
+ * A person as Go may see them: no phone, email or UPI id, no budget answer. A stored photo link that fails the contract's
+ * own URL test (older sign-ups were not checked) is left out: sent as it is, it would make every event about that person invalid.
+ */
 export const personForGo = (r: PersonRow): Person =>
   compact({
     person_id: r.person_id,
     name: r.name,
-    photo_url: r.photo_url ?? undefined,
+    photo_url: isContractUri(r.photo_url) ? r.photo_url : undefined,
     role: r.role,
     joined_at: iso(r.joined_at)!,
     from_city: r.from_city ?? undefined,
