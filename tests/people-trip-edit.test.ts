@@ -77,4 +77,13 @@ describe('a trip\'s details and status', () => {
     await h.flush();
     expect([seen.waited, refusal(seen.result), personEdits().filter((e) => e.data.by.person_id === 'p_kabir').length]).toEqual([true, [403, 'forbidden'], 0]);
   });
+
+  it('an itinerary may be at most 262144 bytes as JSON: one at the limit is stored, one byte over is refused with 422', async () => {
+    const withPad = (pad: number) => [{ date: '2026-11-07', items: [], pad: 'x'.repeat(pad) }];
+    const base = Buffer.byteLength(JSON.stringify(withPad(0)));
+    const atLimit = await patch({ itinerary: withPad(262_144 - base) });
+    const over = await patch({ itinerary: withPad(262_144 - base + 1) });
+    const wide = await patch({ itinerary: [{ date: '2026-11-07', items: [], pad: 'ह'.repeat(Math.floor((262_144 - base) / 3) + 1) }] }); // fewer than 87,000 characters, but more than 262144 bytes
+    expect([atLimit.status, Buffer.byteLength(JSON.stringify((await rows(h.pool, `select itinerary from trips where trip_id = 't_goa'`))[0].itinerary)) > 262_144 - 100, refusal(over), over.body.error.message, refusal(wide)]).toEqual([200, true, [422, 'invalid'], 'itinerary is too large: at most 262144 bytes as JSON', [422, 'invalid']]); // bytes, not characters
+  });
 });

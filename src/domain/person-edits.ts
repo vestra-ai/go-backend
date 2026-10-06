@@ -130,6 +130,9 @@ export async function setMyBudget(ctx: Ctx, tripId: string, personId: string, in
 
 // ---------------------------------------------------------------- the trip's details and status
 
+/** The itinerary, as JSON, may take a quarter of the 1 MiB frame Go reads a trip in (build-direction ruling: the rest of a trip must still fit). */
+export const MAX_ITINERARY_BYTES = 262_144;
+
 /**
  * Any member edits the trip's title, dates, itinerary or status (status may move in any direction). Locks the trip row, compares,
  * writes only what differs, and sends one `trip.updated` by the person listing only those fields; nothing differs: `seq: null`.
@@ -141,6 +144,7 @@ export async function updateTripDetails(ctx: Ctx, tripId: string, personId: stri
   if (input.dates && input.dates.start > input.dates.end) throw invalid('dates.start must be on or before dates.end');
   if (input.dates && input.dates.start < '0001-01-01') throw invalid('dates must be from year 1: the database has no year 0'); // the date format admits 0000
   if (input.itinerary) {
+    if (Buffer.byteLength(JSON.stringify(input.itinerary)) > MAX_ITINERARY_BYTES) throw invalid(`itinerary is too large: at most ${MAX_ITINERARY_BYTES} bytes as JSON`);
     input.itinerary.forEach((day, i) => {
       const checked = check('Day', day);
       if (!checked.ok) throw invalid(`itinerary[${i}] ${checked.message}`);

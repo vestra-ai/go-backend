@@ -89,6 +89,18 @@ describe('subscribing', () => {
     expect((await t.api(t.as('p_priya'), 'PUT', '/app/push/subscription', { endpoint: FCM, keys: { p256dh: 'short', auth: 'x' } })).status).toBe(422); // not keys a browser makes
   });
 
+  it('keeps at most 10 subscriptions per person: a newer address replaces the oldest, and saving an old address again makes it the newest', async () => {
+    await h.pool.query('delete from push_subscriptions');
+    const address = (i: number) => `https://fcm.googleapis.com/fcm/send/device-${i}`;
+    await subscribe('p_arjun', address(99)); // someone else's subscription must survive Kabir's trimming
+    for (let i = 1; i <= 10; i++) await subscribe('p_kabir', address(i));
+    await subscribe('p_kabir', address(1)); // the oldest device is used again: it is now the newest, so device 2 is the oldest
+    const eleventh = await subscribe('p_kabir', address(11));
+    const left = (await rows(h.pool, `select endpoint from push_subscriptions where person_id = 'p_kabir'`)).map((r) => r.endpoint);
+    expect([eleventh.status, left.length, left.includes(address(1)), left.includes(address(2)), left.includes(address(11)), await subscriptionOwner(address(99))]).toEqual([204, 10, true, false, true, 'p_arjun']);
+    await h.pool.query('delete from push_subscriptions');
+  });
+
   it('refuses an unsigned caller and an unknown field, on both subscribe and unsubscribe', async () => {
     const status = async (method: 'PUT' | 'POST', url: string, who: string | null, body: unknown) => (await t.api(who ? t.as(who) : null, method, url, body)).status;
     expect(await status('PUT', '/app/push/subscription', null, { endpoint: FCM, keys })).toBe(401);
