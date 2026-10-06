@@ -149,8 +149,30 @@ const putBudget = {
   },
 } as const;
 
+// A trip's details and status, edited by any member. Nothing is clearable. The itinerary replaces the whole itinerary (at most
+// 30 days). Its days are checked against the contract's own Day and item definitions in the domain code and stored exactly as sent,
+// including fields the server does not know, so its items are free-form here (see PASSTHROUGH).
+const patchTrip = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    title: { type: 'string', minLength: 1, maxLength: 80 },
+    dates: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['start', 'end'],
+      properties: { start: { type: 'string', format: 'date' }, end: { type: 'string', format: 'date' } },
+    },
+    itinerary: { type: 'array', maxItems: 30, items: { type: 'object' } },
+    status: { type: 'string', enum: ['planning', 'booked', 'on_trip', 'over'] },
+  },
+} as const;
+
 /** Every route's body definition, by name. */
-export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, patchTripMe, putBudget } as const;
+export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, patchTripMe, putBudget, patchTrip } as const;
+
+/** Nodes the walk in tests/bodies.test.ts does not enter: they are checked against the contract's own definitions elsewhere. */
+export const PASSTHROUGH: readonly string[] = ['patchTrip.itinerary[]'];
 
 /** The only places `null` is a valid value ("clear this field"): `<definition>.<dotted path>`. */
 export const CLEARABLE: readonly string[] = ['updateBooking.refundable_until', 'updateBooking.starts_at', 'updateBooking.ends_at', 'patchMe.photo_url', 'patchMe.upi_id', 'patchTripMe.from_city', 'patchTripMe.earliest_leave'];
@@ -206,6 +228,13 @@ export interface PutBudgetBody {
   max_minor?: number;
 }
 
+export interface PatchTripBody {
+  title?: string;
+  dates?: { start: string; end: string };
+  itinerary?: Array<Record<string, unknown>>;
+  status?: 'planning' | 'booked' | 'on_trip' | 'over';
+}
+
 export interface CancelVoteBody {
   client_id: string;
 }
@@ -217,3 +246,4 @@ export const checkCancelVote = bodyChecker<CancelVoteBody>(bodies.cancelVote);
 export const checkPatchMe = bodyChecker<PatchMeBody>(bodies.patchMe);
 export const checkPatchTripMe = bodyChecker<PatchTripMeBody>(bodies.patchTripMe);
 export const checkPutBudget = bodyChecker<PutBudgetBody>(bodies.putBudget);
+export const checkPatchTrip = bodyChecker<PatchTripBody>(bodies.patchTrip);

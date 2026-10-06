@@ -51,9 +51,8 @@ export function validator(schemaName: string): ValidateFunction {
 export function dropNulls<T>(value: T): T {
   if (Array.isArray(value)) return value.map(dropNulls) as T;
   if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) if (v !== null) out[k] = dropNulls(v);
-    return out as T;
+    // Built with fromEntries so a key named `__proto__` stays an ordinary key of the copy, never its prototype.
+    return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== null).map(([k, v]) => [k, dropNulls(v)])) as T;
   }
   return value;
 }

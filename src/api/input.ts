@@ -12,12 +12,34 @@ addFormats.default(ajv);
 
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
 
-/** Text the database cannot store: a NUL character or an unpaired surrogate, in any string or key of the body. */
-function unstorable(value: unknown): boolean {
-  if (typeof value === 'string') return value.includes('\u0000') || LONE_SURROGATE.test(value);
-  if (Array.isArray(value)) return value.some(unstorable);
-  if (value && typeof value === 'object') return Object.entries(value).some(([k, v]) => unstorable(k) || unstorable(v));
-  return false;
+/** How deep a body may nest. The routes' own shapes are a few levels; only an itinerary's free-form fields can go deeper. */
+export const MAX_DEPTH = 32;
+
+/**
+ * What the database or the parser cannot take, anywhere in a body, found without recursion (a deep body must not exhaust the
+ * stack): a NUL character or an unpaired surrogate in any string or key (Postgres refuses both), a `__proto__` key, or nesting
+ * deeper than MAX_DEPTH.
+ */
+function unacceptable(root: unknown): string | null {
+  const unstorable = (text: string) => text.includes('\u0000') || LONE_SURROGATE.test(text);
+  const stack: Array<[unknown, number]> = [[root, 1]];
+  while (stack.length > 0) {
+    const [value, depth] = stack.pop()!;
+    if (typeof value === 'string') {
+      if (unstorable(value)) return 'body has a character that cannot be stored (a NUL or an unpaired surrogate)';
+    } else if (value && typeof value === 'object') {
+      if (depth > MAX_DEPTH) return `body is nested more than ${MAX_DEPTH} levels deep`;
+      if (Array.isArray(value)) for (const item of value) stack.push([item, depth + 1]);
+      else {
+        for (const [key, item] of Object.entries(value)) {
+          if (unstorable(key)) return 'body has a character that cannot be stored (a NUL or an unpaired surrogate)';
+          if (key === '__proto__') return 'body has a key that is not allowed'; // read as an ordinary key by JSON.parse, it would let a value skip the contract check that copies it
+          stack.push([item, depth + 1]);
+        }
+      }
+    }
+  }
+  return null;
 }
 
 /** Names the field and the rule, never the value: a UPI id or a budget answer must not travel in an error message. */
@@ -38,8 +60,9 @@ export function bodyChecker<T>(schema: object): (body: unknown) => T {
   const validate = ajv.compile(schema);
   return (body: unknown): T => {
     if (body === null || typeof body !== 'object' || Array.isArray(body)) throw invalid('body must be a JSON object');
+    const refused = unacceptable(body);
+    if (refused) throw invalid(refused);
     if (!validate(body)) throw invalid(describe(validate.errors![0]!));
-    if (unstorable(body)) throw invalid('body has a character that cannot be stored (a NUL or an unpaired surrogate)');
     return body as T;
   };
 }

@@ -1,8 +1,8 @@
 import { expect, it } from 'vitest';
-import { CLEARABLE, bodies } from '../src/api/bodies.js';
+import { CLEARABLE, PASSTHROUGH, bodies } from '../src/api/bodies.js';
 
 /** The routes with a body definition. Each block that adds a definition adds its name here. */
-const EXPECTED = ['openVote', 'addBooking', 'updateBooking', 'cancelVote', 'patchMe', 'patchTripMe', 'putBudget'];
+const EXPECTED = ['openVote', 'addBooking', 'updateBooking', 'cancelVote', 'patchMe', 'patchTripMe', 'putBudget', 'patchTrip'];
 const ALLOWED_KEYWORDS = ['type', 'properties', 'required', 'additionalProperties', 'items', 'minItems', 'maxItems', 'uniqueItems', 'minLength', 'maxLength', 'minimum', 'maximum', 'enum', 'format', 'pattern', 'description'];
 
 it('every body definition is strict: typed, closed objects, null only where clearable, bounded strings and arrays', () => {
@@ -10,6 +10,7 @@ it('every body definition is strict: typed, closed objects, null only where clea
   const problems: string[] = [];
   const walk = (name: string, node: any, path: string) => {
     const where = `${name}${path ? `.${path}` : ''}`;
+    if (PASSTHROUGH.includes(where)) return; // checked against the contract's own definitions in the domain code
     const types: string[] = ([] as string[]).concat(node.type ?? []);
     if (types.length === 0) problems.push(`${where}: no type (an untyped node accepts anything)`);
     for (const key of Object.keys(node)) if (!ALLOWED_KEYWORDS.includes(key)) problems.push(`${where}: keyword ${key} is not one the walk understands`);
@@ -31,4 +32,5 @@ it('every body definition is strict: typed, closed objects, null only where clea
     walk(name, schema, '');
   }
   expect(problems).toEqual([]);
+  expect(PASSTHROUGH).toEqual(['patchTrip.itinerary[]']); // the exemptions are pinned here: a new one needs a reviewed change to this test
 });

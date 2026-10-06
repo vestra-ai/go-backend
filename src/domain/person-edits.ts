@@ -5,8 +5,9 @@ import type pg from 'pg';
 import type { Ctx } from '../context.js';
 import { withTx } from '../db/pool.js';
 import { change } from '../db/write-change.js';
-import type { PatchMeBody, PatchTripMeBody, PutBudgetBody } from '../api/bodies.js';
-import { Forbidden } from './actions.js';
+import { check } from '../contract/index.js';
+import type { PatchMeBody, PatchTripBody, PatchTripMeBody, PutBudgetBody } from '../api/bodies.js';
+import { Forbidden, requireMember as requireMemberTx } from './actions.js';
 import { invalid, notFound } from './errors.js';
 import { personForGo } from './mappers.js';
 import { activePeople } from './snapshot.js';
@@ -122,6 +123,60 @@ export async function setMyBudget(ctx: Ctx, tripId: string, personId: string, in
     if (cur.budget_min_minor === input.min_minor && cur.budget_max_minor === max) return { seq: null };
     await db.query('update trip_people set budget_min_minor = $3, budget_max_minor = $4 where trip_id = $1 and person_id = $2', [tripId, personId, input.min_minor, max]);
     const seq = await change(db, tripId, 'trip.updated', { by: { kind: 'system' }, changed: ['budget'] });
+    after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
+    return { seq };
+  });
+}
+
+// ---------------------------------------------------------------- the trip's details and status
+
+/**
+ * Any member edits the trip's title, dates, itinerary or status (status may move in any direction). Locks the trip row, compares,
+ * writes only what differs, and sends one `trip.updated` by the person listing only those fields; nothing differs: `seq: null`.
+ * The itinerary replaces the whole itinerary: each day is checked against the contract's own Day and item definitions and stored
+ * exactly as sent (fields the server does not know survive); "differs" means differs by value, ignoring the order of keys inside
+ * objects (the order of days and items counts). The last of two whole-itinerary saves wins, as with Go's `update_trip`.
+ */
+export async function updateTripDetails(ctx: Ctx, tripId: string, personId: string, input: PatchTripBody) {
+  if (input.dates && input.dates.start > input.dates.end) throw invalid('dates.start must be on or before dates.end');
+  if (input.dates && input.dates.start < '0001-01-01') throw invalid('dates must be from year 1: the database has no year 0'); // the date format admits 0000
+  if (input.itinerary) {
+    input.itinerary.forEach((day, i) => {
+      const checked = check('Day', day);
+      if (!checked.ok) throw invalid(`itinerary[${i}] ${checked.message}`);
+    });
+  }
+  return withTx(ctx.pool, async (db, after) => {
+    // The trip row, locked: the same lock the change number takes, held from here so nothing else changes the trip between compare and write.
+    const cur = (await db.query('select title, status, dates_start, dates_end from trips where trip_id = $1 for no key update', [tripId])).rows[0];
+    if (!cur) throw notFound(`trip ${tripId} does not exist`);
+    // Membership is checked after the trip lock, so a leave that is ahead of this edit has committed and is seen (403), and one that is
+    // behind it numbers its `person.left` after this edit. (Locking the membership row here would invert the order a leave takes.)
+    await requireMemberTx(db, tripId, personId);
+    if (input.itinerary) {
+      const ids = new Set<string>();
+      for (const day of input.itinerary) for (const item of (day.items as Array<{ booking_id?: string }>) ?? []) if (item.booking_id) ids.add(item.booking_id);
+      if (ids.size) {
+        const found = await db.query('select booking_id from bookings where trip_id = $1 and booking_id = any($2)', [tripId, [...ids]]);
+        const have = new Set(found.rows.map((r) => r.booking_id as string));
+        const missing = [...ids].find((id) => !have.has(id));
+        if (missing) throw invalid(`itinerary: booking ${missing} is not in this trip`);
+      }
+    }
+    const sets: string[] = [];
+    const values: unknown[] = [tripId];
+    const set = (column: string, value: unknown) => (values.push(value), sets.push(`${column} = $${values.length}`));
+    const changed: string[] = [];
+    if (input.title !== undefined && input.title !== cur.title) (set('title', input.title), changed.push('title'));
+    if (input.dates && (input.dates.start !== cur.dates_start || input.dates.end !== cur.dates_end)) (set('dates_start', input.dates.start), set('dates_end', input.dates.end), changed.push('dates'));
+    if (input.itinerary) {
+      const same = (await db.query('select itinerary = $2::jsonb as same from trips where trip_id = $1', [tripId, JSON.stringify(input.itinerary)])).rows[0].same as boolean;
+      if (!same) (set('itinerary', JSON.stringify(input.itinerary)), changed.push('itinerary'));
+    }
+    if (input.status !== undefined && input.status !== cur.status) (set('status', input.status), changed.push('status'));
+    if (changed.length === 0) return { seq: null };
+    await db.query(`update trips set ${sets.join(', ')} where trip_id = $1`, values);
+    const seq = await change(db, tripId, 'trip.updated', { by: { kind: 'person', person_id: personId }, changed });
     after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
     return { seq };
   });
