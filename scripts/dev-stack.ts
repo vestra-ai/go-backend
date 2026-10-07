@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
+import { FakeSupabaseAuth } from '../tests/helpers/fake-supabase-auth.js';
 import { MockGo } from '../tests/helpers/mock-go.js';
 
 const PORT = Number(process.env.PORT ?? 8080);
@@ -30,6 +31,11 @@ await admin.query('create database go');
 await admin.end();
 
 // 2. The fake Go.
+// 2b. With --supabase-auth: sign-in with Supabase-style access tokens from a fake Supabase Auth on :54331
+// (GET http://127.0.0.1:54331/mint?name=Priya gives one), exactly as the app will sign in with the real Supabase.
+const supabaseAuth = process.argv.includes('--supabase-auth') ? new FakeSupabaseAuth() : null;
+const authUrl = supabaseAuth ? await supabaseAuth.start(Number(process.env.DEV_AUTH_PORT ?? 54331), { mint: true }) : null;
+
 const go = new MockGo();
 go.fakeGo = true;
 const goBase = await go.listen();
@@ -46,6 +52,7 @@ const server = spawn(process.execPath, ['--import', 'tsx', 'src/main.ts'], {
     PORT: String(PORT),
     PUBLIC_BASE_URL: `http://localhost:${PORT}`,
     APP_SESSION_SECRET: 'dev-stack-session-secret',
+    ...(authUrl ? { AUTH_MODE: 'supabase', SUPABASE_URL: authUrl } : { AUTH_MODE: 'dev' }),
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -101,7 +108,11 @@ console.log(`
     Act as Go    http://localhost:${SIM_PORT}/sim    (POST /sim/<method>, GET /sim/state; Postman's {{simUrl}})
     Postgres     postgres://postgres:postgres@localhost:${PG_PORT}/go  (temporary)
   The fake Go answers every message that names it (@Go): typing, ✅, then a reply with a card.
-  Ctrl-C stops everything.
+${authUrl
+  ? `  Sign-in      Supabase-style tokens from a fake Supabase Auth: GET ${authUrl}/mint?name=Priya&email=priya@gmail.com
+               (send the access_token as Authorization: Bearer …; POST /app/people is off, as in production)
+`
+  : '  Sign-in      dev tokens: POST /app/people (add --supabase-auth to sign in like production)\n'}  Ctrl-C stops everything.
 `);
 
 let stopping = false;
@@ -112,6 +123,7 @@ const stop = async () => {
   await new Promise((r) => server.once('exit', r));
   sim.close();
   await go.close();
+  await supabaseAuth?.close();
   await db.stop();
   rmSync(dir, { recursive: true, force: true });
   process.exit(0);

@@ -28,10 +28,15 @@ export async function migrate(db: pg.Client | pg.Pool, dir = new URL('../migrati
   }
 }
 
+// `pnpm migrate`: applies the migrations to DATABASE_URL (from the environment, else .env), over TLS for Supabase with
+// DATABASE_CA_CERT, exactly as the server does when it starts.
 if (process.argv[1] && import.meta.url === new URL(process.argv[1], 'file:').href) {
-  const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
-  await client.connect();
-  const applied = await migrate(client);
+  const { loadEnv } = await import('./dev-real.js');
+  const { createPool } = await import('../src/db/pool.js');
+  const env = process.env.DATABASE_URL ? process.env : { ...loadEnv(), ...process.env };
+  if (!env.DATABASE_URL) throw new Error('DATABASE_URL is not set');
+  const pool = createPool(env.DATABASE_URL, 2, env.DATABASE_CA_CERT || undefined);
+  const applied = await migrate(pool);
   console.log(applied.length ? `applied ${applied.join(', ')}` : 'up to date');
-  await client.end();
+  await pool.end();
 }

@@ -245,7 +245,7 @@ describe('B11: two instances starting at the same moment', () => {
     const a = new pg.Pool({ connectionString: `${base}/${name}` });
     const b = new pg.Pool({ connectionString: `${base}/${name}` });
     const [ra, rb] = await Promise.all([migrate(a), migrate(b)]);
-    expect([...ra, ...rb]).toEqual(['001_core.sql', '002_people_actions.sql']); // each file is applied once, by whichever instance got the lock first
+    expect([...ra, ...rb]).toEqual(['001_core.sql', '002_people_actions.sql', '003_supabase.sql']); // each file is applied once, by whichever instance got the lock first
     await a.end();
     await b.end();
   });

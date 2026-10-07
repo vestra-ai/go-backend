@@ -24,6 +24,10 @@
       "value": "http://localhost:8090"
     },
     {
+      "key": "authUrl",
+      "value": "http://127.0.0.1:54331"
+    },
+    {
       "key": "token",
       "value": ""
     },
@@ -3587,6 +3591,165 @@
               "response": []
             }
           ]
+        }
+      ]
+    },
+    {
+      "name": "Supabase sign-in (local fake, or a real token)",
+      "description": "Signing in like production. Locally: start `pnpm dev:stack:supabase`, then run this folder: the first request gets a Supabase-style access token from the fake Supabase Auth ({{authUrl}}) and saves it as `token`. With the real Supabase: skip the first request and paste a real access token (from `pnpm dev:login`) into `token`. In this mode POST /app/people does not exist.",
+      "item": [
+        {
+          "name": "[Fake Supabase Auth] Get an access token for Rahul",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{authUrl}}/mint?name=Rahul%20Mehta&email=rahul.m@gmail.com",
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Only the local fake Supabase Auth has this route. The real Supabase gives the app its token after Google sign-in."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('a token', () => pm.expect(j.access_token).to.be.a('string'));",
+                  "if (j.access_token) pm.collectionVariables.set('token', j.access_token);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /app/me: the person, created on first sign-in",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/app/me"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('has a person id and name', () => { pm.expect(j.person_id).to.match(/^p_/); pm.expect(j.name).to.be.a('string'); });",
+                  "pm.collectionVariables.set('personId', j.person_id);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /app/trips with the Supabase token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/app/trips",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Goa (signed in with Supabase)\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "if (j.trip_id) { pm.collectionVariables.set('tripId', j.trip_id); pm.collectionVariables.set('inviteCode', j.invite_url.split('/j/')[1]); }"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /app/people is off with Supabase sign-in: 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/app/people",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Nobody\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "A made-up token: 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/app/me",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJFUzI1NiJ9.e30.bad",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "response": []
         }
       ]
     },

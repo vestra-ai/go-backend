@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { createWriteStream, mkdirSync } from 'node:fs';
 import { buildApp } from './api/app.js';
+import { DevAuth, SupabaseAuth } from './api/auth.js';
 import { loadConfig, socketUrl } from './config.js';
 import { createPool } from './db/pool.js';
 import { GoSocket, type TrafficEntry } from './go/go-socket.js';
@@ -13,7 +14,7 @@ import type { Ctx } from './context.js';
 import { migrate } from '../scripts/migrate.js';
 
 const config = loadConfig();
-const pool = createPool(config.databaseUrl, config.dbPoolMax);
+const pool = createPool(config.databaseUrl, config.dbPoolMax, config.databaseCaCert);
 await migrate(pool);
 
 // Web Push when the three VAPID settings are present; otherwise a warning and the log-only sender.
@@ -60,7 +61,13 @@ sender.start();
 const stopJobs = startJobs(ctx);
 
 // 4. The app's API.
-const app = buildApp({ ctx, go, sessionSecret: process.env.APP_SESSION_SECRET ?? randomBytes(32).toString('hex'), origins: config.appOrigins, pushPublicKey: pushPublicKey ?? undefined });
+// Sign-in: Supabase access tokens, or our dev tokens for local testing (refused in production by loadConfig).
+const sessionSecret = process.env.APP_SESSION_SECRET ?? randomBytes(32).toString('hex');
+const auth = config.authMode === 'supabase'
+  ? new SupabaseAuth({ supabaseUrl: config.supabaseUrl!, pool, jwtSecret: config.supabaseJwtSecret })
+  : new DevAuth(sessionSecret);
+console.log(`sign-in: ${config.authMode}${config.authMode === 'supabase' ? ` (${config.supabaseUrl})` : ' tokens from POST /app/people'}`);
+const app = buildApp({ ctx, go, sessionSecret, auth, origins: config.appOrigins, pushPublicKey: pushPublicKey ?? undefined });
 await app.listen({ port: config.port, host: '0.0.0.0' });
 console.log(`server ${config.instance} listening on :${config.port}`);
 

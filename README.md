@@ -92,6 +92,22 @@ shows "Go is typing...", reads the trip, adds a ✅ and replies with one of its 
 Postman) act as Go for the rest: `POST http://localhost:8090/sim/<method>` with Go's params, for example
 `/sim/open_vote`. `GET /sim/state` shows what the fake Go has received.
 
+## Sign-in with Supabase (Google)
+
+The app signs in with Supabase Auth and sends Supabase's access token on every call; the server checks it locally and
+creates the person on their first sign-in. Set `SUPABASE_URL` (sign-in becomes `AUTH_MODE=supabase`). Without it the
+server uses dev tokens from `POST /app/people`, for local testing only. Everything is ready and tested against a fake
+Supabase Auth:
+
+```bash
+pnpm dev:stack:supabase    # like dev:stack, but signing in like production (tokens from a fake Supabase Auth on :54331)
+pnpm check:supabase        # once the real project is in .env: keys, Google, database, TLS, locks, RLS, all read-only
+pnpm dev:login             # a "Sign in with Google" page on :3000 that shows the real token and calls GET /app/me
+pnpm supabase:rehearse     # with Docker: the server against the official local Supabase (real Auth, Postgres, Data API)
+```
+
+Setup steps, the token flow and the database settings: [`docs/SUPABASE-SETUP.md`](docs/SUPABASE-SETUP.md).
+
 ## Run it against the real Go
 
 ```bash
@@ -135,7 +151,7 @@ is in [`docs/REVIEW.md`](docs/REVIEW.md).
 ## What is still a placeholder
 
 - **Push notifications:** real delivery (Web Push) exists but needs the VAPID keys and a browser that has subscribed; it has not yet been tried against a real browser or push service, only against a test stand-in and the library's request builder. Without the keys the server only writes pushes to the log.
-- **Sign-in:** `src/api/auth.ts` uses simple signed tokens. The rulebook leaves sign-in to us (could be Supabase Auth).
+- **Sign-in:** Supabase sign-in is built and tested locally; it waits for the real Supabase project (docs/SUPABASE-SETUP.md).
 - **The contract package:** the official `@go/contract` lives in a private repo we could not reach, so `src/contract/`
   is built from the public files. Same function names, so it can be swapped later.
 - **Real Go:** never tested against the real or Keshav's fake Go yet, only our mock and our own fake Go (built to the

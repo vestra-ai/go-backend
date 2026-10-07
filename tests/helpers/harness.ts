@@ -7,6 +7,7 @@ import type { Notification, Push } from '../../src/push/push.js';
 import { goRequestHandlers } from '../../src/requests/index.js';
 import { OutboxSender } from '../../src/outbox/sender.js';
 import { buildApp } from '../../src/api/app.js';
+import type { Authenticator } from '../../src/api/auth.js';
 import { freshDb } from './db.js';
 import { MockGo } from './mock-go.js';
 import { seedTrip } from './seed.js';
@@ -35,7 +36,7 @@ const spend = JSON.parse(readFileSync(new URL('../../contract/test-vectors/spend
 export const SPEND_PUBLIC_KEY: string = spend.public_key_pem;
 
 /** The server wired to a real Postgres and a mock Go over a real, signed WebSocket. */
-export async function startHarness(opts: { seed?: boolean; origins?: string[]; makePush?: (pool: pg.Pool) => Push; pushPublicKey?: string } = {}) {
+export async function startHarness(opts: { seed?: boolean; origins?: string[]; makePush?: (pool: pg.Pool) => Push; pushPublicKey?: string; makeAuth?: (pool: pg.Pool) => Authenticator } = {}) {
   const { pool, close } = await freshDb();
   const live = new RecordingLive();
   const push = new RecordingPush();
@@ -52,7 +53,7 @@ export async function startHarness(opts: { seed?: boolean; origins?: string[]; m
   await go.untilConnected();
   if (opts.seed !== false) await seedTrip(pool);
   const sessionSecret = 'test-session-secret';
-  const app = buildApp({ ctx, go: socket, sessionSecret, origins: opts.origins, pushPublicKey: opts.pushPublicKey });
+  const app = buildApp({ ctx, go: socket, sessionSecret, auth: opts.makeAuth?.(pool), origins: opts.origins, pushPublicKey: opts.pushPublicKey });
   await app.ready();
   const sender = new OutboxSender({ pool, send: (e) => socket.request('send_event', e, { timeoutMs: 2500 }), ready: () => socket.connected });
   /** Sends every pending event to Go now, in order. */

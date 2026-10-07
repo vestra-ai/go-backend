@@ -14,6 +14,14 @@ export interface Config {
   vapidSubject?: string;
   /** Postgres connections per instance. The outbox uses at most a third of them, so Go's requests always find one. */
   dbPoolMax: number;
+  /** `supabase`: the app sends Supabase access tokens. `dev`: our own tokens from POST /app/people (never in production). */
+  authMode: 'supabase' | 'dev';
+  /** The Supabase project URL, such as https://abcd.supabase.co. Needed for `supabase` sign-in. */
+  supabaseUrl?: string;
+  /** Only for a Supabase project still on the legacy shared JWT secret (HS256). */
+  supabaseJwtSecret?: string;
+  /** A PEM file with the CA that signed the database's certificate (Supabase: Database settings → SSL). */
+  databaseCaCert?: string;
 }
 
 function need(name: string): string {
@@ -39,7 +47,19 @@ export function loadConfig(): Config {
     vapidSubject: process.env.VAPID_SUBJECT || undefined,
     appOrigins: (process.env.APP_ORIGINS ?? '').split(',').map((o) => o.trim().replace(/\/+$/, '')).filter((o) => o && o !== '*' && o !== 'null'),
     dbPoolMax: Math.max(4, Number(process.env.DB_POOL_MAX ?? 30)),
+    ...authConfig(),
+    databaseCaCert: process.env.DATABASE_CA_CERT || undefined,
   };
+}
+
+/** AUTH_MODE defaults to `supabase` when SUPABASE_URL is set, else `dev`. Dev tokens are refused in production. */
+function authConfig(): Pick<Config, 'authMode' | 'supabaseUrl' | 'supabaseJwtSecret'> {
+  const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/+$/, '') || undefined;
+  const authMode = (process.env.AUTH_MODE || (supabaseUrl ? 'supabase' : 'dev')) as Config['authMode'];
+  if (authMode !== 'supabase' && authMode !== 'dev') throw new Error(`AUTH_MODE must be supabase or dev, not ${authMode}`);
+  if (authMode === 'supabase' && !supabaseUrl) throw new Error('AUTH_MODE=supabase needs SUPABASE_URL (see .env.example)');
+  if (authMode === 'dev' && process.env.NODE_ENV === 'production') throw new Error('AUTH_MODE=dev is for local testing only: set SUPABASE_URL in production');
+  return { authMode, supabaseUrl, supabaseJwtSecret: process.env.SUPABASE_JWT_SECRET || undefined };
 }
 
 /** GO_URL is Go's https:// base URL; the socket is the same host with wss:// and /v1/socket?instance=<name>. */

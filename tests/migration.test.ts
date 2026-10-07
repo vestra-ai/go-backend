@@ -42,7 +42,7 @@ it('migration 002 applies on top of a database at 001 with data in it, and keeps
   await pool.query(`insert into votes (decision_id, person_id, option_index) values ('d_old_open', 'p_a', 0)`);
 
   // [2] The real directory applies only 002, the new shape is there, the old table is gone, and old data stayed.
-  expect(await migrate(pool)).toEqual(['002_people_actions.sql']);
+  expect(await migrate(pool)).toEqual(['002_people_actions.sql', '003_supabase.sql']);
   const tables = (await pool.query(`select table_name from information_schema.tables where table_schema = 'public'`)).rows.map((r) => r.table_name);
   expect(tables).toEqual(expect.arrayContaining(['push_subscriptions', 'nudges']));
   expect(tables).not.toContain('push_devices');

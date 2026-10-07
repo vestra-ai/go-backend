@@ -24,8 +24,13 @@ Import `docs/go-server.postman_collection.json` and `docs/go-server.postman_envi
 ## Basics
 
 - **Base URL:** the server's address (default port `8080`). All bodies are JSON (`content-type: application/json`).
-- **Sign-in:** `POST /app/people` returns a `token`. Send it on every other call as `Authorization: Bearer <token>`
-  (valid 90 days). *This is a simple stand-in and may be replaced by a real sign-in (e.g. Supabase Auth).*
+- **Sign-in (production):** the app signs in with **Supabase Auth (Google)** and sends Supabase's access token on every
+  call as `Authorization: Bearer <session.accessToken>`. The server checks it locally (signature, project, expiry)
+  and never issues tokens itself. The first call after a person's first sign-in creates them from their Google name and
+  photo; `GET /app/me` shows the profile. Tokens last about an hour and `supabase_flutter` refreshes them: **on any
+  `401`, refresh the session once and retry.** Details and the token flow: [`SUPABASE-SETUP.md`](SUPABASE-SETUP.md).
+- **Sign-in (local testing only):** with `AUTH_MODE=dev`, `POST /app/people` returns a dev `token` (90 days), used the
+  same way. That route does not exist when the server runs with Supabase sign-in.
 - **Ids** are opaque strings (don't parse them). **Money** is a whole number in the currency's minor unit (rupees: paise, so ₹54,200 = `5420000`; a currency with no minor unit, such as yen, uses whole units),
   never a decimal. **Times** are ISO 8601 (`2026-11-06T18:10:00Z`; on the strict routes a time must end in `Z` or an offset, otherwise `422`); dates are `YYYY-MM-DD`.
 - **Trip membership:** every `/app/trips/:id/...` call needs the person to be in that trip, otherwise `403`. A trip
@@ -54,7 +59,7 @@ Every error looks like this:
 | HTTP | `code` | When |
 |---|---|---|
 | 400 | `invalid` | The body or query breaks the limits on this page: a field missing (such as `client_id`), too long, the wrong type, or unreadable JSON; also, on every route, a broken web address (e.g. a stray `%`). An oversized body is `413` (code `invalid`) |
-| 401 | `unauthorized` | Missing, forged or expired token |
+| 401 | `unauthorized` | Missing, forged or expired token. The message says when it expired: refresh the Supabase session once and retry |
 | 403 | `forbidden` | Not in this trip (or no such trip), not the author of the message, not the payer |
 | 404 | `not_found` | Invite link, message, vote, line, expense, card, fact... not found, or no such route |
 | 409 | `conflict` | Clashes with current state (vote already closed or cancelled, message deleted, no mandate yet...) |
@@ -70,7 +75,7 @@ A path that does not exist (for example the removed `POST /app/devices`) answers
 
 ## 1. People, trips, joining
 
-### `POST /app/people` (no sign-in)
+### `POST /app/people` (no sign-in; dev sign-in only, `404` with Supabase sign-in)
 Creates a person and signs them in.
 Body: `name` (required, ≤80), `photo_url`, `phone`, `email`, `upi_id` (all optional).
 `201` → `{ "person_id": "p_...", "token": "s1...." }`
@@ -302,7 +307,7 @@ Rules for the client: show a **visible notification for every push** and open th
 ## Known gaps (not available yet)
 
 - No **attachment upload**: only URLs are accepted.
-- Sign-in is a stand-in (see Basics).
+- Supabase sign-in is built and tested locally against a fake Supabase Auth; it has not yet run against a real Supabase project (see [`SUPABASE-SETUP.md`](SUPABASE-SETUP.md)).
 - **A card Go updated while the phone was offline** (for example a pay card that became "paid") is sent on the live
   connection, but `GET .../messages?after_seq=` does not return it again, because the contract gives a card update no
   change number. Until we agree a fix, re-read the messages from `after_seq=0` after a long time offline.

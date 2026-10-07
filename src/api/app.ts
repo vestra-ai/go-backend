@@ -15,7 +15,7 @@ import type { MessageRow, ReactionRow } from '../domain/mappers.js';
 import { readSnapshotForApp } from '../domain/snapshot.js';
 import { SocketCallError } from '../go/go-socket.js';
 import type { LiveEvent } from '../live/live.js';
-import { signSession, verifySession } from './auth.js';
+import { DevAuth, signSession, type Authenticator } from './auth.js';
 import { isAllowedPushEndpoint, isValidSubscriptionKeys } from '../push/web-push.js';
 import { removeSubscription, saveSubscription } from '../push/subscriptions.js';
 import { unavailable } from '../domain/errors.js';
@@ -25,7 +25,10 @@ import { corsHeaders } from './cors.js';
 export interface AppDeps {
   ctx: Ctx;
   go: GoClient & { connected?: boolean };
+  /** Signs dev tokens (POST /app/people) and checks them when no other authenticator is given. */
   sessionSecret: string;
+  /** How sign-in is checked: Supabase access tokens in production, our dev tokens otherwise (the default). */
+  auth?: Authenticator;
   /** The exact origins of the web app that may call this server from a browser. None by default. */
   origins?: string[];
   /** The server's VAPID public key, given to browsers so they can subscribe. Without it the key route answers 503. */
@@ -46,7 +49,7 @@ const minor = { type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER } 
 const body = (properties: Record<string, object>, required: string[] = []) => ({ schema: { body: { type: 'object', required, properties } } });
 
 /** The app's API. The app talks only to this, never to Go. The paths are ours to design. */
-export function buildApp({ ctx, go, sessionSecret, origins = [], pushPublicKey }: AppDeps): FastifyInstance {
+export function buildApp({ ctx, go, sessionSecret, auth: authenticator = new DevAuth(sessionSecret), origins = [], pushPublicKey }: AppDeps): FastifyInstance {
   const app = Fastify({
     logger: false,
     // Fastify answers a malformed address (bad percent-encoding) itself, before any hook runs: give that answer the
@@ -102,11 +105,15 @@ export function buildApp({ ctx, go, sessionSecret, origins = [], pushPublicKey }
     if (req.body === undefined && ['POST', 'PUT', 'PATCH'].includes(req.method)) req.body = {};
   });
 
+  // Every signed-in route: "Authorization: Bearer <token>". On any 401 the app refreshes its Supabase session once and retries.
   const needAuth = async (req: FastifyRequest, reply: FastifyReply) => {
-    const token = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
-    const personId = token ? verifySession(token, sessionSecret) : null;
-    if (!personId) return reply.code(401).send({ error: { code: 'unauthorized', message: 'sign in first' } });
-    req.personId = personId;
+    const token = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '').trim();
+    const result = token ? await authenticator.personFor(token) : { error: 'missing' as const };
+    if ('error' in result) {
+      const message = { missing: 'sign in first', expired: 'the sign-in has expired: refresh it and try again', invalid: 'the sign-in token is not valid' }[result.error];
+      return reply.code(401).send({ error: { code: 'unauthorized', message } });
+    }
+    req.personId = result.personId;
   };
   const auth = { preHandler: needAuth };
   /** Runs `fn` for a person who is in the trip. The HTTP edge is loosely typed; the domain functions are not. */
@@ -123,7 +130,8 @@ export function buildApp({ ctx, go, sessionSecret, origins = [], pushPublicKey }
   app.get('/health', async () => ({ ok: true, go: go.connected ?? null }));
 
   // ---- people, trips, joining
-  app.post('/app/people', { schema: { body: { type: 'object', required: ['name'], properties: { name: { type: 'string', minLength: 1, maxLength: 80 }, photo_url: str, phone: str, email: str, upi_id: str } } } },
+  // Dev sign-in only. With Supabase sign-in, the person is created the first time their Supabase token is used.
+  if (authenticator.mode === 'dev') app.post('/app/people', { schema: { body: { type: 'object', required: ['name'], properties: { name: { type: 'string', minLength: 1, maxLength: 80 }, photo_url: str, phone: str, email: str, upi_id: str } } } },
     async (req, reply) => {
       const { person_id } = await createPerson(ctx, req.body as any);
       return reply.code(201).send({ person_id, token: signSession(person_id, sessionSecret) });

@@ -19,12 +19,18 @@
     "dev:stack": "node scripts/prepare-test-pg.mjs && tsx scripts/dev-stack.ts",
     "postman": "pnpm dlx newman@6 run docs/go-server.postman_collection.json -e docs/go-server.postman_environment.json --folder \"Run in order\"",
     "dev:real": "node scripts/prepare-test-pg.mjs && tsx scripts/dev-real.ts",
-    "inspect": "tsx scripts/inspect.ts"
+    "inspect": "tsx scripts/inspect.ts",
+    "dev:auth": "tsx scripts/dev-auth.ts",
+    "dev:stack:supabase": "node scripts/prepare-test-pg.mjs && tsx scripts/dev-stack.ts --supabase-auth",
+    "check:supabase": "tsx scripts/check-supabase.ts",
+    "dev:login": "tsx scripts/dev-login.ts",
+    "supabase:rehearse": "tsx scripts/rehearse-supabase.ts"
   },
   "dependencies": {
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "fastify": "^5.12.5",
+    "jose": "^6.2.12",
     "pg": "^8.23.1",
     "web-push": "3.6.7",
     "ws": "^8.22.0"
