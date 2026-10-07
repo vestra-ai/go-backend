@@ -101,7 +101,7 @@ describe('cancelling a booking by group vote', () => {
     expect(booking.data).toMatchObject({ change: 'cancelled', by: { kind: 'system' }, booking: { booking_id: bid, status: 'cancelled' } });
     expect(line.data.line).toMatchObject({ kind: 'decided', text: 'Cancel: Villa Sol' });
     expect(await f.bookingStatus(bid)).toBe('cancelled');
-    const everything = JSON.stringify([(await rows(h.pool, 'select body from outbox')).map((r) => r.body), (await t.api(t.as('p_rahul'), 'GET', '/app/trips/t_goa')).body]); // Go's events and the app's own trip read
+    const everything = JSON.stringify([(await rows(h.pool, 'select body from outbox')).map((r) => r.body), (await h.go.call('read_trip', { trip_id: 't_goa' })).result]); // Go's events and the trip as Go reads it (the app's own read carries the marker: see tests/follow-ups.test.ts)
     expect([everything.includes('cancels_booking'), h.push.sent.length]).toEqual([false, 0]); // the link is in no event; no push
   });
 

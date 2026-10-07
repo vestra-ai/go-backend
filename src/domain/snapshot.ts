@@ -101,3 +101,25 @@ export async function readSnapshot(pool: pg.Pool, tripId: string, publicBaseUrl:
     db.release();
   }
 }
+
+/**
+ * The trip as the app reads it: the same snapshot Go reads, in one repeatable-read transaction, plus one app-only field. A vote that asks
+ * "cancel this booking?" carries `cancels_booking_id` (the booking it is about); every other vote has no such key. Go never receives it:
+ * it is added here and nowhere in `buildSnapshot`, which Go's reads and the `trip.created` event share.
+ */
+export async function readSnapshotForApp(pool: pg.Pool, tripId: string, publicBaseUrl: string): Promise<TripSnapshot> {
+  const db = await pool.connect();
+  try {
+    await db.query('begin transaction isolation level repeatable read read only');
+    const snap = await buildSnapshot(db, tripId, publicBaseUrl);
+    const links = await db.query('select decision_id, cancels_booking_id from decisions where trip_id = $1 and cancels_booking_id is not null', [tripId]);
+    await db.query('commit');
+    const bookingOf = new Map(links.rows.map((r) => [r.decision_id as string, r.cancels_booking_id as string]));
+    return { ...snap, decisions: snap.decisions.map((d) => (bookingOf.has(d.decision_id) ? { ...d, cancels_booking_id: bookingOf.get(d.decision_id) } : d)) } as unknown as TripSnapshot;
+  } catch (err) {
+    await db.query('rollback').catch(() => {});
+    throw err;
+  } finally {
+    db.release();
+  }
+}

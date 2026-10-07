@@ -26,7 +26,7 @@ Import `docs/go-server.postman_collection.json` and `docs/go-server.postman_envi
 - **Base URL:** the server's address (default port `8080`). All bodies are JSON (`content-type: application/json`).
 - **Sign-in:** `POST /app/people` returns a `token`. Send it on every other call as `Authorization: Bearer <token>`
   (valid 90 days). *This is a simple stand-in and may be replaced by a real sign-in (e.g. Supabase Auth).*
-- **Ids** are opaque strings (don't parse them). **Money** is a whole number in paise (₹54,200 = `5420000`),
+- **Ids** are opaque strings (don't parse them). **Money** is a whole number in the currency's minor unit (rupees: paise, so ₹54,200 = `5420000`; a currency with no minor unit, such as yen, uses whole units),
   never a decimal. **Times** are ISO 8601 (`2026-11-06T18:10:00Z`; on the strict routes a time must end in `Z` or an offset, otherwise `422`); dates are `YYYY-MM-DD`.
 - **Trip membership:** every `/app/trips/:id/...` call needs the person to be in that trip, otherwise `403`. A trip
   id that does not exist is also `403` (so ids cannot be probed).
@@ -79,7 +79,7 @@ Phone, email and UPI id stay on the server. Go never sees them (it only learns "
 ### `POST /app/trips`
 Creates a trip. The caller becomes the organizer. Go is told and greets the room.
 Body: `title` (required, ≤80), `destination` (`{ name, lat?, lng?, address?, place_id?, photo_url? }`),
-`dates` (`{ start, end }`), `vibe` (string[] ≤12), `stay`, `plan_minor` (planned total, paise), `currency` (default `INR`).
+`dates` (`{ start, end }`, `YYYY-MM-DD`, a real date from year 1, start on or before end, else `422`), `vibe` (string[] ≤12), `stay`, `plan_minor` (planned total, in the currency's minor unit), `currency` (default `INR`).
 `201` → `{ "trip_id", "invite_url" }` (`invite_url` is `<PUBLIC_BASE_URL>/j/<code>`; the code is the last part).
 
 ### `GET /app/join/:code` (no sign-in)
@@ -98,6 +98,7 @@ The whole trip for the Trip screens (home/record, itinerary, bookings, budget, m
 `trip_id, seq, title, status, organizer_person_id, invite_url, destination, dates, vibe, stay, budget, people[], decisions[], bookings[], expenses[], money, itinerary[], record[]`.
 `money` has the totals, per-category spend and the fewest-payments `transfers` (who pays whom). The server does all money maths.
 Note: `budget` is only the lowest band and counts, not the caller's own answer.
+One app-only addition to the contract's `Decision`: a vote that asks "cancel this booking?" carries **`cancels_booking_id`** (the booking it is about). Every other vote has no such key. Go never receives it.
 
 ### Your answers in this trip
 
@@ -125,7 +126,7 @@ The "needs you" strip for this person. → array of items, each with `kind` and 
 
 | `kind` | extra fields | Tap opens |
 |---|---|---|
-| `vote` | `decision_id` | the vote card (open vote you haven't voted in) |
+| `vote` | `decision_id`, and `cancels_booking_id` for a "cancel this booking" vote | the vote card (open vote you haven't voted in) |
 | `mandate` | `decision_id`, `question` | the mandate card (you are the payer and haven't answered). `text` is what to confirm, e.g. "Yes, book it? Villa Sol, up to ₹55,000"; `question` is the vote it came from |
 | `card` | `card_id`, `message_id` | a Go card that names you |
 | `record` | `line_id` | an open trip-record line that asks you |
@@ -214,7 +215,7 @@ The people in the split who **owe money overall** afterwards get a push, worked 
 The server opens a yes/no vote that is **not anonymous** and closes **24 hours** after it opens: question "Cancel this booking? <title>", options "Cancel: <title>" (index 0) and "Keep: <title>" (index 1) (the title is cut to 112 characters in the option labels). Voting, changing a vote, closing early and calling it off work as for any vote.
 **The booking is cancelled only if "Cancel" gets more than half of everyone in the trip at the moment the vote closes.** People who do not vote count against cancelling; a tie does not cancel; someone who voted and then left still counts. If "Keep" has more votes than "Cancel" the result is "Keep"; otherwise the vote ends **with no result**, even if "Cancel" had the most votes, and the booking stays. When it passes the booking becomes `cancelled` at once, in the same moment the vote closes, and the vote's result is added to the trip record as a decided line ("Cancel: <title>" or "Keep: <title>"), as for any vote. The app learns of it from the usual `trip` notice on the live stream (re-read the trip). **Cancelling records the group's decision only: nothing is cancelled with the vendor.**
 `404` the booking is not in this trip · `409` already cancelled, **paid through Go's vault** (cannot be cancelled by a vote), or a cancellation vote on it is already open (the message names it). As with any vote opened by a person, the server posts no card for it in the chat.
-**Limit to know about:** the trip data does not say that a vote is about a booking, or which one. `decisions[]` shows it as an ordinary yes/no vote; the only marks are its question, which starts "Cancel this booking?", and the `decision_id` returned to the person who proposed it. So the app cannot reliably show "needs more than half of everyone" or hide *Propose cancelling* on a booking that already has an open vote: rely on the `409`, and do not build logic on matching the question text. (This is a known gap, not final behaviour.)
+**Telling it apart.** A vote to cancel a booking carries `cancels_booking_id` in `GET /app/trips/:id` (in `decisions[]`) and in its `needs-you` entry; ordinary votes have no such key. Use it to pick the cancellation component, and to hide *Propose cancelling* on a booking that already has an **open** vote with this marker (a closed one keeps its marker, so check `status`; the `409` still backs this up).
 The repeat key is the person and `client_id` only, not the booking: never reuse a `client_id` for a different booking.
 
 The vote/mandate/record/expense **cards** in the room are drawn from the trip data (`GET /app/trips/:id`), so they always agree with the Trip screens.
@@ -305,5 +306,5 @@ Rules for the client: show a **visible notification for every push** and open th
 - **A card Go updated while the phone was offline** (for example a pay card that became "paid") is sent on the live
   connection, but `GET .../messages?after_seq=` does not return it again, because the contract gives a card update no
   change number. Until we agree a fix, re-read the messages from `after_seq=0` after a long time offline.
-- A vote to cancel a booking is not marked as being about a booking, or which one, in the trip data (see the cancellation section). And Go posts no chat card for a vote a person opens until that is changed on Go's side.
+- Go posts no chat card for a vote a person opens until that is changed on Go's side (until then it appears in the "needs you" strip and the trip screen).
 - The full review against the docs, with every known gap and open question, is in [`docs/REVIEW.md`](REVIEW.md).

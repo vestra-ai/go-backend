@@ -2,6 +2,7 @@ import type { Ctx } from '../context.js';
 import { once } from '../db/once.js';
 import { change } from '../db/write-change.js';
 import { invalid } from '../domain/errors.js';
+import { assertDate, assertItinerarySize } from '../domain/limits.js';
 import { requireSomething, tripOf } from './guards.js';
 
 const FIELDS = ['title', 'destination', 'dates', 'vibe', 'stay', 'itinerary'] as const;
@@ -10,7 +11,12 @@ export const updateTrip = (ctx: Ctx) => async (p: any, raw: Record<string, unkno
   once(ctx.pool, p.trip_id, p.request_id, async (db, after) => {
     await tripOf(db, p.trip_id);
     requireSomething(p, FIELDS);
-    if (p.dates && p.dates.start > p.dates.end) throw invalid('dates.start must be on or before dates.end');
+    if (p.dates) {
+      assertDate(p.dates.start, 'dates.start');
+      assertDate(p.dates.end, 'dates.end');
+      if (p.dates.start > p.dates.end) throw invalid('dates.start must be on or before dates.end');
+    }
+    if (p.itinerary) assertItinerarySize(raw.itinerary);
     if (p.itinerary) {
       const ids = new Set<string>();
       for (const day of p.itinerary) for (const item of day.items ?? []) if (item.booking_id) ids.add(item.booking_id);

@@ -9,6 +9,7 @@ import { once } from '../db/once.js';
 import { withTx } from '../db/pool.js';
 import { change, emit, nextSeq } from '../db/write-change.js';
 import { conflict, invalid, notFound } from './errors.js';
+import { assertDate } from './limits.js';
 import { expenseOf, messageForGo, personForGo, recordLineOf } from './mappers.js';
 import type { ExpenseRow, MessageRow, RecordLineRow } from './mappers.js';
 import { activePeople, buildSnapshot } from './snapshot.js';
@@ -62,6 +63,11 @@ export interface NewTrip {
 
 /** Creates the trip with the organizer in it, and sends `trip.created` (change number 1) with the whole trip. */
 export async function createTrip(ctx: Ctx, organizerId: string, input: NewTrip) {
+  if (input.dates) {
+    assertDate(input.dates.start, 'dates.start');
+    assertDate(input.dates.end, 'dates.end');
+    if (input.dates.start > input.dates.end) throw invalid('dates.start must be on or before dates.end');
+  }
   return withTx(ctx.pool, async (db, after) => {
     await lockPersonForRead(db, organizerId);
     const trip_id = newId('t');
@@ -418,10 +424,15 @@ export async function removePersonExpense(ctx: Ctx, tripId: string, personId: st
   });
 }
 
-/** An amount for people to read, in the trip's currency: ₹1,133.34, or ₹680 when there are no paise. */
+/**
+ * An amount for people to read, in the trip's currency: ₹1,133.34, or ₹680 when there is no fraction. Amounts are whole numbers in the
+ * currency's minor unit, so how many digits make a unit depends on the currency (two for rupees, none for yen, three for dinars).
+ */
 export function formatMoney(amountMinor: number, currency: string): string {
-  const whole = amountMinor % 100 === 0;
-  return new Intl.NumberFormat('en-IN', { style: 'currency', currency, minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: whole ? 0 : 2 }).format(amountMinor / 100);
+  const digits = new Intl.NumberFormat('en-IN', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits ?? 2;
+  const unit = 10 ** digits;
+  const whole = amountMinor % unit === 0;
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency, minimumFractionDigits: whole ? 0 : digits, maximumFractionDigits: whole ? 0 : digits }).format(amountMinor / unit);
 }
 
 /**
@@ -451,7 +462,7 @@ export async function markSeen(ctx: Ctx, tripId: string, personId: string): Prom
 /** The "needs you" strip: what this person has to do in this trip, worked out from our own rows. */
 export async function needsYou(ctx: Ctx, tripId: string, personId: string) {
   const votes = await ctx.pool.query(
-    `select d.decision_id, d.question from decisions d
+    `select d.decision_id, d.question, d.cancels_booking_id from decisions d
       where d.trip_id = $1 and d.status = 'open'
         and not exists (select 1 from votes v where v.decision_id = d.decision_id and v.person_id = $2)`,
     [tripId, personId],
@@ -472,7 +483,7 @@ export async function needsYou(ctx: Ctx, tripId: string, personId: string) {
     [tripId, personId],
   );
   return [
-    ...votes.rows.map((r) => ({ kind: 'vote', decision_id: r.decision_id, text: r.question })),
+    ...votes.rows.map((r) => ({ kind: 'vote', decision_id: r.decision_id, text: r.question, ...(r.cancels_booking_id ? { cancels_booking_id: r.cancels_booking_id } : {}) })),
     // What the payer is asked to confirm, such as "Yes, book it? Villa Sol, up to ₹55,000", and the vote it came from.
     ...mandates.rows.map((r) => ({
       kind: 'mandate',
