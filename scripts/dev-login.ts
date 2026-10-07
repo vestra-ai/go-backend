@@ -15,13 +15,16 @@ const page = (supabaseUrl: string, key: string) => `<!doctype html>
   :root { color-scheme: light dark; --bg:#fff; --fg:#111; --muted:#666; --box:#f4f4f5; }
   @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#eee; --muted:#999; --box:#1d1d20; } }
   body { font: 15px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--fg); max-width: 760px; margin: 32px auto; padding: 0 16px; }
+  input { font: inherit; padding: 8px 10px; margin: 4px 4px 4px 0; border-radius: 8px; border: 1px solid var(--muted); background: var(--bg); color: var(--fg); }
   button { font: inherit; padding: 8px 14px; margin: 4px 8px 4px 0; border-radius: 8px; border: 1px solid var(--muted); background: var(--box); color: var(--fg); cursor: pointer; }
   pre { background: var(--box); padding: 12px; border-radius: 8px; white-space: pre-wrap; word-break: break-all; }
   .muted { color: var(--muted); }
 </style></head><body>
 <h1>Go: Supabase sign-in check</h1>
 <p class="muted">Project ${supabaseUrl} · server ${server}</p>
-<button id="in">Sign in with Google</button><button id="me">Call GET /app/me</button><button id="copy">Copy token</button><button id="out">Sign out</button>
+<button id="in">Sign in with Google</button>
+<form id="pw" style="display:inline"><input id="email" type="email" placeholder="test user email" autocomplete="username">
+<input id="password" type="password" placeholder="password" autocomplete="current-password"><button>Sign in with email</button></form><br><button id="me">Call GET /app/me</button><button id="copy">Copy token</button><button id="out">Sign out</button>
 <h3>Session</h3><pre id="session">Not signed in.</pre>
 <h3>Server says</h3><pre id="server">-</pre>
 <script type="module">
@@ -35,6 +38,13 @@ const page = (supabaseUrl: string, key: string) => `<!doctype html>
     $('session').textContent = 'user ' + claims.sub + ' (' + claims.email + ')\\nexpires ' + new Date(claims.exp * 1000).toLocaleTimeString() + '\\n\\naccess token:\\n' + session.access_token;
   };
   $('in').onclick = () => sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin } });
+  // Test users (Supabase → Authentication → Users), until Google is on. Same kind of token as Google sign-in.
+  $('pw').onsubmit = async (e) => {
+    e.preventDefault();
+    const { error } = await sb.auth.signInWithPassword({ email: $('email').value, password: $('password').value });
+    $('password').value = '';
+    if (error) $('session').textContent = 'Sign-in failed: ' + error.message;
+  };
   $('out').onclick = async () => (await sb.auth.signOut(), show());
   $('copy').onclick = async () => { const { data: { session } } = await sb.auth.getSession(); if (session) await navigator.clipboard.writeText(session.access_token); };
   $('me').onclick = async () => {

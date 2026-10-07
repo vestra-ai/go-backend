@@ -142,6 +142,18 @@ no shared secret set.
    3. Run `pnpm dev:login`, open http://localhost:3000, click "Sign in with Google", then "Call GET /app/me".
 5. **Postman:** paste the access token from step 4 into the `token` variable. Everything works the same way.
 
+## Testing before Google is on: email test users
+
+The server only ever sees Supabase's token, never how the person signed in, and Supabase's email sign-in gives the
+same kind of token as Google. To test now:
+1. In Supabase, go to **Authentication → Users → Add user**, enter an email and password, and tick Auto Confirm.
+2. Put the login in your local `.env` as `SUPABASE_TEST_EMAIL` and `SUPABASE_TEST_PASSWORD` (add `_2` for a
+   second user).
+3. Run `pnpm supabase:token`. It prints a real access token; add `--me <server>` to call `GET /app/me` with it.
+   The `pnpm dev:login` page also has an email sign-in box.
+
+This tests exactly the production path, with no bypass in the code.
+
 ## For the app team (Flutter)
 
 ```dart

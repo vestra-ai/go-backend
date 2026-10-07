@@ -104,7 +104,10 @@ pnpm dev:stack:supabase    # like dev:stack, but signing in like production (tok
 pnpm check:supabase        # once the real project is in .env: keys, Google, database, TLS, locks, RLS, all read-only
 pnpm dev:login             # a "Sign in with Google" page on :3000 that shows the real token and calls GET /app/me
 pnpm supabase:rehearse     # with Docker: the server against the official local Supabase (real Auth, Postgres, Data API)
+pnpm supabase:token        # a real Supabase token for a test user (email/password), until Google is on
 ```
+
+Deployment (Railway): [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 Setup steps, the token flow and the database settings: [`docs/SUPABASE-SETUP.md`](docs/SUPABASE-SETUP.md).
 

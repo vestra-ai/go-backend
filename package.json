@@ -24,7 +24,8 @@
     "dev:stack:supabase": "node scripts/prepare-test-pg.mjs && tsx scripts/dev-stack.ts --supabase-auth",
     "check:supabase": "tsx scripts/check-supabase.ts",
     "dev:login": "tsx scripts/dev-login.ts",
-    "supabase:rehearse": "tsx scripts/rehearse-supabase.ts"
+    "supabase:rehearse": "tsx scripts/rehearse-supabase.ts",
+    "supabase:token": "tsx scripts/supabase-token.ts"
   },
   "dependencies": {
     "ajv": "^8.20.0",
@@ -32,6 +33,7 @@
     "fastify": "^5.12.5",
     "jose": "^6.2.12",
     "pg": "^8.23.1",
+    "tsx": "^4.23.15",
     "web-push": "3.6.7",
     "ws": "^8.22.0"
   },
@@ -42,7 +44,6 @@
     "@types/ws": "^8.18.2",
     "embedded-postgres": "18.4.0-beta.17",
     "openapi-typescript": "^7.13.0",
-    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^5.0.3"
   },
@@ -51,5 +52,6 @@
       "@embedded-postgres/darwin-arm64",
       "esbuild"
     ]
-  }
+  },
+  "packageManager": "pnpm@12.9.1"
 }
