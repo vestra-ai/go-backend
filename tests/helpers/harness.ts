@@ -11,7 +11,7 @@ import { goRequestHandlers } from '../../src/requests/index.js';
 import { OutboxSender } from '../../src/outbox/sender.js';
 import { buildApp } from '../../src/api/app.js';
 import { DevAuth, SupabaseAuth, signSession, type Authenticator } from '../../src/api/auth.js';
-import type { Features } from '../../src/config.js';
+import type { Features, GoContract } from '../../src/config.js';
 import { freshDb } from './db.js';
 import { FakeSupabaseAuth, type FakeUser } from './fake-supabase-auth.js';
 import { MockGo } from './mock-go.js';
@@ -52,6 +52,8 @@ export interface HarnessOptions {
   makePush?: (pool: pg.Pool) => Push;
   pushPublicKey?: string;
   features?: Partial<Features>;
+  /** What the mock Go accepts. Tests run on 1.1 (every event is sent and checked) unless they test the 1.0 behaviour. */
+  goContract?: GoContract;
   /**
    * How people sign in. `supabase` (the default) runs a fake Supabase Auth and checks its tokens exactly as production
    * checks the real ones; `dev` uses the server's own dev tokens (for the tests about dev sign-in).
@@ -72,7 +74,7 @@ export async function startHarness(opts: HarnessOptions = {}) {
   const live = new RecordingLive();
   const push = new RecordingPush();
   const storage = new MemoryStorage('https://go.example'); // its signed URLs point at the server under test (app.inject takes the path)
-  const ctx: Ctx = { pool, live, push: opts.makePush ? opts.makePush(pool) : push, storage, publicBaseUrl: 'https://go.example', spendPrivateKey: spend.private_key_pem, features: opts.features };
+  const ctx: Ctx = { pool, live, push: opts.makePush ? opts.makePush(pool) : push, storage, publicBaseUrl: 'https://go.example', spendPrivateKey: spend.private_key_pem, features: opts.features, goContract: opts.goContract ?? '1.1' };
   const go = new MockGo();
   const base = await go.listen();
   const socket = new GoSocket({

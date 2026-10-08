@@ -279,6 +279,13 @@ and people use the airline's site.
    whenever you set a destination.
 5. **Private details.** Seats, PNRs and ticket files are shown only to the people a booking covers. Please keep them
    out of group-visible card bodies and messages (the "Sent you your flight details privately 🔒" pattern is right).
+7. **What Go 1.0 already accepts (tried on 8 Oct 2026 against the live brain).** The new Server sent, and Go
+   accepted: `settlement.recorded` (B1) as a new event type; `expense.changed` carrying `status` and `confirmations`
+   (B4); `booking.changed` carrying `details` and `passengers` (A7); and the Server's `system` messages (item 1): Go
+   read them, answered the room and commented on the vote result. **The one refusal:** `expense.changed` with
+   `change: "approved"`: `Invalid option: expected one of "added"|"removed" at data.change`. So B4's `approved` /
+   `disputed` and the `updated` change (a re-split) are the only parts the Server holds back until you confirm them
+   (its `GO_CONTRACT=1.1` switch); meanwhile Go sees an expense's state on its next `read_trip`.
 6. **Issues already logged on 6 Oct** (`docs/REAL-GO-TESTING.md`): the spend approval refused with no page opened
    (our public key); Go's reasoning in room text; `mentions` never sent, so no pushes; mandates for things Go can't
    book; `open` record lines never closed with `update_record_line` (they stay in everyone's "needs you" strip);

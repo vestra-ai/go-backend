@@ -31,6 +31,7 @@ Not secret (set on the service):
 | `PUBLIC_BASE_URL` | the service's public address (invite links are `<it>/j/<code>`) |
 | `APP_ORIGINS` | the web app's exact address(es), comma-separated, no wildcard |
 | `SUPABASE_STORAGE_BUCKET` | `go-files`: the private Storage bucket (above). Default `go-files` when unset |
+| `GO_CONTRACT` | `1.0` (the default, and what Go spoke on 8 Oct 2026): an expense approved, disputed or re-split takes its change number but sends no event, because Go 1.0's `expense.changed` knows only `added` and `removed`; Go reads the expense's state on its next `read_trip`. Set `1.1` the day Keshav's team ships `docs/GO-CHANGES.md` |
 | `FEATURE_*` | the feature flags (below), only the ones to change from their defaults |
 
 Secret (pasted by a person in Railway → service → Variables → Raw Editor; never in git or chat):

@@ -4,12 +4,12 @@
 // and marked but counts in nothing until the payer fixes the split (which resets the changed shares) or removes it.
 // Behind `features.expense_approval`: off, every expense starts approved and the answer routes refuse (409).
 import { FEATURE_DEFAULTS } from '../config.js';
-import type { Ctx } from '../context.js';
+import { goContractOf, type Ctx } from '../context.js';
 import { check } from '../contract/index.js';
 import { newId } from '../db/ids.js';
 import type { Db } from '../db/pool.js';
 import { withTx } from '../db/pool.js';
-import { change } from '../db/write-change.js';
+import { change, nextSeq } from '../db/write-change.js';
 import type { LiveEvent } from '../live/live.js';
 import { sendPush } from '../push/send.js';
 import { Forbidden, formatMoney, pushOwed, requireMember } from './actions.js';
@@ -21,6 +21,15 @@ import { activePeople } from './snapshot.js';
 
 /** The flag as this server runs: on by default (the app document says so from day one). */
 export const approvalOn = (ctx: Ctx): boolean => ctx.features?.expense_approval ?? FEATURE_DEFAULTS.expense_approval;
+
+/**
+ * `expense.changed` with a change Go 1.0 does not know (`approved`, `disputed`, `updated`: its enum is added|removed, as
+ * the real Go answered on 8 Oct 2026). On GO_CONTRACT=1.0 the change takes its number with no event, and Go sees the
+ * expense's state on its next read_trip; on 1.1 (docs/GO-CHANGES.md B4) the event is sent.
+ */
+async function expenseChanged(ctx: Ctx, db: Db, tripId: string, data: { expense: ExpenseView; change: 'approved' | 'disputed' | 'updated'; by: { kind: 'person'; person_id: string }; by_person_id: string }): Promise<number> {
+  return goContractOf(ctx) === '1.1' ? change(db, tripId, 'expense.changed', data) : nextSeq(db, tripId);
+}
 
 /**
  * Money moved: the app re-reads the money view and the expenses. `kinds` is the §3 `trip_changed` list; the WebSocket
@@ -161,7 +170,7 @@ export async function answerExpense(ctx: Ctx, tripId: string, personId: string, 
     if (mine.state === state) throw conflict(`you already ${state} expense ${expenseId}`);
     await db.query('update expense_confirmations set state = $3, at = now(), reason = $4 where expense_id = $1 and person_id = $2', [expenseId, personId, state, state === 'disputed' ? reason ?? null : null]);
     const expense = await refresh(db, row);
-    const seq = await change(db, tripId, 'expense.changed', { expense, change: state, by: { kind: 'person', person_id: personId }, by_person_id: personId });
+    const seq = await expenseChanged(ctx, db, tripId, { expense, change: state, by: { kind: 'person', person_id: personId }, by_person_id: personId });
     after(() => moneyChanged(ctx, tripId, seq));
     if (state === 'disputed') after(() => pushDispute(ctx, tripId, expense, personId, reason));
     return { ...expense, seq };
@@ -215,7 +224,7 @@ export async function updateExpenseSplit(ctx: Ctx, tripId: string, personId: str
       );
     }
     const expense = await refresh(db, updated);
-    const seq = await change(db, tripId, 'expense.changed', { expense, change: 'updated', by: { kind: 'person', person_id: personId }, by_person_id: personId });
+    const seq = await expenseChanged(ctx, db, tripId, { expense, change: 'updated', by: { kind: 'person', person_id: personId }, by_person_id: personId });
     after(() => moneyChanged(ctx, tripId, seq));
     if (state === 'pending') after(() => pushApprovals(ctx, tripId, expense, asked));
     return { ...expense, seq };

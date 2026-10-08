@@ -20,7 +20,8 @@ export function loadEnv(path = '.env'): Record<string, string> {
 }
 
 if (process.argv[1] && import.meta.url === new URL(process.argv[1], 'file:').href) {
-  const env = loadEnv();
+  // `--env <file>` runs against another settings file (for example one without the production DATABASE_URL).
+  const env = loadEnv(process.argv.includes('--env') ? process.argv[process.argv.indexOf('--env') + 1] : '.env');
   const pgPort = Number(env.DEV_PG_PORT ?? 54330);
   const dataDir = '.pgdata';
   const db = new EmbeddedPostgres({ databaseDir: dataDir, user: 'postgres', password: 'postgres', port: pgPort, persistent: true, onLog: () => {}, onError: () => {} });

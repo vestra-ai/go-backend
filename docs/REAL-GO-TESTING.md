@@ -156,6 +156,25 @@ The server was restarted with fixes 1–4. Trip `t_35e02e110dfa4980` ("TEST fina
 **Watch item:** Go's answers to `send_event` were slower in this run: p50 559 ms, p95 and max 1530 ms (earlier
 runs: max 1162 ms). The contract limit is 2 s and our timeout is 2.5 s. A slower answer would be retried, not lost.
 
+## 5. The /app/v1 server against Go 1.0 (8 Oct 2026)
+
+After the app-contract rebuild (phases 0–6 of `ALIGNMENT-PLAN.md`), one pass with `pnpm dev:real --env <a copy of
+.env without the production DATABASE_URL>` (local Postgres, dev sign-in, `LOG_GO_TRAFFIC=1`), trip
+`t_eaf1d4696ae72925` ("TEST v1 real-Go"), driving every flow that sends Go a new shape:
+
+| Sent | Go's answer |
+|---|---|
+| `trip.created`, `person.joined`, `trip.updated` (budget), `message.created`, `decision.opened` (a **person-opened** vote), `decision.voted` ×2, `decision.closed`, `record.changed` ×2 | accepted |
+| `expense.changed` `added` **with `status` and `confirmations`** (1.1 fields) | accepted |
+| `expense.changed` `approved` | **refused**: `422 Invalid option: expected one of "added"\|"removed" at data.change`. Marked `failed`, the trip's next event went on |
+| `settlement.recorded` (a 1.1 event type) | accepted |
+| `booking.changed` `added` **with `details` and `passengers`** | accepted |
+| The Server's `system` messages ("Trip created · … joined", the vote's anchor card, "Villa won · 2 votes", "BLR → GOX booked") in `read_messages` | accepted: Go answered the room twice and commented on the vote ("Villa won 2 to 0, with 2 of 2 voted. Next, …") |
+
+Outcome: `GO_CONTRACT=1.0` (the default) keeps `approved`, `disputed` and `updated` expense changes to ourselves
+(a change number, no event; Go reads the expense on its next `read_trip`); everything else goes as before. Flip to
+`1.1` when Keshav's team ships `GO-CHANGES.md`. Logged in `GO-CHANGES.md` clarification 7.
+
 ## Fixes made during real testing
 
 1. **`pnpm inspect --trip` mixed in other trips' figures.** Go's answers to our requests had no trip on them. They

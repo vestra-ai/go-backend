@@ -166,3 +166,27 @@ describe('with features.expense_approval off', () => {
     expect((await a.api(a.as('p_priya'), 'GET', `${trip}/needs-you`)).body.items.filter((i: any) => i.kind === 'expense')).toEqual([]);
   });
 });
+
+describe('with GO_CONTRACT=1.0 (what the real Go spoke on 8 Oct 2026)', () => {
+  let old: Harness;
+  let a: ReturnType<typeof appApi>;
+  beforeAll(async () => {
+    old = await startHarness({ goContract: '1.0' });
+    a = appApi(old);
+  });
+  afterAll(() => old.stop());
+
+  it('an expense added or removed is sent; approved, disputed and re-split take a change number but no event (Go 1.0 knows only added|removed and reads the trip instead)', async () => {
+    const r = await a.api(a.as('p_rahul'), 'POST', `${trip}/expenses`, { amount_minor: 30000, note: 'Scooters', category: 'getting_around', split_person_ids: ['p_rahul', 'p_priya', 'p_kabir'] });
+    const approved = await a.api(a.as('p_priya'), 'POST', `${trip}/expenses/${r.body.expense_id}/approve`);
+    const disputed = await a.api(a.as('p_kabir'), 'POST', `${trip}/expenses/${r.body.expense_id}/dispute`, { reason: 'walked' });
+    const fixed = await a.api(a.as('p_rahul'), 'PATCH', `${trip}/expenses/${r.body.expense_id}`, { split_person_ids: ['p_rahul', 'p_priya'] });
+    const removed = await a.api(a.as('p_rahul'), 'DELETE', `${trip}/expenses/${r.body.expense_id}`);
+    expect([approved.status, disputed.status, fixed.status, removed.status]).toEqual([200, 200, 200, 200]);
+    expect([approved.body.seq, disputed.body.seq, fixed.body.seq, removed.body.seq]).toEqual([r.body.seq + 1, r.body.seq + 2, r.body.seq + 3, r.body.seq + 4]); // each still takes its number
+    await old.flush();
+    const sent = old.go.events.filter((e) => e.type === 'expense.changed' && e.data.expense.expense_id === r.body.expense_id).map((e) => [e.seq, e.data.change]);
+    expect(sent).toEqual([[r.body.seq, 'added'], [r.body.seq + 4, 'removed']]);
+    expect((await old.go.call('read_trip', { trip_id: 't_goa' })).result.expenses.find((x: any) => x.expense_id === r.body.expense_id)).toBeUndefined(); // removed
+  });
+});

@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import type { Features } from './config.js';
+import type { Features, GoContract } from './config.js';
 import type { Live } from './live/live.js';
 import type { Push } from './push/push.js';
 import type { Storage } from './storage/storage.js';
@@ -20,6 +20,10 @@ export interface Ctx {
   limits?: { messagesPerMinute?: number; reactionsPerMinute?: number; cardTapsPerMinute?: number; votesPerMinute?: number; vaultLinksPerMinute?: number; uploadsPerMinute?: number };
   /** The feature flags the environment set (the rest take their defaults): the domain reads the ones that change a rule, such as `expense_approval`. */
   features?: Partial<Features>;
+  /** What Go's side accepts (GO_CONTRACT). Absent means 1.0: the events Go 1.0 refuses are kept to ourselves. */
+  goContract?: GoContract;
 }
+
+export const goContractOf = (ctx: Ctx): GoContract => ctx.goContract ?? '1.0';
 
 export const nowOf = (ctx: Ctx): Date => (ctx.now ? ctx.now() : new Date());

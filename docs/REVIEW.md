@@ -76,6 +76,10 @@ reach Go with distinct `tap_id`s.
 
 **Known gaps now (October 2026).** From the code, in no particular order:
 
+- Go 1.0 refuses `expense.changed` with `approved`, `disputed` or `updated` (its enum is `added|removed`, seen on
+  8 Oct). With `GO_CONTRACT=1.0` (the default) those changes send no event and Go reads the expense on its next
+  `read_trip`; `GO_CONTRACT=1.1` sends them once Keshav's team ships `GO-CHANGES.md`.
+
 - The in-memory rate limiters (invite preview 30/min/IP, city search 5/s/person, and rev 2 Appendix A's reactions 20,
   card taps 10, votes 20, vault links 6 and uploads 20 a minute per person) are **per instance**; with several
   instances the real limit is that many times higher.

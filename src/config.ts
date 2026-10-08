@@ -30,6 +30,20 @@ export interface Config {
   supabaseSecretKey?: string;
   /** The private bucket for files (SUPABASE_STORAGE_BUCKET, default go-files). */
   supabaseStorageBucket: string;
+  /**
+   * The contract version Go's side speaks (GO_CONTRACT, default 1.0). On 1.0 the Server keeps the few events Go 1.0
+   * refuses to itself (an expense approved, disputed or re-split: Go reads the trip instead); on 1.1 it sends them.
+   * Flip it to 1.1 the day Keshav's team ships docs/GO-CHANGES.md.
+   */
+  goContract: GoContract;
+}
+
+export type GoContract = '1.0' | '1.1';
+
+export function goContractOf(env: NodeJS.ProcessEnv = process.env): GoContract {
+  const v = env.GO_CONTRACT || '1.0';
+  if (v !== '1.0' && v !== '1.1') throw new Error(`GO_CONTRACT must be 1.0 or 1.1, not ${v}`);
+  return v;
 }
 
 /**
@@ -91,6 +105,7 @@ export function loadConfig(): Config {
     databaseCaCert: process.env.DATABASE_CA_CERT || undefined,
     features: featureOverrides(),
     ...storageConfig(),
+    goContract: goContractOf(),
   };
 }
 
