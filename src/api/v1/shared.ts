@@ -23,17 +23,21 @@ export interface V1Deps {
 
 declare module 'fastify' {
   interface FastifyRequest {
-    /** The signed-in person, set by the shell's sign-in hook on every route that is not `public`. */
+    /** The signed-in person, set by the shell's sign-in hook on every route that is not `public` (and on an `optionalAuth` route when a valid token came). */
     personId: string;
   }
   interface FastifyContextConfig {
     /** No sign-in: config, health, the invite preview and dev sign-in. */
     public?: boolean;
+    /** A public route that uses a valid bearer token when one is sent (the invite preview's personal `state`); anything else is anonymous. */
+    optionalAuth?: boolean;
   }
 }
 
 /** Marks a route as needing no sign-in. */
 export const PUBLIC = { config: { public: true } } as const;
+/** Marks a route as public, with the person known when a valid token is sent. */
+export const OPTIONAL_AUTH = { config: { public: true, optionalAuth: true } } as const;
 
 export const str = { type: 'string', minLength: 1, maxLength: 4000 } as const;
 export const id = { type: 'string', minLength: 1, maxLength: 64 } as const;

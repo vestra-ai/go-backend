@@ -119,7 +119,7 @@ export async function startHarness(opts: HarnessOptions = {}) {
     const me = await app.inject({ method: 'GET', url: v1('/me'), headers: { authorization: `Bearer ${t}` } });
     if (me.statusCode !== 200) throw new Error(`sign-in failed: ${me.body}`);
     const id: string = JSON.parse(me.body).person_id;
-    if (upi_id) await app.inject({ method: 'PATCH', url: v1('/me'), payload: { upi_id }, headers: { authorization: `Bearer ${t}` } });
+    if (upi_id) await app.inject({ method: 'PUT', url: v1('/me/upi'), payload: { upi_id }, headers: { authorization: `Bearer ${t}` } });
     return { id, token: t, name };
   };
   return {

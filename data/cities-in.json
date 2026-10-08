@@ -1,0 +1,3117 @@
+{
+  "note": "STARTER SET, to be replaced by a GeoNames extract (populated places of India with population >= 15,000, about 1,800 rows). Hand-written from memory: coordinates are approximate city centres and populations are rounded census figures. Manali is below the 15,000 threshold and is kept because the design shows it. Ids are stable slugs of this set (in-<ascii name>-<state>); the GeoNames extract replaces them with gn:<geonameid>.",
+  "source": "hand-written starter set",
+  "country": "IN",
+  "cities": [
+    {
+      "id": "in-mumbai-mh",
+      "name": "Mumbai",
+      "ascii_name": "mumbai",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 19.076,
+      "lng": 72.8777,
+      "population": 12442373
+    },
+    {
+      "id": "in-delhi-dl",
+      "name": "Delhi",
+      "ascii_name": "delhi",
+      "region": "Delhi",
+      "country": "IN",
+      "lat": 28.6139,
+      "lng": 77.209,
+      "population": 11034555
+    },
+    {
+      "id": "in-bengaluru-ka",
+      "name": "Bengaluru",
+      "ascii_name": "bengaluru",
+      "region": "Karnataka",
+      "country": "IN",
+      "lat": 12.9716,
+      "lng": 77.5946,
+      "population": 8443675
+    },
+    {
+      "id": "in-hyderabad-tg",
+      "name": "Hyderabad",
+      "ascii_name": "hyderabad",
+      "region": "Telangana",
+      "country": "IN",
+      "lat": 17.385,
+      "lng": 78.4867,
+      "population": 6809970
+    },
+    {
+      "id": "in-ahmedabad-gj",
+      "name": "Ahmedabad",
+      "ascii_name": "ahmedabad",
+      "region": "Gujarat",
+      "country": "IN",
+      "lat": 23.0225,
+      "lng": 72.5714,
+      "population": 5577940
+    },
+    {
+      "id": "in-chennai-tn",
+      "name": "Chennai",
+      "ascii_name": "chennai",
+      "region": "Tamil Nadu",
+      "country": "IN",
+      "lat": 13.0827,
+      "lng": 80.2707,
+      "population": 4681087
+    },
+    {
+      "id": "in-kolkata-wb",
+      "name": "Kolkata",
+      "ascii_name": "kolkata",
+      "region": "West Bengal",
+      "country": "IN",
+      "lat": 22.5726,
+      "lng": 88.3639,
+      "population": 4496694
+    },
+    {
+      "id": "in-surat-gj",
+      "name": "Surat",
+      "ascii_name": "surat",
+      "region": "Gujarat",
+      "country": "IN",
+      "lat": 21.1702,
+      "lng": 72.8311,
+      "population": 4467797
+    },
+    {
+      "id": "in-pune-mh",
+      "name": "Pune",
+      "ascii_name": "pune",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 18.5204,
+      "lng": 73.8567,
+      "population": 3124458
+    },
+    {
+      "id": "in-jaipur-rj",
+      "name": "Jaipur",
+      "ascii_name": "jaipur",
+      "region": "Rajasthan",
+      "country": "IN",
+      "lat": 26.9124,
+      "lng": 75.7873,
+      "population": 3046163
+    },
+    {
+      "id": "in-lucknow-up",
+      "name": "Lucknow",
+      "ascii_name": "lucknow",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 26.8467,
+      "lng": 80.9462,
+      "population": 2817105
+    },
+    {
+      "id": "in-kanpur-up",
+      "name": "Kanpur",
+      "ascii_name": "kanpur",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 26.4499,
+      "lng": 80.3319,
+      "population": 2765348
+    },
+    {
+      "id": "in-nagpur-mh",
+      "name": "Nagpur",
+      "ascii_name": "nagpur",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 21.1458,
+      "lng": 79.0882,
+      "population": 2405665
+    },
+    {
+      "id": "in-indore-mp",
+      "name": "Indore",
+      "ascii_name": "indore",
+      "region": "Madhya Pradesh",
+      "country": "IN",
+      "lat": 22.7196,
+      "lng": 75.8577,
+      "population": 1964086
+    },
+    {
+      "id": "in-thane-mh",
+      "name": "Thane",
+      "ascii_name": "thane",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 19.2183,
+      "lng": 72.9781,
+      "population": 1841488
+    },
+    {
+      "id": "in-bhopal-mp",
+      "name": "Bhopal",
+      "ascii_name": "bhopal",
+      "region": "Madhya Pradesh",
+      "country": "IN",
+      "lat": 23.2599,
+      "lng": 77.4126,
+      "population": 1798218
+    },
+    {
+      "id": "in-visakhapatnam-ap",
+      "name": "Visakhapatnam",
+      "ascii_name": "visakhapatnam",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 17.6868,
+      "lng": 83.2185,
+      "population": 1728128
+    },
+    {
+      "id": "in-pimpri-chinchwad-mh",
+      "name": "Pimpri-Chinchwad",
+      "ascii_name": "pimpri-chinchwad",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 18.6298,
+      "lng": 73.7997,
+      "population": 1727692
+    },
+    {
+      "id": "in-patna-br",
+      "name": "Patna",
+      "ascii_name": "patna",
+      "region": "Bihar",
+      "country": "IN",
+      "lat": 25.5941,
+      "lng": 85.1376,
+      "population": 1684222
+    },
+    {
+      "id": "in-vadodara-gj",
+      "name": "Vadodara",
+      "ascii_name": "vadodara",
+      "region": "Gujarat",
+      "country": "IN",
+      "lat": 22.3072,
+      "lng": 73.1812,
+      "population": 1670806
+    },
+    {
+      "id": "in-ghaziabad-up",
+      "name": "Ghaziabad",
+      "ascii_name": "ghaziabad",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 28.6692,
+      "lng": 77.4538,
+      "population": 1648643
+    },
+    {
+      "id": "in-ludhiana-pb",
+      "name": "Ludhiana",
+      "ascii_name": "ludhiana",
+      "region": "Punjab",
+      "country": "IN",
+      "lat": 30.901,
+      "lng": 75.8573,
+      "population": 1618879
+    },
+    {
+      "id": "in-agra-up",
+      "name": "Agra",
+      "ascii_name": "agra",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 27.1767,
+      "lng": 78.0081,
+      "population": 1585704
+    },
+    {
+      "id": "in-nashik-mh",
+      "name": "Nashik",
+      "ascii_name": "nashik",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 19.9975,
+      "lng": 73.7898,
+      "population": 1486053
+    },
+    {
+      "id": "in-faridabad-hr",
+      "name": "Faridabad",
+      "ascii_name": "faridabad",
+      "region": "Haryana",
+      "country": "IN",
+      "lat": 28.4089,
+      "lng": 77.3178,
+      "population": 1414050
+    },
+    {
+      "id": "in-meerut-up",
+      "name": "Meerut",
+      "ascii_name": "meerut",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 28.9845,
+      "lng": 77.7064,
+      "population": 1305429
+    },
+    {
+      "id": "in-rajkot-gj",
+      "name": "Rajkot",
+      "ascii_name": "rajkot",
+      "region": "Gujarat",
+      "country": "IN",
+      "lat": 22.3039,
+      "lng": 70.8022,
+      "population": 1286678
+    },
+    {
+      "id": "in-kalyan-dombivli-mh",
+      "name": "Kalyan-Dombivli",
+      "ascii_name": "kalyan-dombivli",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 19.2403,
+      "lng": 73.1305,
+      "population": 1247327
+    },
+    {
+      "id": "in-vasai-virar-mh",
+      "name": "Vasai-Virar",
+      "ascii_name": "vasai-virar",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 19.3919,
+      "lng": 72.8397,
+      "population": 1222390
+    },
+    {
+      "id": "in-varanasi-up",
+      "name": "Varanasi",
+      "ascii_name": "varanasi",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 25.3176,
+      "lng": 82.9739,
+      "population": 1201815
+    },
+    {
+      "id": "in-srinagar-jk",
+      "name": "Srinagar",
+      "ascii_name": "srinagar",
+      "region": "Jammu and Kashmir",
+      "country": "IN",
+      "lat": 34.0837,
+      "lng": 74.7973,
+      "population": 1180570
+    },
+    {
+      "id": "in-aurangabad-mh",
+      "name": "Aurangabad",
+      "ascii_name": "aurangabad",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 19.8762,
+      "lng": 75.3433,
+      "population": 1175116
+    },
+    {
+      "id": "in-dhanbad-jh",
+      "name": "Dhanbad",
+      "ascii_name": "dhanbad",
+      "region": "Jharkhand",
+      "country": "IN",
+      "lat": 23.7957,
+      "lng": 86.4304,
+      "population": 1162472
+    },
+    {
+      "id": "in-amritsar-pb",
+      "name": "Amritsar",
+      "ascii_name": "amritsar",
+      "region": "Punjab",
+      "country": "IN",
+      "lat": 31.634,
+      "lng": 74.8723,
+      "population": 1132761
+    },
+    {
+      "id": "in-navi-mumbai-mh",
+      "name": "Navi Mumbai",
+      "ascii_name": "navi mumbai",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 19.033,
+      "lng": 73.0297,
+      "population": 1120547
+    },
+    {
+      "id": "in-prayagraj-up",
+      "name": "Prayagraj",
+      "ascii_name": "prayagraj",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 25.4358,
+      "lng": 81.8463,
+      "population": 1117094
+    },
+    {
+      "id": "in-howrah-wb",
+      "name": "Howrah",
+      "ascii_name": "howrah",
+      "region": "West Bengal",
+      "country": "IN",
+      "lat": 22.5958,
+      "lng": 88.2636,
+      "population": 1077075
+    },
+    {
+      "id": "in-ranchi-jh",
+      "name": "Ranchi",
+      "ascii_name": "ranchi",
+      "region": "Jharkhand",
+      "country": "IN",
+      "lat": 23.3441,
+      "lng": 85.3096,
+      "population": 1073440
+    },
+    {
+      "id": "in-jabalpur-mp",
+      "name": "Jabalpur",
+      "ascii_name": "jabalpur",
+      "region": "Madhya Pradesh",
+      "country": "IN",
+      "lat": 23.1815,
+      "lng": 79.9864,
+      "population": 1055525
+    },
+    {
+      "id": "in-gwalior-mp",
+      "name": "Gwalior",
+      "ascii_name": "gwalior",
+      "region": "Madhya Pradesh",
+      "country": "IN",
+      "lat": 26.2183,
+      "lng": 78.1828,
+      "population": 1054420
+    },
+    {
+      "id": "in-coimbatore-tn",
+      "name": "Coimbatore",
+      "ascii_name": "coimbatore",
+      "region": "Tamil Nadu",
+      "country": "IN",
+      "lat": 11.0168,
+      "lng": 76.9558,
+      "population": 1050721
+    },
+    {
+      "id": "in-vijayawada-ap",
+      "name": "Vijayawada",
+      "ascii_name": "vijayawada",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 16.5062,
+      "lng": 80.648,
+      "population": 1048240
+    },
+    {
+      "id": "in-jodhpur-rj",
+      "name": "Jodhpur",
+      "ascii_name": "jodhpur",
+      "region": "Rajasthan",
+      "country": "IN",
+      "lat": 26.2389,
+      "lng": 73.0243,
+      "population": 1033918
+    },
+    {
+      "id": "in-madurai-tn",
+      "name": "Madurai",
+      "ascii_name": "madurai",
+      "region": "Tamil Nadu",
+      "country": "IN",
+      "lat": 9.9252,
+      "lng": 78.1198,
+      "population": 1017865
+    },
+    {
+      "id": "in-raipur-cg",
+      "name": "Raipur",
+      "ascii_name": "raipur",
+      "region": "Chhattisgarh",
+      "country": "IN",
+      "lat": 21.2514,
+      "lng": 81.6296,
+      "population": 1010087
+    },
+    {
+      "id": "in-kota-rj",
+      "name": "Kota",
+      "ascii_name": "kota",
+      "region": "Rajasthan",
+      "country": "IN",
+      "lat": 25.2138,
+      "lng": 75.8648,
+      "population": 1001365
+    },
+    {
+      "id": "in-chandigarh-ch",
+      "name": "Chandigarh",
+      "ascii_name": "chandigarh",
+      "region": "Chandigarh",
+      "country": "IN",
+      "lat": 30.7333,
+      "lng": 76.7794,
+      "population": 960787
+    },
+    {
+      "id": "in-thiruvananthapuram-kl",
+      "name": "Thiruvananthapuram",
+      "ascii_name": "thiruvananthapuram",
+      "region": "Kerala",
+      "country": "IN",
+      "lat": 8.5241,
+      "lng": 76.9366,
+      "population": 957730
+    },
+    {
+      "id": "in-guwahati-as",
+      "name": "Guwahati",
+      "ascii_name": "guwahati",
+      "region": "Assam",
+      "country": "IN",
+      "lat": 26.1445,
+      "lng": 91.7362,
+      "population": 957352
+    },
+    {
+      "id": "in-solapur-mh",
+      "name": "Solapur",
+      "ascii_name": "solapur",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 17.6599,
+      "lng": 75.9064,
+      "population": 951118
+    },
+    {
+      "id": "in-hubballi-dharwad-ka",
+      "name": "Hubballi-Dharwad",
+      "ascii_name": "hubballi-dharwad",
+      "region": "Karnataka",
+      "country": "IN",
+      "lat": 15.3647,
+      "lng": 75.124,
+      "population": 943857
+    },
+    {
+      "id": "in-mysuru-ka",
+      "name": "Mysuru",
+      "ascii_name": "mysuru",
+      "region": "Karnataka",
+      "country": "IN",
+      "lat": 12.2958,
+      "lng": 76.6394,
+      "population": 920550
+    },
+    {
+      "id": "in-tiruchirappalli-tn",
+      "name": "Tiruchirappalli",
+      "ascii_name": "tiruchirappalli",
+      "region": "Tamil Nadu",
+      "country": "IN",
+      "lat": 10.7905,
+      "lng": 78.7047,
+      "population": 916857
+    },
+    {
+      "id": "in-bareilly-up",
+      "name": "Bareilly",
+      "ascii_name": "bareilly",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 28.367,
+      "lng": 79.4304,
+      "population": 898167
+    },
+    {
+      "id": "in-moradabad-up",
+      "name": "Moradabad",
+      "ascii_name": "moradabad",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 28.8386,
+      "lng": 78.7733,
+      "population": 887871
+    },
+    {
+      "id": "in-tiruppur-tn",
+      "name": "Tiruppur",
+      "ascii_name": "tiruppur",
+      "region": "Tamil Nadu",
+      "country": "IN",
+      "lat": 11.1085,
+      "lng": 77.3411,
+      "population": 877778
+    },
+    {
+      "id": "in-gurugram-hr",
+      "name": "Gurugram",
+      "ascii_name": "gurugram",
+      "region": "Haryana",
+      "country": "IN",
+      "lat": 28.4595,
+      "lng": 77.0266,
+      "population": 876969
+    },
+    {
+      "id": "in-aligarh-up",
+      "name": "Aligarh",
+      "ascii_name": "aligarh",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 27.8974,
+      "lng": 78.088,
+      "population": 874408
+    },
+    {
+      "id": "in-jalandhar-pb",
+      "name": "Jalandhar",
+      "ascii_name": "jalandhar",
+      "region": "Punjab",
+      "country": "IN",
+      "lat": 31.326,
+      "lng": 75.5762,
+      "population": 862196
+    },
+    {
+      "id": "in-bhubaneswar-od",
+      "name": "Bhubaneswar",
+      "ascii_name": "bhubaneswar",
+      "region": "Odisha",
+      "country": "IN",
+      "lat": 20.2961,
+      "lng": 85.8245,
+      "population": 837737
+    },
+    {
+      "id": "in-salem-tn",
+      "name": "Salem",
+      "ascii_name": "salem",
+      "region": "Tamil Nadu",
+      "country": "IN",
+      "lat": 11.6643,
+      "lng": 78.146,
+      "population": 831038
+    },
+    {
+      "id": "in-warangal-tg",
+      "name": "Warangal",
+      "ascii_name": "warangal",
+      "region": "Telangana",
+      "country": "IN",
+      "lat": 17.9689,
+      "lng": 79.5941,
+      "population": 811844
+    },
+    {
+      "id": "in-guntur-ap",
+      "name": "Guntur",
+      "ascii_name": "guntur",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 16.3067,
+      "lng": 80.4365,
+      "population": 743354
+    },
+    {
+      "id": "in-bhiwandi-mh",
+      "name": "Bhiwandi",
+      "ascii_name": "bhiwandi",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 19.2967,
+      "lng": 73.0631,
+      "population": 711329
+    },
+    {
+      "id": "in-saharanpur-up",
+      "name": "Saharanpur",
+      "ascii_name": "saharanpur",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 29.968,
+      "lng": 77.546,
+      "population": 703345
+    },
+    {
+      "id": "in-gorakhpur-up",
+      "name": "Gorakhpur",
+      "ascii_name": "gorakhpur",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 26.7606,
+      "lng": 83.3732,
+      "population": 671048
+    },
+    {
+      "id": "in-amravati-mh",
+      "name": "Amravati",
+      "ascii_name": "amravati",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 20.9374,
+      "lng": 77.7796,
+      "population": 647057
+    },
+    {
+      "id": "in-bikaner-rj",
+      "name": "Bikaner",
+      "ascii_name": "bikaner",
+      "region": "Rajasthan",
+      "country": "IN",
+      "lat": 28.0229,
+      "lng": 73.3119,
+      "population": 644406
+    },
+    {
+      "id": "in-noida-up",
+      "name": "Noida",
+      "ascii_name": "noida",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 28.5355,
+      "lng": 77.391,
+      "population": 642381
+    },
+    {
+      "id": "in-jamshedpur-jh",
+      "name": "Jamshedpur",
+      "ascii_name": "jamshedpur",
+      "region": "Jharkhand",
+      "country": "IN",
+      "lat": 22.8046,
+      "lng": 86.2029,
+      "population": 629659
+    },
+    {
+      "id": "in-bhilai-cg",
+      "name": "Bhilai",
+      "ascii_name": "bhilai",
+      "region": "Chhattisgarh",
+      "country": "IN",
+      "lat": 21.1938,
+      "lng": 81.3509,
+      "population": 625697
+    },
+    {
+      "id": "in-cuttack-od",
+      "name": "Cuttack",
+      "ascii_name": "cuttack",
+      "region": "Odisha",
+      "country": "IN",
+      "lat": 20.4625,
+      "lng": 85.883,
+      "population": 606007
+    },
+    {
+      "id": "in-bhavnagar-gj",
+      "name": "Bhavnagar",
+      "ascii_name": "bhavnagar",
+      "region": "Gujarat",
+      "country": "IN",
+      "lat": 21.7645,
+      "lng": 72.1519,
+      "population": 605882
+    },
+    {
+      "id": "in-firozabad-up",
+      "name": "Firozabad",
+      "ascii_name": "firozabad",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 27.1591,
+      "lng": 78.3958,
+      "population": 603797
+    },
+    {
+      "id": "in-kochi-kl",
+      "name": "Kochi",
+      "ascii_name": "kochi",
+      "region": "Kerala",
+      "country": "IN",
+      "lat": 9.9312,
+      "lng": 76.2673,
+      "population": 602046
+    },
+    {
+      "id": "in-dehradun-uk",
+      "name": "Dehradun",
+      "ascii_name": "dehradun",
+      "region": "Uttarakhand",
+      "country": "IN",
+      "lat": 30.3165,
+      "lng": 78.0322,
+      "population": 578420
+    },
+    {
+      "id": "in-durgapur-wb",
+      "name": "Durgapur",
+      "ascii_name": "durgapur",
+      "region": "West Bengal",
+      "country": "IN",
+      "lat": 23.5204,
+      "lng": 87.3119,
+      "population": 566937
+    },
+    {
+      "id": "in-asansol-wb",
+      "name": "Asansol",
+      "ascii_name": "asansol",
+      "region": "West Bengal",
+      "country": "IN",
+      "lat": 23.6739,
+      "lng": 86.9524,
+      "population": 563917
+    },
+    {
+      "id": "in-nellore-ap",
+      "name": "Nellore",
+      "ascii_name": "nellore",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 14.4426,
+      "lng": 79.9865,
+      "population": 558548
+    },
+    {
+      "id": "in-nanded-mh",
+      "name": "Nanded",
+      "ascii_name": "nanded",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 19.1383,
+      "lng": 77.321,
+      "population": 550564
+    },
+    {
+      "id": "in-kolhapur-mh",
+      "name": "Kolhapur",
+      "ascii_name": "kolhapur",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 16.705,
+      "lng": 74.2433,
+      "population": 549283
+    },
+    {
+      "id": "in-kalaburagi-ka",
+      "name": "Kalaburagi",
+      "ascii_name": "kalaburagi",
+      "region": "Karnataka",
+      "country": "IN",
+      "lat": 17.3297,
+      "lng": 76.8343,
+      "population": 543147
+    },
+    {
+      "id": "in-ajmer-rj",
+      "name": "Ajmer",
+      "ascii_name": "ajmer",
+      "region": "Rajasthan",
+      "country": "IN",
+      "lat": 26.4499,
+      "lng": 74.6399,
+      "population": 542321
+    },
+    {
+      "id": "in-jamnagar-gj",
+      "name": "Jamnagar",
+      "ascii_name": "jamnagar",
+      "region": "Gujarat",
+      "country": "IN",
+      "lat": 22.4707,
+      "lng": 70.0577,
+      "population": 529308
+    },
+    {
+      "id": "in-ujjain-mp",
+      "name": "Ujjain",
+      "ascii_name": "ujjain",
+      "region": "Madhya Pradesh",
+      "country": "IN",
+      "lat": 23.1765,
+      "lng": 75.7885,
+      "population": 515215
+    },
+    {
+      "id": "in-siliguri-wb",
+      "name": "Siliguri",
+      "ascii_name": "siliguri",
+      "region": "West Bengal",
+      "country": "IN",
+      "lat": 26.7271,
+      "lng": 88.3953,
+      "population": 513264
+    },
+    {
+      "id": "in-loni-up",
+      "name": "Loni",
+      "ascii_name": "loni",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 28.7334,
+      "lng": 77.2879,
+      "population": 512296
+    },
+    {
+      "id": "in-jhansi-up",
+      "name": "Jhansi",
+      "ascii_name": "jhansi",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 25.4484,
+      "lng": 78.5685,
+      "population": 507293
+    },
+    {
+      "id": "in-ulhasnagar-mh",
+      "name": "Ulhasnagar",
+      "ascii_name": "ulhasnagar",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 19.2215,
+      "lng": 73.1645,
+      "population": 506937
+    },
+    {
+      "id": "in-sangli-mh",
+      "name": "Sangli",
+      "ascii_name": "sangli",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 16.8524,
+      "lng": 74.5815,
+      "population": 502697
+    },
+    {
+      "id": "in-jammu-jk",
+      "name": "Jammu",
+      "ascii_name": "jammu",
+      "region": "Jammu and Kashmir",
+      "country": "IN",
+      "lat": 32.7266,
+      "lng": 74.857,
+      "population": 502197
+    },
+    {
+      "id": "in-erode-tn",
+      "name": "Erode",
+      "ascii_name": "erode",
+      "region": "Tamil Nadu",
+      "country": "IN",
+      "lat": 11.341,
+      "lng": 77.7172,
+      "population": 498129
+    },
+    {
+      "id": "in-belagavi-ka",
+      "name": "Belagavi",
+      "ascii_name": "belagavi",
+      "region": "Karnataka",
+      "country": "IN",
+      "lat": 15.8497,
+      "lng": 74.4977,
+      "population": 490045
+    },
+    {
+      "id": "in-mangaluru-ka",
+      "name": "Mangaluru",
+      "ascii_name": "mangaluru",
+      "region": "Karnataka",
+      "country": "IN",
+      "lat": 12.9141,
+      "lng": 74.856,
+      "population": 488968
+    },
+    {
+      "id": "in-rourkela-od",
+      "name": "Rourkela",
+      "ascii_name": "rourkela",
+      "region": "Odisha",
+      "country": "IN",
+      "lat": 22.2604,
+      "lng": 84.8536,
+      "population": 483418
+    },
+    {
+      "id": "in-tirunelveli-tn",
+      "name": "Tirunelveli",
+      "ascii_name": "tirunelveli",
+      "region": "Tamil Nadu",
+      "country": "IN",
+      "lat": 8.7139,
+      "lng": 77.7567,
+      "population": 473637
+    },
+    {
+      "id": "in-malegaon-mh",
+      "name": "Malegaon",
+      "ascii_name": "malegaon",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 20.5579,
+      "lng": 74.5287,
+      "population": 471006
+    },
+    {
+      "id": "in-gaya-br",
+      "name": "Gaya",
+      "ascii_name": "gaya",
+      "region": "Bihar",
+      "country": "IN",
+      "lat": 24.7955,
+      "lng": 85.0002,
+      "population": 470839
+    },
+    {
+      "id": "in-jalgaon-mh",
+      "name": "Jalgaon",
+      "ascii_name": "jalgaon",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 21.0077,
+      "lng": 75.5626,
+      "population": 460468
+    },
+    {
+      "id": "in-udaipur-rj",
+      "name": "Udaipur",
+      "ascii_name": "udaipur",
+      "region": "Rajasthan",
+      "country": "IN",
+      "lat": 24.5854,
+      "lng": 73.7125,
+      "population": 451100
+    },
+    {
+      "id": "in-davanagere-ka",
+      "name": "Davanagere",
+      "ascii_name": "davanagere",
+      "region": "Karnataka",
+      "country": "IN",
+      "lat": 14.4644,
+      "lng": 75.9218,
+      "population": 435128
+    },
+    {
+      "id": "in-kozhikode-kl",
+      "name": "Kozhikode",
+      "ascii_name": "kozhikode",
+      "region": "Kerala",
+      "country": "IN",
+      "lat": 11.2588,
+      "lng": 75.7804,
+      "population": 432097
+    },
+    {
+      "id": "in-akola-mh",
+      "name": "Akola",
+      "ascii_name": "akola",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 20.7002,
+      "lng": 77.0082,
+      "population": 425817
+    },
+    {
+      "id": "in-kurnool-ap",
+      "name": "Kurnool",
+      "ascii_name": "kurnool",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 15.8281,
+      "lng": 78.0373,
+      "population": 424920
+    },
+    {
+      "id": "in-bokaro-jh",
+      "name": "Bokaro",
+      "ascii_name": "bokaro",
+      "region": "Jharkhand",
+      "country": "IN",
+      "lat": 23.6693,
+      "lng": 86.1511,
+      "population": 413934
+    },
+    {
+      "id": "in-ballari-ka",
+      "name": "Ballari",
+      "ascii_name": "ballari",
+      "region": "Karnataka",
+      "country": "IN",
+      "lat": 15.1394,
+      "lng": 76.9214,
+      "population": 410445
+    },
+    {
+      "id": "in-patiala-pb",
+      "name": "Patiala",
+      "ascii_name": "patiala",
+      "region": "Punjab",
+      "country": "IN",
+      "lat": 30.3398,
+      "lng": 76.3869,
+      "population": 406192
+    },
+    {
+      "id": "in-bhagalpur-br",
+      "name": "Bhagalpur",
+      "ascii_name": "bhagalpur",
+      "region": "Bihar",
+      "country": "IN",
+      "lat": 25.2425,
+      "lng": 86.9842,
+      "population": 400146
+    },
+    {
+      "id": "in-agartala-tr",
+      "name": "Agartala",
+      "ascii_name": "agartala",
+      "region": "Tripura",
+      "country": "IN",
+      "lat": 23.8315,
+      "lng": 91.2868,
+      "population": 400004
+    },
+    {
+      "id": "in-muzaffarnagar-up",
+      "name": "Muzaffarnagar",
+      "ascii_name": "muzaffarnagar",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 29.4727,
+      "lng": 77.7085,
+      "population": 392451
+    },
+    {
+      "id": "in-latur-mh",
+      "name": "Latur",
+      "ascii_name": "latur",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 18.4088,
+      "lng": 76.5604,
+      "population": 382754
+    },
+    {
+      "id": "in-dhule-mh",
+      "name": "Dhule",
+      "ascii_name": "dhule",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 20.9042,
+      "lng": 74.7749,
+      "population": 376093
+    },
+    {
+      "id": "in-rohtak-hr",
+      "name": "Rohtak",
+      "ascii_name": "rohtak",
+      "region": "Haryana",
+      "country": "IN",
+      "lat": 28.8955,
+      "lng": 76.6066,
+      "population": 374292
+    },
+    {
+      "id": "in-tirupati-ap",
+      "name": "Tirupati",
+      "ascii_name": "tirupati",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 13.6288,
+      "lng": 79.4192,
+      "population": 374260
+    },
+    {
+      "id": "in-korba-cg",
+      "name": "Korba",
+      "ascii_name": "korba",
+      "region": "Chhattisgarh",
+      "country": "IN",
+      "lat": 22.3595,
+      "lng": 82.7501,
+      "population": 363390
+    },
+    {
+      "id": "in-bhilwara-rj",
+      "name": "Bhilwara",
+      "ascii_name": "bhilwara",
+      "region": "Rajasthan",
+      "country": "IN",
+      "lat": 25.3407,
+      "lng": 74.6313,
+      "population": 360009
+    },
+    {
+      "id": "in-brahmapur-od",
+      "name": "Brahmapur",
+      "ascii_name": "brahmapur",
+      "region": "Odisha",
+      "country": "IN",
+      "lat": 19.3149,
+      "lng": 84.7941,
+      "population": 355823
+    },
+    {
+      "id": "in-muzaffarpur-br",
+      "name": "Muzaffarpur",
+      "ascii_name": "muzaffarpur",
+      "region": "Bihar",
+      "country": "IN",
+      "lat": 26.1209,
+      "lng": 85.3647,
+      "population": 354462
+    },
+    {
+      "id": "in-ahmednagar-mh",
+      "name": "Ahmednagar",
+      "ascii_name": "ahmednagar",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 19.0948,
+      "lng": 74.748,
+      "population": 350859
+    },
+    {
+      "id": "in-mathura-up",
+      "name": "Mathura",
+      "ascii_name": "mathura",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 27.4924,
+      "lng": 77.6737,
+      "population": 349909
+    },
+    {
+      "id": "in-kollam-kl",
+      "name": "Kollam",
+      "ascii_name": "kollam",
+      "region": "Kerala",
+      "country": "IN",
+      "lat": 8.8932,
+      "lng": 76.6141,
+      "population": 349033
+    },
+    {
+      "id": "in-kadapa-ap",
+      "name": "Kadapa",
+      "ascii_name": "kadapa",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 14.4673,
+      "lng": 78.8242,
+      "population": 344893
+    },
+    {
+      "id": "in-rajahmundry-ap",
+      "name": "Rajahmundry",
+      "ascii_name": "rajahmundry",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 17.0005,
+      "lng": 81.804,
+      "population": 341831
+    },
+    {
+      "id": "in-sambalpur-od",
+      "name": "Sambalpur",
+      "ascii_name": "sambalpur",
+      "region": "Odisha",
+      "country": "IN",
+      "lat": 21.4669,
+      "lng": 83.9812,
+      "population": 335761
+    },
+    {
+      "id": "in-bilaspur-cg",
+      "name": "Bilaspur",
+      "ascii_name": "bilaspur",
+      "region": "Chhattisgarh",
+      "country": "IN",
+      "lat": 22.0797,
+      "lng": 82.1409,
+      "population": 330106
+    },
+    {
+      "id": "in-shahjahanpur-up",
+      "name": "Shahjahanpur",
+      "ascii_name": "shahjahanpur",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 27.88,
+      "lng": 79.91,
+      "population": 327975
+    },
+    {
+      "id": "in-vijayapura-ka",
+      "name": "Vijayapura",
+      "ascii_name": "vijayapura",
+      "region": "Karnataka",
+      "country": "IN",
+      "lat": 16.8302,
+      "lng": 75.71,
+      "population": 327427
+    },
+    {
+      "id": "in-rampur-up",
+      "name": "Rampur",
+      "ascii_name": "rampur",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 28.8103,
+      "lng": 79.027,
+      "population": 325313
+    },
+    {
+      "id": "in-shivamogga-ka",
+      "name": "Shivamogga",
+      "ascii_name": "shivamogga",
+      "region": "Karnataka",
+      "country": "IN",
+      "lat": 13.9299,
+      "lng": 75.5681,
+      "population": 322650
+    },
+    {
+      "id": "in-chandrapur-mh",
+      "name": "Chandrapur",
+      "ascii_name": "chandrapur",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 19.9615,
+      "lng": 79.2961,
+      "population": 321036
+    },
+    {
+      "id": "in-junagadh-gj",
+      "name": "Junagadh",
+      "ascii_name": "junagadh",
+      "region": "Gujarat",
+      "country": "IN",
+      "lat": 21.5222,
+      "lng": 70.4579,
+      "population": 320250
+    },
+    {
+      "id": "in-thrissur-kl",
+      "name": "Thrissur",
+      "ascii_name": "thrissur",
+      "region": "Kerala",
+      "country": "IN",
+      "lat": 10.5276,
+      "lng": 76.2144,
+      "population": 315596
+    },
+    {
+      "id": "in-alwar-rj",
+      "name": "Alwar",
+      "ascii_name": "alwar",
+      "region": "Rajasthan",
+      "country": "IN",
+      "lat": 27.553,
+      "lng": 76.6346,
+      "population": 315310
+    },
+    {
+      "id": "in-bardhaman-wb",
+      "name": "Bardhaman",
+      "ascii_name": "bardhaman",
+      "region": "West Bengal",
+      "country": "IN",
+      "lat": 23.2324,
+      "lng": 87.8615,
+      "population": 314265
+    },
+    {
+      "id": "in-kakinada-ap",
+      "name": "Kakinada",
+      "ascii_name": "kakinada",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 16.9891,
+      "lng": 82.2475,
+      "population": 312538
+    },
+    {
+      "id": "in-nizamabad-tg",
+      "name": "Nizamabad",
+      "ascii_name": "nizamabad",
+      "region": "Telangana",
+      "country": "IN",
+      "lat": 18.6725,
+      "lng": 78.0941,
+      "population": 311152
+    },
+    {
+      "id": "in-parbhani-mh",
+      "name": "Parbhani",
+      "ascii_name": "parbhani",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 19.2704,
+      "lng": 76.7601,
+      "population": 307191
+    },
+    {
+      "id": "in-tumakuru-ka",
+      "name": "Tumakuru",
+      "ascii_name": "tumakuru",
+      "region": "Karnataka",
+      "country": "IN",
+      "lat": 13.3392,
+      "lng": 77.114,
+      "population": 305821
+    },
+    {
+      "id": "in-hisar-hr",
+      "name": "Hisar",
+      "ascii_name": "hisar",
+      "region": "Haryana",
+      "country": "IN",
+      "lat": 29.1492,
+      "lng": 75.7217,
+      "population": 301249
+    },
+    {
+      "id": "in-darbhanga-br",
+      "name": "Darbhanga",
+      "ascii_name": "darbhanga",
+      "region": "Bihar",
+      "country": "IN",
+      "lat": 26.1542,
+      "lng": 85.8918,
+      "population": 296039
+    },
+    {
+      "id": "in-panipat-hr",
+      "name": "Panipat",
+      "ascii_name": "panipat",
+      "region": "Haryana",
+      "country": "IN",
+      "lat": 29.3909,
+      "lng": 76.9635,
+      "population": 294292
+    },
+    {
+      "id": "in-aizawl-mz",
+      "name": "Aizawl",
+      "ascii_name": "aizawl",
+      "region": "Mizoram",
+      "country": "IN",
+      "lat": 23.7271,
+      "lng": 92.7176,
+      "population": 293416
+    },
+    {
+      "id": "in-dewas-mp",
+      "name": "Dewas",
+      "ascii_name": "dewas",
+      "region": "Madhya Pradesh",
+      "country": "IN",
+      "lat": 22.9676,
+      "lng": 76.0534,
+      "population": 289550
+    },
+    {
+      "id": "in-ichalkaranji-mh",
+      "name": "Ichalkaranji",
+      "ascii_name": "ichalkaranji",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 16.691,
+      "lng": 74.4605,
+      "population": 287570
+    },
+    {
+      "id": "in-karnal-hr",
+      "name": "Karnal",
+      "ascii_name": "karnal",
+      "region": "Haryana",
+      "country": "IN",
+      "lat": 29.6857,
+      "lng": 76.9905,
+      "population": 286974
+    },
+    {
+      "id": "in-bathinda-pb",
+      "name": "Bathinda",
+      "ascii_name": "bathinda",
+      "region": "Punjab",
+      "country": "IN",
+      "lat": 30.211,
+      "lng": 74.9455,
+      "population": 285813
+    },
+    {
+      "id": "in-jalna-mh",
+      "name": "Jalna",
+      "ascii_name": "jalna",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 19.8347,
+      "lng": 75.8816,
+      "population": 285349
+    },
+    {
+      "id": "in-eluru-ap",
+      "name": "Eluru",
+      "ascii_name": "eluru",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 16.7107,
+      "lng": 81.0952,
+      "population": 283648
+    },
+    {
+      "id": "in-satna-mp",
+      "name": "Satna",
+      "ascii_name": "satna",
+      "region": "Madhya Pradesh",
+      "country": "IN",
+      "lat": 24.6005,
+      "lng": 80.8322,
+      "population": 283004
+    },
+    {
+      "id": "in-purnia-br",
+      "name": "Purnia",
+      "ascii_name": "purnia",
+      "region": "Bihar",
+      "country": "IN",
+      "lat": 25.7771,
+      "lng": 87.4753,
+      "population": 282248
+    },
+    {
+      "id": "in-mau-up",
+      "name": "Mau",
+      "ascii_name": "mau",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 25.9417,
+      "lng": 83.5611,
+      "population": 278745
+    },
+    {
+      "id": "in-barasat-wb",
+      "name": "Barasat",
+      "ascii_name": "barasat",
+      "region": "West Bengal",
+      "country": "IN",
+      "lat": 22.7248,
+      "lng": 88.4863,
+      "population": 278435
+    },
+    {
+      "id": "in-sonipat-hr",
+      "name": "Sonipat",
+      "ascii_name": "sonipat",
+      "region": "Haryana",
+      "country": "IN",
+      "lat": 28.9288,
+      "lng": 77.0915,
+      "population": 277053
+    },
+    {
+      "id": "in-farrukhabad-up",
+      "name": "Farrukhabad",
+      "ascii_name": "farrukhabad",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 27.3929,
+      "lng": 79.58,
+      "population": 275750
+    },
+    {
+      "id": "in-sagar-mp",
+      "name": "Sagar",
+      "ascii_name": "sagar",
+      "region": "Madhya Pradesh",
+      "country": "IN",
+      "lat": 23.8388,
+      "lng": 78.7378,
+      "population": 273296
+    },
+    {
+      "id": "in-durg-cg",
+      "name": "Durg",
+      "ascii_name": "durg",
+      "region": "Chhattisgarh",
+      "country": "IN",
+      "lat": 21.1904,
+      "lng": 81.2849,
+      "population": 268806
+    },
+    {
+      "id": "in-imphal-mn",
+      "name": "Imphal",
+      "ascii_name": "imphal",
+      "region": "Manipur",
+      "country": "IN",
+      "lat": 24.817,
+      "lng": 93.9368,
+      "population": 264986
+    },
+    {
+      "id": "in-ratlam-mp",
+      "name": "Ratlam",
+      "ascii_name": "ratlam",
+      "region": "Madhya Pradesh",
+      "country": "IN",
+      "lat": 23.3315,
+      "lng": 75.0367,
+      "population": 264810
+    },
+    {
+      "id": "in-hapur-up",
+      "name": "Hapur",
+      "ascii_name": "hapur",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 28.7306,
+      "lng": 77.7759,
+      "population": 262801
+    },
+    {
+      "id": "in-anantapur-ap",
+      "name": "Anantapur",
+      "ascii_name": "anantapur",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 14.6819,
+      "lng": 77.6006,
+      "population": 262340
+    },
+    {
+      "id": "in-khammam-tg",
+      "name": "Khammam",
+      "ascii_name": "khammam",
+      "region": "Telangana",
+      "country": "IN",
+      "lat": 17.2473,
+      "lng": 80.1514,
+      "population": 262255
+    },
+    {
+      "id": "in-arrah-br",
+      "name": "Arrah",
+      "ascii_name": "arrah",
+      "region": "Bihar",
+      "country": "IN",
+      "lat": 25.5541,
+      "lng": 84.6603,
+      "population": 261430
+    },
+    {
+      "id": "in-karimnagar-tg",
+      "name": "Karimnagar",
+      "ascii_name": "karimnagar",
+      "region": "Telangana",
+      "country": "IN",
+      "lat": 18.4386,
+      "lng": 79.1288,
+      "population": 261185
+    },
+    {
+      "id": "in-etawah-up",
+      "name": "Etawah",
+      "ascii_name": "etawah",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 26.7855,
+      "lng": 79.015,
+      "population": 256838
+    },
+    {
+      "id": "in-ambernath-mh",
+      "name": "Ambernath",
+      "ascii_name": "ambernath",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 19.1864,
+      "lng": 73.1917,
+      "population": 253475
+    },
+    {
+      "id": "in-bharatpur-rj",
+      "name": "Bharatpur",
+      "ascii_name": "bharatpur",
+      "region": "Rajasthan",
+      "country": "IN",
+      "lat": 27.2173,
+      "lng": 77.4901,
+      "population": 252342
+    },
+    {
+      "id": "in-begusarai-br",
+      "name": "Begusarai",
+      "ascii_name": "begusarai",
+      "region": "Bihar",
+      "country": "IN",
+      "lat": 25.4182,
+      "lng": 86.1272,
+      "population": 252008
+    },
+    {
+      "id": "in-gandhidham-gj",
+      "name": "Gandhidham",
+      "ascii_name": "gandhidham",
+      "region": "Gujarat",
+      "country": "IN",
+      "lat": 23.0753,
+      "lng": 70.1337,
+      "population": 248705
+    },
+    {
+      "id": "in-sikar-rj",
+      "name": "Sikar",
+      "ascii_name": "sikar",
+      "region": "Rajasthan",
+      "country": "IN",
+      "lat": 27.6094,
+      "lng": 75.1399,
+      "population": 244982
+    },
+    {
+      "id": "in-puducherry-py",
+      "name": "Puducherry",
+      "ascii_name": "puducherry",
+      "region": "Puducherry",
+      "country": "IN",
+      "lat": 11.9416,
+      "lng": 79.8083,
+      "population": 244377
+    },
+    {
+      "id": "in-thoothukudi-tn",
+      "name": "Thoothukudi",
+      "ascii_name": "thoothukudi",
+      "region": "Tamil Nadu",
+      "country": "IN",
+      "lat": 8.7642,
+      "lng": 78.1348,
+      "population": 237830
+    },
+    {
+      "id": "in-rewa-mp",
+      "name": "Rewa",
+      "ascii_name": "rewa",
+      "region": "Madhya Pradesh",
+      "country": "IN",
+      "lat": 24.5362,
+      "lng": 81.3037,
+      "population": 235654
+    },
+    {
+      "id": "in-mirzapur-up",
+      "name": "Mirzapur",
+      "ascii_name": "mirzapur",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 25.1337,
+      "lng": 82.5644,
+      "population": 234871
+    },
+    {
+      "id": "in-raichur-ka",
+      "name": "Raichur",
+      "ascii_name": "raichur",
+      "region": "Karnataka",
+      "country": "IN",
+      "lat": 16.212,
+      "lng": 77.3439,
+      "population": 232456
+    },
+    {
+      "id": "in-kannur-kl",
+      "name": "Kannur",
+      "ascii_name": "kannur",
+      "region": "Kerala",
+      "country": "IN",
+      "lat": 11.8745,
+      "lng": 75.3704,
+      "population": 232486
+    },
+    {
+      "id": "in-pali-rj",
+      "name": "Pali",
+      "ascii_name": "pali",
+      "region": "Rajasthan",
+      "country": "IN",
+      "lat": 25.7711,
+      "lng": 73.3234,
+      "population": 229956
+    },
+    {
+      "id": "in-ramagundam-tg",
+      "name": "Ramagundam",
+      "ascii_name": "ramagundam",
+      "region": "Telangana",
+      "country": "IN",
+      "lat": 18.755,
+      "lng": 79.474,
+      "population": 229632
+    },
+    {
+      "id": "in-haridwar-uk",
+      "name": "Haridwar",
+      "ascii_name": "haridwar",
+      "region": "Uttarakhand",
+      "country": "IN",
+      "lat": 29.9457,
+      "lng": 78.1642,
+      "population": 228832
+    },
+    {
+      "id": "in-vizianagaram-ap",
+      "name": "Vizianagaram",
+      "ascii_name": "vizianagaram",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 18.1067,
+      "lng": 83.3956,
+      "population": 227533
+    },
+    {
+      "id": "in-katihar-br",
+      "name": "Katihar",
+      "ascii_name": "katihar",
+      "region": "Bihar",
+      "country": "IN",
+      "lat": 25.5386,
+      "lng": 87.5786,
+      "population": 225982
+    },
+    {
+      "id": "in-sri-ganganagar-rj",
+      "name": "Sri Ganganagar",
+      "ascii_name": "sri ganganagar",
+      "region": "Rajasthan",
+      "country": "IN",
+      "lat": 29.9038,
+      "lng": 73.8772,
+      "population": 224773
+    },
+    {
+      "id": "in-nagercoil-tn",
+      "name": "Nagercoil",
+      "ascii_name": "nagercoil",
+      "region": "Tamil Nadu",
+      "country": "IN",
+      "lat": 8.1833,
+      "lng": 77.4119,
+      "population": 224329
+    },
+    {
+      "id": "in-thanjavur-tn",
+      "name": "Thanjavur",
+      "ascii_name": "thanjavur",
+      "region": "Tamil Nadu",
+      "country": "IN",
+      "lat": 10.787,
+      "lng": 79.1378,
+      "population": 222943
+    },
+    {
+      "id": "in-bulandshahr-up",
+      "name": "Bulandshahr",
+      "ascii_name": "bulandshahr",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 28.4069,
+      "lng": 77.8498,
+      "population": 222826
+    },
+    {
+      "id": "in-uluberia-wb",
+      "name": "Uluberia",
+      "ascii_name": "uluberia",
+      "region": "West Bengal",
+      "country": "IN",
+      "lat": 22.4694,
+      "lng": 88.1109,
+      "population": 222075
+    },
+    {
+      "id": "in-sambhal-up",
+      "name": "Sambhal",
+      "ascii_name": "sambhal",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 28.5903,
+      "lng": 78.5718,
+      "population": 220813
+    },
+    {
+      "id": "in-singrauli-mp",
+      "name": "Singrauli",
+      "ascii_name": "singrauli",
+      "region": "Madhya Pradesh",
+      "country": "IN",
+      "lat": 24.1992,
+      "lng": 82.6752,
+      "population": 220295
+    },
+    {
+      "id": "in-nadiad-gj",
+      "name": "Nadiad",
+      "ascii_name": "nadiad",
+      "region": "Gujarat",
+      "country": "IN",
+      "lat": 22.6916,
+      "lng": 72.8634,
+      "population": 218095
+    },
+    {
+      "id": "in-yamunanagar-hr",
+      "name": "Yamunanagar",
+      "ascii_name": "yamunanagar",
+      "region": "Haryana",
+      "country": "IN",
+      "lat": 30.129,
+      "lng": 77.2674,
+      "population": 216628
+    },
+    {
+      "id": "in-bidar-ka",
+      "name": "Bidar",
+      "ascii_name": "bidar",
+      "region": "Karnataka",
+      "country": "IN",
+      "lat": 17.9104,
+      "lng": 77.5199,
+      "population": 216020
+    },
+    {
+      "id": "in-munger-br",
+      "name": "Munger",
+      "ascii_name": "munger",
+      "region": "Bihar",
+      "country": "IN",
+      "lat": 25.3708,
+      "lng": 86.4734,
+      "population": 213303
+    },
+    {
+      "id": "in-panchkula-hr",
+      "name": "Panchkula",
+      "ascii_name": "panchkula",
+      "region": "Haryana",
+      "country": "IN",
+      "lat": 30.6942,
+      "lng": 76.8606,
+      "population": 211355
+    },
+    {
+      "id": "in-burhanpur-mp",
+      "name": "Burhanpur",
+      "ascii_name": "burhanpur",
+      "region": "Madhya Pradesh",
+      "country": "IN",
+      "lat": 21.3104,
+      "lng": 76.23,
+      "population": 210886
+    },
+    {
+      "id": "in-gandhinagar-gj",
+      "name": "Gandhinagar",
+      "ascii_name": "gandhinagar",
+      "region": "Gujarat",
+      "country": "IN",
+      "lat": 23.2156,
+      "lng": 72.6369,
+      "population": 208299
+    },
+    {
+      "id": "in-kharagpur-wb",
+      "name": "Kharagpur",
+      "ascii_name": "kharagpur",
+      "region": "West Bengal",
+      "country": "IN",
+      "lat": 22.346,
+      "lng": 87.232,
+      "population": 207604
+    },
+    {
+      "id": "in-dindigul-tn",
+      "name": "Dindigul",
+      "ascii_name": "dindigul",
+      "region": "Tamil Nadu",
+      "country": "IN",
+      "lat": 10.3673,
+      "lng": 77.9803,
+      "population": 207327
+    },
+    {
+      "id": "in-hosapete-ka",
+      "name": "Hosapete",
+      "ascii_name": "hosapete",
+      "region": "Karnataka",
+      "country": "IN",
+      "lat": 15.2689,
+      "lng": 76.3909,
+      "population": 206167
+    },
+    {
+      "id": "in-english-bazar-wb",
+      "name": "English Bazar",
+      "ascii_name": "english bazar",
+      "region": "West Bengal",
+      "country": "IN",
+      "lat": 25.0108,
+      "lng": 88.1411,
+      "population": 205521
+    },
+    {
+      "id": "in-ongole-ap",
+      "name": "Ongole",
+      "ascii_name": "ongole",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 15.5057,
+      "lng": 80.0499,
+      "population": 204746
+    },
+    {
+      "id": "in-deoghar-jh",
+      "name": "Deoghar",
+      "ascii_name": "deoghar",
+      "region": "Jharkhand",
+      "country": "IN",
+      "lat": 24.4855,
+      "lng": 86.6947,
+      "population": 203116
+    },
+    {
+      "id": "in-chapra-br",
+      "name": "Chapra",
+      "ascii_name": "chapra",
+      "region": "Bihar",
+      "country": "IN",
+      "lat": 25.7815,
+      "lng": 84.7274,
+      "population": 202352
+    },
+    {
+      "id": "in-haldia-wb",
+      "name": "Haldia",
+      "ascii_name": "haldia",
+      "region": "West Bengal",
+      "country": "IN",
+      "lat": 22.0667,
+      "lng": 88.0698,
+      "population": 200827
+    },
+    {
+      "id": "in-khandwa-mp",
+      "name": "Khandwa",
+      "ascii_name": "khandwa",
+      "region": "Madhya Pradesh",
+      "country": "IN",
+      "lat": 21.8257,
+      "lng": 76.3521,
+      "population": 200738
+    },
+    {
+      "id": "in-puri-od",
+      "name": "Puri",
+      "ascii_name": "puri",
+      "region": "Odisha",
+      "country": "IN",
+      "lat": 19.8135,
+      "lng": 85.8312,
+      "population": 200564
+    },
+    {
+      "id": "in-nandyal-ap",
+      "name": "Nandyal",
+      "ascii_name": "nandyal",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 15.4777,
+      "lng": 78.483,
+      "population": 200516
+    },
+    {
+      "id": "in-morena-mp",
+      "name": "Morena",
+      "ascii_name": "morena",
+      "region": "Madhya Pradesh",
+      "country": "IN",
+      "lat": 26.4949,
+      "lng": 78.0012,
+      "population": 200482
+    },
+    {
+      "id": "in-bhiwani-hr",
+      "name": "Bhiwani",
+      "ascii_name": "bhiwani",
+      "region": "Haryana",
+      "country": "IN",
+      "lat": 28.7975,
+      "lng": 76.1322,
+      "population": 197662
+    },
+    {
+      "id": "in-anand-gj",
+      "name": "Anand",
+      "ascii_name": "anand",
+      "region": "Gujarat",
+      "country": "IN",
+      "lat": 22.5645,
+      "lng": 72.9289,
+      "population": 197351
+    },
+    {
+      "id": "in-bhind-mp",
+      "name": "Bhind",
+      "ascii_name": "bhind",
+      "region": "Madhya Pradesh",
+      "country": "IN",
+      "lat": 26.5637,
+      "lng": 78.7873,
+      "population": 197332
+    },
+    {
+      "id": "in-amroha-up",
+      "name": "Amroha",
+      "ascii_name": "amroha",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 28.9044,
+      "lng": 78.4675,
+      "population": 197135
+    },
+    {
+      "id": "in-ambala-hr",
+      "name": "Ambala",
+      "ascii_name": "ambala",
+      "region": "Haryana",
+      "country": "IN",
+      "lat": 30.3782,
+      "lng": 76.7767,
+      "population": 196216
+    },
+    {
+      "id": "in-baharampur-wb",
+      "name": "Baharampur",
+      "ascii_name": "baharampur",
+      "region": "West Bengal",
+      "country": "IN",
+      "lat": 24.1049,
+      "lng": 88.2509,
+      "population": 195223
+    },
+    {
+      "id": "in-morbi-gj",
+      "name": "Morbi",
+      "ascii_name": "morbi",
+      "region": "Gujarat",
+      "country": "IN",
+      "lat": 22.8173,
+      "lng": 70.837,
+      "population": 194947
+    },
+    {
+      "id": "in-fatehpur-up",
+      "name": "Fatehpur",
+      "ascii_name": "fatehpur",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 25.93,
+      "lng": 80.8,
+      "population": 193193
+    },
+    {
+      "id": "in-rae-bareli-up",
+      "name": "Rae Bareli",
+      "ascii_name": "rae bareli",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 26.2309,
+      "lng": 81.2409,
+      "population": 191316
+    },
+    {
+      "id": "in-orai-up",
+      "name": "Orai",
+      "ascii_name": "orai",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 25.99,
+      "lng": 79.45,
+      "population": 190575
+    },
+    {
+      "id": "in-bhusawal-mh",
+      "name": "Bhusawal",
+      "ascii_name": "bhusawal",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 21.0455,
+      "lng": 75.8011,
+      "population": 187421
+    },
+    {
+      "id": "in-bahraich-up",
+      "name": "Bahraich",
+      "ascii_name": "bahraich",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 27.5742,
+      "lng": 81.594,
+      "population": 186241
+    },
+    {
+      "id": "in-vellore-tn",
+      "name": "Vellore",
+      "ascii_name": "vellore",
+      "region": "Tamil Nadu",
+      "country": "IN",
+      "lat": 12.9165,
+      "lng": 79.1325,
+      "population": 185803
+    },
+    {
+      "id": "in-mehsana-gj",
+      "name": "Mehsana",
+      "ascii_name": "mehsana",
+      "region": "Gujarat",
+      "country": "IN",
+      "lat": 23.588,
+      "lng": 72.3693,
+      "population": 184991
+    },
+    {
+      "id": "in-raiganj-wb",
+      "name": "Raiganj",
+      "ascii_name": "raiganj",
+      "region": "West Bengal",
+      "country": "IN",
+      "lat": 25.6162,
+      "lng": 88.125,
+      "population": 183682
+    },
+    {
+      "id": "in-sirsa-hr",
+      "name": "Sirsa",
+      "ascii_name": "sirsa",
+      "region": "Haryana",
+      "country": "IN",
+      "lat": 29.5321,
+      "lng": 75.0318,
+      "population": 182534
+    },
+    {
+      "id": "in-danapur-br",
+      "name": "Danapur",
+      "ascii_name": "danapur",
+      "region": "Bihar",
+      "country": "IN",
+      "lat": 25.631,
+      "lng": 85.046,
+      "population": 182241
+    },
+    {
+      "id": "in-serampore-wb",
+      "name": "Serampore",
+      "ascii_name": "serampore",
+      "region": "West Bengal",
+      "country": "IN",
+      "lat": 22.75,
+      "lng": 88.34,
+      "population": 181842
+    },
+    {
+      "id": "in-guna-mp",
+      "name": "Guna",
+      "ascii_name": "guna",
+      "region": "Madhya Pradesh",
+      "country": "IN",
+      "lat": 24.6472,
+      "lng": 77.3113,
+      "population": 180935
+    },
+    {
+      "id": "in-jaunpur-up",
+      "name": "Jaunpur",
+      "ascii_name": "jaunpur",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 25.7464,
+      "lng": 82.6837,
+      "population": 180362
+    },
+    {
+      "id": "in-panvel-mh",
+      "name": "Panvel",
+      "ascii_name": "panvel",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 18.9894,
+      "lng": 73.1175,
+      "population": 180020
+    },
+    {
+      "id": "in-shivpuri-mp",
+      "name": "Shivpuri",
+      "ascii_name": "shivpuri",
+      "region": "Madhya Pradesh",
+      "country": "IN",
+      "lat": 25.4358,
+      "lng": 77.6587,
+      "population": 179977
+    },
+    {
+      "id": "in-surendranagar-gj",
+      "name": "Surendranagar",
+      "ascii_name": "surendranagar",
+      "region": "Gujarat",
+      "country": "IN",
+      "lat": 22.7253,
+      "lng": 71.6395,
+      "population": 177852
+    },
+    {
+      "id": "in-unnao-up",
+      "name": "Unnao",
+      "ascii_name": "unnao",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 26.5464,
+      "lng": 80.4879,
+      "population": 177658
+    },
+    {
+      "id": "in-alappuzha-kl",
+      "name": "Alappuzha",
+      "ascii_name": "alappuzha",
+      "region": "Kerala",
+      "country": "IN",
+      "lat": 9.4981,
+      "lng": 76.3388,
+      "population": 174164
+    },
+    {
+      "id": "in-silchar-as",
+      "name": "Silchar",
+      "ascii_name": "silchar",
+      "region": "Assam",
+      "country": "IN",
+      "lat": 24.8333,
+      "lng": 92.7789,
+      "population": 172830
+    },
+    {
+      "id": "in-navsari-gj",
+      "name": "Navsari",
+      "ascii_name": "navsari",
+      "region": "Gujarat",
+      "country": "IN",
+      "lat": 20.9467,
+      "lng": 72.952,
+      "population": 171109
+    },
+    {
+      "id": "in-machilipatnam-ap",
+      "name": "Machilipatnam",
+      "ascii_name": "machilipatnam",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 16.1875,
+      "lng": 81.1389,
+      "population": 170008
+    },
+    {
+      "id": "in-shimla-hp",
+      "name": "Shimla",
+      "ascii_name": "shimla",
+      "region": "Himachal Pradesh",
+      "country": "IN",
+      "lat": 31.1048,
+      "lng": 77.1734,
+      "population": 169578
+    },
+    {
+      "id": "in-bharuch-gj",
+      "name": "Bharuch",
+      "ascii_name": "bharuch",
+      "region": "Gujarat",
+      "country": "IN",
+      "lat": 21.7051,
+      "lng": 72.9959,
+      "population": 168729
+    },
+    {
+      "id": "in-adoni-ap",
+      "name": "Adoni",
+      "ascii_name": "adoni",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 15.6322,
+      "lng": 77.2728,
+      "population": 166537
+    },
+    {
+      "id": "in-udupi-ka",
+      "name": "Udupi",
+      "ascii_name": "udupi",
+      "region": "Karnataka",
+      "country": "IN",
+      "lat": 13.3409,
+      "lng": 74.7421,
+      "population": 165401
+    },
+    {
+      "id": "in-tenali-ap",
+      "name": "Tenali",
+      "ascii_name": "tenali",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 16.243,
+      "lng": 80.64,
+      "population": 164649
+    },
+    {
+      "id": "in-kanchipuram-tn",
+      "name": "Kanchipuram",
+      "ascii_name": "kanchipuram",
+      "region": "Tamil Nadu",
+      "country": "IN",
+      "lat": 12.8342,
+      "lng": 79.7036,
+      "population": 164265
+    },
+    {
+      "id": "in-proddatur-ap",
+      "name": "Proddatur",
+      "ascii_name": "proddatur",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 14.7502,
+      "lng": 78.5481,
+      "population": 163970
+    },
+    {
+      "id": "in-vapi-gj",
+      "name": "Vapi",
+      "ascii_name": "vapi",
+      "region": "Gujarat",
+      "country": "IN",
+      "lat": 20.3893,
+      "lng": 72.9106,
+      "population": 163630
+    },
+    {
+      "id": "in-saharsa-br",
+      "name": "Saharsa",
+      "ascii_name": "saharsa",
+      "region": "Bihar",
+      "country": "IN",
+      "lat": 25.88,
+      "lng": 86.6,
+      "population": 156540
+    },
+    {
+      "id": "in-haldwani-uk",
+      "name": "Haldwani",
+      "ascii_name": "haldwani",
+      "region": "Uttarakhand",
+      "country": "IN",
+      "lat": 29.2183,
+      "lng": 79.513,
+      "population": 156078
+    },
+    {
+      "id": "in-kurukshetra-hr",
+      "name": "Kurukshetra",
+      "ascii_name": "kurukshetra",
+      "region": "Haryana",
+      "country": "IN",
+      "lat": 29.9695,
+      "lng": 76.8783,
+      "population": 154962
+    },
+    {
+      "id": "in-dibrugarh-as",
+      "name": "Dibrugarh",
+      "ascii_name": "dibrugarh",
+      "region": "Assam",
+      "country": "IN",
+      "lat": 27.4728,
+      "lng": 94.912,
+      "population": 154296
+    },
+    {
+      "id": "in-veraval-gj",
+      "name": "Veraval",
+      "ascii_name": "veraval",
+      "region": "Gujarat",
+      "country": "IN",
+      "lat": 20.9077,
+      "lng": 70.3679,
+      "population": 153696
+    },
+    {
+      "id": "in-porbandar-gj",
+      "name": "Porbandar",
+      "ascii_name": "porbandar",
+      "region": "Gujarat",
+      "country": "IN",
+      "lat": 21.6417,
+      "lng": 69.6293,
+      "population": 152760
+    },
+    {
+      "id": "in-hindupur-ap",
+      "name": "Hindupur",
+      "ascii_name": "hindupur",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 13.8285,
+      "lng": 77.4917,
+      "population": 151835
+    },
+    {
+      "id": "in-bhuj-gj",
+      "name": "Bhuj",
+      "ascii_name": "bhuj",
+      "region": "Gujarat",
+      "country": "IN",
+      "lat": 23.242,
+      "lng": 69.6669,
+      "population": 148834
+    },
+    {
+      "id": "in-srikakulam-ap",
+      "name": "Srikakulam",
+      "ascii_name": "srikakulam",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 18.2949,
+      "lng": 83.8938,
+      "population": 147936
+    },
+    {
+      "id": "in-hajipur-br",
+      "name": "Hajipur",
+      "ascii_name": "hajipur",
+      "region": "Bihar",
+      "country": "IN",
+      "lat": 25.6852,
+      "lng": 85.2144,
+      "population": 147688
+    },
+    {
+      "id": "in-sasaram-br",
+      "name": "Sasaram",
+      "ascii_name": "sasaram",
+      "region": "Bihar",
+      "country": "IN",
+      "lat": 24.95,
+      "lng": 84.03,
+      "population": 147396
+    },
+    {
+      "id": "in-tiruvannamalai-tn",
+      "name": "Tiruvannamalai",
+      "ascii_name": "tiruvannamalai",
+      "region": "Tamil Nadu",
+      "country": "IN",
+      "lat": 12.2253,
+      "lng": 79.0747,
+      "population": 145278
+    },
+    {
+      "id": "in-shillong-ml",
+      "name": "Shillong",
+      "ascii_name": "shillong",
+      "region": "Meghalaya",
+      "country": "IN",
+      "lat": 25.5788,
+      "lng": 91.8933,
+      "population": 143229
+    },
+    {
+      "id": "in-bhimavaram-ap",
+      "name": "Bhimavaram",
+      "ascii_name": "bhimavaram",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 16.5449,
+      "lng": 81.5212,
+      "population": 142184
+    },
+    {
+      "id": "in-kottayam-kl",
+      "name": "Kottayam",
+      "ascii_name": "kottayam",
+      "region": "Kerala",
+      "country": "IN",
+      "lat": 9.5916,
+      "lng": 76.5222,
+      "population": 136812
+    },
+    {
+      "id": "in-madanapalle-ap",
+      "name": "Madanapalle",
+      "ascii_name": "madanapalle",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 13.5503,
+      "lng": 78.5029,
+      "population": 135863
+    },
+    {
+      "id": "in-siwan-br",
+      "name": "Siwan",
+      "ascii_name": "siwan",
+      "region": "Bihar",
+      "country": "IN",
+      "lat": 26.2196,
+      "lng": 84.356,
+      "population": 135066
+    },
+    {
+      "id": "in-hassan-ka",
+      "name": "Hassan",
+      "ascii_name": "hassan",
+      "region": "Karnataka",
+      "country": "IN",
+      "lat": 13.0033,
+      "lng": 76.1004,
+      "population": 133436
+    },
+    {
+      "id": "in-palakkad-kl",
+      "name": "Palakkad",
+      "ascii_name": "palakkad",
+      "region": "Kerala",
+      "country": "IN",
+      "lat": 10.7867,
+      "lng": 76.6548,
+      "population": 130955
+    },
+    {
+      "id": "in-jorhat-as",
+      "name": "Jorhat",
+      "ascii_name": "jorhat",
+      "region": "Assam",
+      "country": "IN",
+      "lat": 26.7509,
+      "lng": 94.2037,
+      "population": 126736
+    },
+    {
+      "id": "in-guntakal-ap",
+      "name": "Guntakal",
+      "ascii_name": "guntakal",
+      "region": "Andhra Pradesh",
+      "country": "IN",
+      "lat": 15.1661,
+      "lng": 77.365,
+      "population": 126270
+    },
+    {
+      "id": "in-motihari-br",
+      "name": "Motihari",
+      "ascii_name": "motihari",
+      "region": "Bihar",
+      "country": "IN",
+      "lat": 26.6469,
+      "lng": 84.9108,
+      "population": 126158
+    },
+    {
+      "id": "in-dimapur-nl",
+      "name": "Dimapur",
+      "ascii_name": "dimapur",
+      "region": "Nagaland",
+      "country": "IN",
+      "lat": 25.9044,
+      "lng": 93.7267,
+      "population": 122834
+    },
+    {
+      "id": "in-vasco-da-gama-ga",
+      "name": "Vasco da Gama",
+      "ascii_name": "vasco da gama",
+      "region": "Goa",
+      "country": "IN",
+      "lat": 15.3982,
+      "lng": 73.8113,
+      "population": 122000
+    },
+    {
+      "id": "in-sawai-madhopur-rj",
+      "name": "Sawai Madhopur",
+      "ascii_name": "sawai madhopur",
+      "region": "Rajasthan",
+      "country": "IN",
+      "lat": 26.0233,
+      "lng": 76.3458,
+      "population": 121106
+    },
+    {
+      "id": "in-satara-mh",
+      "name": "Satara",
+      "ascii_name": "satara",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 17.6805,
+      "lng": 74.0183,
+      "population": 120195
+    },
+    {
+      "id": "in-darjeeling-wb",
+      "name": "Darjeeling",
+      "ascii_name": "darjeeling",
+      "region": "West Bengal",
+      "country": "IN",
+      "lat": 27.041,
+      "lng": 88.2663,
+      "population": 118805
+    },
+    {
+      "id": "in-chikkamagaluru-ka",
+      "name": "Chikkamagaluru",
+      "ascii_name": "chikkamagaluru",
+      "region": "Karnataka",
+      "country": "IN",
+      "lat": 13.3161,
+      "lng": 75.772,
+      "population": 118401
+    },
+    {
+      "id": "in-hosur-tn",
+      "name": "Hosur",
+      "ascii_name": "hosur",
+      "region": "Tamil Nadu",
+      "country": "IN",
+      "lat": 12.7409,
+      "lng": 77.8253,
+      "population": 116821
+    },
+    {
+      "id": "in-chittorgarh-rj",
+      "name": "Chittorgarh",
+      "ascii_name": "chittorgarh",
+      "region": "Rajasthan",
+      "country": "IN",
+      "lat": 24.8887,
+      "lng": 74.6269,
+      "population": 116406
+    },
+    {
+      "id": "in-panaji-ga",
+      "name": "Panaji",
+      "ascii_name": "panaji",
+      "region": "Goa",
+      "country": "IN",
+      "lat": 15.4909,
+      "lng": 73.8278,
+      "population": 114405
+    },
+    {
+      "id": "in-margao-ga",
+      "name": "Margao",
+      "ascii_name": "margao",
+      "region": "Goa",
+      "country": "IN",
+      "lat": 15.2832,
+      "lng": 73.9862,
+      "population": 106000
+    },
+    {
+      "id": "in-suryapet-tg",
+      "name": "Suryapet",
+      "ascii_name": "suryapet",
+      "region": "Telangana",
+      "country": "IN",
+      "lat": 17.1405,
+      "lng": 79.6236,
+      "population": 105250
+    },
+    {
+      "id": "in-rishikesh-uk",
+      "name": "Rishikesh",
+      "ascii_name": "rishikesh",
+      "region": "Uttarakhand",
+      "country": "IN",
+      "lat": 30.0869,
+      "lng": 78.2676,
+      "population": 102138
+    },
+    {
+      "id": "in-port-blair-an",
+      "name": "Port Blair",
+      "ascii_name": "port blair",
+      "region": "Andaman and Nicobar Islands",
+      "country": "IN",
+      "lat": 11.6234,
+      "lng": 92.7265,
+      "population": 100608
+    },
+    {
+      "id": "in-gangtok-sk",
+      "name": "Gangtok",
+      "ascii_name": "gangtok",
+      "region": "Sikkim",
+      "country": "IN",
+      "lat": 27.3389,
+      "lng": 88.6065,
+      "population": 100286
+    },
+    {
+      "id": "in-kohima-nl",
+      "name": "Kohima",
+      "ascii_name": "kohima",
+      "region": "Nagaland",
+      "country": "IN",
+      "lat": 25.6751,
+      "lng": 94.1086,
+      "population": 99039
+    },
+    {
+      "id": "in-silvassa-dd",
+      "name": "Silvassa",
+      "ascii_name": "silvassa",
+      "region": "Dadra and Nagar Haveli and Daman and Diu",
+      "country": "IN",
+      "lat": 20.2737,
+      "lng": 73.0135,
+      "population": 98032
+    },
+    {
+      "id": "in-ooty-tn",
+      "name": "Ooty",
+      "ascii_name": "ooty",
+      "region": "Tamil Nadu",
+      "country": "IN",
+      "lat": 11.4102,
+      "lng": 76.695,
+      "population": 88430
+    },
+    {
+      "id": "in-karwar-ka",
+      "name": "Karwar",
+      "ascii_name": "karwar",
+      "region": "Karnataka",
+      "country": "IN",
+      "lat": 14.8137,
+      "lng": 74.1292,
+      "population": 77139
+    },
+    {
+      "id": "in-jaisalmer-rj",
+      "name": "Jaisalmer",
+      "ascii_name": "jaisalmer",
+      "region": "Rajasthan",
+      "country": "IN",
+      "lat": 26.9157,
+      "lng": 70.9083,
+      "population": 65471
+    },
+    {
+      "id": "in-itanagar-ar",
+      "name": "Itanagar",
+      "ascii_name": "itanagar",
+      "region": "Arunachal Pradesh",
+      "country": "IN",
+      "lat": 27.0844,
+      "lng": 93.6053,
+      "population": 59490
+    },
+    {
+      "id": "in-lonavala-mh",
+      "name": "Lonavala",
+      "ascii_name": "lonavala",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 18.7546,
+      "lng": 73.4062,
+      "population": 57698
+    },
+    {
+      "id": "in-ayodhya-up",
+      "name": "Ayodhya",
+      "ascii_name": "ayodhya",
+      "region": "Uttar Pradesh",
+      "country": "IN",
+      "lat": 26.7922,
+      "lng": 82.1998,
+      "population": 55890
+    },
+    {
+      "id": "in-ramnagar-uk",
+      "name": "Ramnagar",
+      "ascii_name": "ramnagar",
+      "region": "Uttarakhand",
+      "country": "IN",
+      "lat": 29.3946,
+      "lng": 79.1282,
+      "population": 54787
+    },
+    {
+      "id": "in-rameswaram-tn",
+      "name": "Rameswaram",
+      "ascii_name": "rameswaram",
+      "region": "Tamil Nadu",
+      "country": "IN",
+      "lat": 9.2876,
+      "lng": 79.3129,
+      "population": 44856
+    },
+    {
+      "id": "in-daman-dd",
+      "name": "Daman",
+      "ascii_name": "daman",
+      "region": "Dadra and Nagar Haveli and Daman and Diu",
+      "country": "IN",
+      "lat": 20.3974,
+      "lng": 72.8328,
+      "population": 44282
+    },
+    {
+      "id": "in-nainital-uk",
+      "name": "Nainital",
+      "ascii_name": "nainital",
+      "region": "Uttarakhand",
+      "country": "IN",
+      "lat": 29.3803,
+      "lng": 79.4636,
+      "population": 41377
+    },
+    {
+      "id": "in-mapusa-ga",
+      "name": "Mapusa",
+      "ascii_name": "mapusa",
+      "region": "Goa",
+      "country": "IN",
+      "lat": 15.5937,
+      "lng": 73.8142,
+      "population": 40487
+    },
+    {
+      "id": "in-varkala-kl",
+      "name": "Varkala",
+      "ascii_name": "varkala",
+      "region": "Kerala",
+      "country": "IN",
+      "lat": 8.7379,
+      "lng": 76.7163,
+      "population": 40048
+    },
+    {
+      "id": "in-dwarka-gj",
+      "name": "Dwarka",
+      "ascii_name": "dwarka",
+      "region": "Gujarat",
+      "country": "IN",
+      "lat": 22.2442,
+      "lng": 68.9685,
+      "population": 38873
+    },
+    {
+      "id": "in-bodh-gaya-br",
+      "name": "Bodh Gaya",
+      "ascii_name": "bodh gaya",
+      "region": "Bihar",
+      "country": "IN",
+      "lat": 24.6961,
+      "lng": 84.9869,
+      "population": 38439
+    },
+    {
+      "id": "in-kodaikanal-tn",
+      "name": "Kodaikanal",
+      "ascii_name": "kodaikanal",
+      "region": "Tamil Nadu",
+      "country": "IN",
+      "lat": 10.2381,
+      "lng": 77.4892,
+      "population": 36501
+    },
+    {
+      "id": "in-shirdi-mh",
+      "name": "Shirdi",
+      "ascii_name": "shirdi",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 19.7645,
+      "lng": 74.4762,
+      "population": 36004
+    },
+    {
+      "id": "in-indi-ka",
+      "name": "Indi",
+      "ascii_name": "indi",
+      "region": "Karnataka",
+      "country": "IN",
+      "lat": 17.176,
+      "lng": 75.956,
+      "population": 35000
+    },
+    {
+      "id": "in-madikeri-ka",
+      "name": "Madikeri",
+      "ascii_name": "madikeri",
+      "region": "Karnataka",
+      "country": "IN",
+      "lat": 12.4244,
+      "lng": 75.7382,
+      "population": 33381
+    },
+    {
+      "id": "in-kalpetta-kl",
+      "name": "Kalpetta",
+      "ascii_name": "kalpetta",
+      "region": "Kerala",
+      "country": "IN",
+      "lat": 11.609,
+      "lng": 76.0831,
+      "population": 31580
+    },
+    {
+      "id": "in-leh-la",
+      "name": "Leh",
+      "ascii_name": "leh",
+      "region": "Ladakh",
+      "country": "IN",
+      "lat": 34.1526,
+      "lng": 77.5771,
+      "population": 30870
+    },
+    {
+      "id": "in-dharamshala-hp",
+      "name": "Dharamshala",
+      "ascii_name": "dharamshala",
+      "region": "Himachal Pradesh",
+      "country": "IN",
+      "lat": 32.219,
+      "lng": 76.3234,
+      "population": 30764
+    },
+    {
+      "id": "in-mussoorie-uk",
+      "name": "Mussoorie",
+      "ascii_name": "mussoorie",
+      "region": "Uttarakhand",
+      "country": "IN",
+      "lat": 30.4598,
+      "lng": 78.0644,
+      "population": 30118
+    },
+    {
+      "id": "in-indapur-mh",
+      "name": "Indapur",
+      "ascii_name": "indapur",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 18.1155,
+      "lng": 75.0252,
+      "population": 30000
+    },
+    {
+      "id": "in-gokarna-ka",
+      "name": "Gokarna",
+      "ascii_name": "gokarna",
+      "region": "Karnataka",
+      "country": "IN",
+      "lat": 14.5479,
+      "lng": 74.3188,
+      "population": 25851
+    },
+    {
+      "id": "in-mount-abu-rj",
+      "name": "Mount Abu",
+      "ascii_name": "mount abu",
+      "region": "Rajasthan",
+      "country": "IN",
+      "lat": 24.5926,
+      "lng": 72.7156,
+      "population": 22943
+    },
+    {
+      "id": "in-kanyakumari-tn",
+      "name": "Kanyakumari",
+      "ascii_name": "kanyakumari",
+      "region": "Tamil Nadu",
+      "country": "IN",
+      "lat": 8.0883,
+      "lng": 77.5385,
+      "population": 22453
+    },
+    {
+      "id": "in-pushkar-rj",
+      "name": "Pushkar",
+      "ascii_name": "pushkar",
+      "region": "Rajasthan",
+      "country": "IN",
+      "lat": 26.4897,
+      "lng": 74.5511,
+      "population": 21626
+    },
+    {
+      "id": "in-alibag-mh",
+      "name": "Alibag",
+      "ascii_name": "alibag",
+      "region": "Maharashtra",
+      "country": "IN",
+      "lat": 18.6414,
+      "lng": 72.8722,
+      "population": 20473
+    },
+    {
+      "id": "in-kullu-hp",
+      "name": "Kullu",
+      "ascii_name": "kullu",
+      "region": "Himachal Pradesh",
+      "country": "IN",
+      "lat": 31.9579,
+      "lng": 77.1095,
+      "population": 18536
+    },
+    {
+      "id": "in-mahabalipuram-tn",
+      "name": "Mahabalipuram",
+      "ascii_name": "mahabalipuram",
+      "region": "Tamil Nadu",
+      "country": "IN",
+      "lat": 12.6208,
+      "lng": 80.1945,
+      "population": 15172
+    },
+    {
+      "id": "in-manali-hp",
+      "name": "Manali",
+      "ascii_name": "manali",
+      "region": "Himachal Pradesh",
+      "country": "IN",
+      "lat": 32.2432,
+      "lng": 77.1892,
+      "population": 8096
+    }
+  ]
+}

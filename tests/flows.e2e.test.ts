@@ -42,7 +42,7 @@ const outboxCount = async (tripId: string) => (await rows(h.pool, 'select count(
 async function newTrip(title: string, organizer: Who, others: Who[] = [], answers: Record<string, unknown> = {}) {
   const t = await api(organizer, 'POST', '/app/v1/trips', { title });
   const code = t.body.invite_url.split('/j/')[1];
-  for (const o of others) await api(o, 'POST', `/app/v1/invites/${code}/accept`, answers[o.id] ?? {});
+  for (const o of others) await api(o, 'POST', `/app/v1/invites/${code}/accept`, { join_answers: answers[o.id] ?? {} });
   await h.flush();
   return { id: t.body.trip_id as string, code: code as string };
 }
@@ -178,23 +178,23 @@ describe('F2. A trip starts (guide: "A trip starts")', () => {
   });
 
   it('5. The invite link shows a preview without signing in', async () => {
-    expect((await api(null, 'GET', `/app/v1/invites/${code}`)).body).toMatchObject({ trip_id: trip, title: 'Goa 🌴 F2', people: 1 });
+    expect((await api(null, 'GET', `/app/v1/invites/${code}`)).body).toMatchObject({ state: 'pending', trip: { trip_id: trip, title: 'Goa 🌴 F2' }, inviter: { person_id: rahul.id }, joined_count: 1 });
   });
 
-  it('6. Priya joins with her answers: person.joined (no budget), then trip.updated budget; the open vote now waits for 2', async () => {
+  it('6. Priya joins with her answers: person.joined (no budget), then trip.updated budget; the open vote now waits for 2; she lands in the chat Go started', async () => {
     priya = await person('Priya');
     const mark = h.go.events.length;
-    const r = await api(priya, 'POST', `/app/v1/invites/${code}/accept`, { from_city: 'Delhi', know: ['Vegetarian', 'Window seat'], budget: { min_minor: 1500000 } });
-    expect(r.body).toEqual({ trip_id: trip, already: false });
+    const r = await api(priya, 'POST', `/app/v1/invites/${code}/accept`, { join_answers: { from_city: 'Delhi', know: ['Vegetarian', 'Window seat'], spend_band: 'gt25' } });
+    expect(r.body).toEqual({ trip_id: trip, seq: 5, landing: 'chat' });
     await h.flush();
     const list = eventsFor(trip, mark);
     expect(list.map((e) => [e.type, e.seq])).toEqual([['person.joined', 4], ['trip.updated', 5]]);
     expect(list[0]!.data.person).toMatchObject({ person_id: priya.id, from_city: 'Delhi', know: ['Vegetarian', 'Window seat'] });
-    expect(JSON.stringify(list[0])).not.toContain('1500000');
+    expect(JSON.stringify(list[0])).not.toMatch(/2500000|gt25/);
     expect(list[1]!.data).toEqual({ by: { kind: 'system' }, changed: ['budget'] });
     const snap = await read('read_trip', { trip_id: trip });
     expect(snap.decisions[0]).toMatchObject({ decision_id: decision, of: 2 });
-    expect(snap.budget).toEqual({ lowest: { min_minor: 1500000, currency: 'INR' }, answered: 1, of: 2 });
+    expect(snap.budget).toEqual({ lowest: { min_minor: 2500000, currency: 'INR' }, answered: 1, of: 2 });
   });
 
   it('7-8. The vote is in both strips; both vote; it closes by itself and the decided line follows', async () => {

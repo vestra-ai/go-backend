@@ -78,10 +78,11 @@ describe('A2: bad app input answers 422 with the standard error (400 only for un
 
   it('join answers over the contract limits: 422, naming the field', async () => {
     const stranger = await h.signIn('New');
-    const over = await api(stranger, 'POST', '/app/v1/invites/inv_t_goa/accept', { know: Array.from({ length: 21 }, (_, i) => `k${i}`) });
-    expect([over.status, over.body.error.field]).toEqual([422, 'know']);
-    expect((await api(stranger, 'POST', '/app/v1/invites/inv_t_goa/accept', { from_city: 'x'.repeat(61) })).status).toBe(422);
-    expect((await api(stranger, 'POST', '/app/v1/invites/inv_t_goa/accept', { budget: {} })).status).toBe(422);
+    const over = await api(stranger, 'POST', '/app/v1/invites/inv_t_goa/accept', { join_answers: { know: Array.from({ length: 21 }, (_, i) => `k${i}`) } });
+    expect([over.status, over.body.error.field]).toEqual([422, 'join_answers.know']);
+    expect((await api(stranger, 'POST', '/app/v1/invites/inv_t_goa/accept', { join_answers: { from_city: 'x'.repeat(61) } })).status).toBe(422);
+    expect((await api(stranger, 'POST', '/app/v1/invites/inv_t_goa/accept', { join_answers: { spend_band: 'lots' } })).status).toBe(422);
+    expect((await api(stranger, 'POST', '/app/v1/invites/inv_t_goa/accept', { budget: { min_minor: 1 } })).status).toBe(422); // the old shape
   });
 
   it('unreadable JSON is 400 bad_request; an empty JSON body is 422 (a field is missing), not 500', async () => {
@@ -113,7 +114,7 @@ describe('A2: bad app input answers 422 with the standard error (400 only for un
 
   it('a POST with no body at all still works for routes that need none', async () => {
     const r = await h.app.inject({ method: 'POST', url: `/app/v1/trips/${T}/read`, headers: { authorization: `Bearer ${await token('p_rahul')}` } });
-    expect(r.statusCode).toBe(200);
+    expect(r.statusCode).toBe(204);
   });
 });
 
@@ -194,9 +195,9 @@ describe('A6: two different requests for the same thing at the same moment', () 
 describe('A7: someone with a budget answer leaves', () => {
   it('sends trip.updated ["budget"] by the system after person.left, so Go knows the band moved', async () => {
     const budgeter = await h.signIn('Budgeter');
-    await api(budgeter, 'POST', '/app/v1/invites/inv_t_goa/accept', { budget: { min_minor: 900000 } });
+    await api(budgeter, 'POST', '/app/v1/invites/inv_t_goa/accept', { join_answers: { spend_band: 'lt15' } });
     const before = (await h.go.call('read_trip', { trip_id: T })).result.budget;
-    expect(before.lowest.min_minor).toBe(900000);
+    expect(before.lowest).toEqual({ min_minor: 0, max_minor: 1500000, currency: 'INR' });
     await api(budgeter, 'POST', `/app/v1/trips/${T}/leave`);
     await h.flush();
     const left = events('person.left').at(-1)!;
@@ -248,7 +249,9 @@ describe('B11: two instances starting at the same moment', () => {
     const a = new pg.Pool({ connectionString: `${base}/${name}` });
     const b = new pg.Pool({ connectionString: `${base}/${name}` });
     const [ra, rb] = await Promise.all([migrate(a), migrate(b)]);
-    expect([...ra, ...rb]).toEqual(['001_core.sql', '002_people_actions.sql', '003_supabase.sql', '004_v1_conventions.sql']); // each file is applied once, by whichever instance got the lock first
+    const applied = [...ra, ...rb];
+    expect(applied.slice(0, 5)).toEqual(['001_core.sql', '002_people_actions.sql', '003_supabase.sql', '004_v1_conventions.sql', '005_v1_people.sql']); // each file is applied once, by whichever instance got the lock first
+    expect([applied.length, applied[5]]).toEqual([6, expect.stringMatching(/^data\/cities-in\.json#/)]); // and the cities file once
     await a.end();
     await b.end();
   });
@@ -272,7 +275,7 @@ describe('B13: frames that are not JSON-RPC', () => {
 describe('R2 (real Go): an empty body with content-type: application/json', () => {
   it('is read as no body: a POST that needs none works, and a route that needs fields still says 422', async () => {
     const headers = { authorization: `Bearer ${await token('p_rahul')}`, 'content-type': 'application/json' };
-    expect((await h.app.inject({ method: 'POST', url: `/app/v1/trips/${T}/read`, payload: '', headers })).statusCode).toBe(200);
+    expect((await h.app.inject({ method: 'POST', url: `/app/v1/trips/${T}/read`, payload: '', headers })).statusCode).toBe(204);
     const msg = await h.app.inject({ method: 'POST', url: `/app/v1/trips/${T}/messages`, payload: '', headers });
     expect(msg.statusCode).toBe(422);
     expect(JSON.parse(msg.body).error.message).toMatch(/client_id/);
@@ -290,7 +293,7 @@ describe('R1 (real Go): forget me', () => {
 
   it('clears the answers in a trip the person has left, without an event, by trip or everywhere', async () => {
     const p = await h.signIn('Leaver');
-    await api(p, 'POST', '/app/v1/invites/inv_t_goa/accept', { from_city: 'Pune', know: ['Nuts'] });
+    await api(p, 'POST', '/app/v1/invites/inv_t_goa/accept', { join_answers: { from_city: 'Pune', know: ['Nuts'] } });
     await api(p, 'POST', `/app/v1/trips/${T}/leave`);
     await h.flush();
     const before = h.go.events.length;

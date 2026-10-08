@@ -9,9 +9,10 @@ import { check } from '../contract/index.js';
 import type { PatchMeBody, PatchTripBody, PatchTripMeBody, PutBudgetBody } from '../api/bodies.js';
 import { Forbidden, requireMember as requireMemberTx } from './actions.js';
 import { invalid, notFound } from './errors.js';
+import { BUDGET_BANDS, knowWithVibe } from './join-answers.js';
 import { assertDate, assertItinerarySize } from './limits.js';
 import { personForGo } from './mappers.js';
-import { activePeople } from './snapshot.js';
+import { activePeople, budgetSummary } from './snapshot.js';
 
 interface PersonRecord {
   person_id: string; name: string; photo_url: string | null; upi_id: string | null;
@@ -19,17 +20,51 @@ interface PersonRecord {
 }
 const PERSON_COLUMNS = 'person_id, name, photo_url, upi_id, email, auth_provider, from_city_default, notifications_enabled, created_at';
 
-/** The person's own values (the app's `Me`). The UPI id and the email go only to their owner (the UPI id also, in settle-up, to those who owe them). */
-const own = (r: PersonRecord) => ({
-  person_id: r.person_id, name: r.name, photo_url: r.photo_url, upi_id: r.upi_id, email: r.email, auth_provider: r.auth_provider,
-  from_city: r.from_city_default, notifications_enabled: r.notifications_enabled, created_at: r.created_at.toISOString(),
+/** The app's `Me.counts`: trips I am in now that are not over, trips that are over, and invites I kept for later and can still accept. */
+export interface MeCounts { active_trips: number; past_trips: number; pending_invites: number }
+
+/** The app's `Me` (contract §2). The UPI id is masked; the full id and the email go nowhere else. */
+export interface Me {
+  person_id: string; name: string; email: string | null; photo_url: string | null; auth_provider: string | null; from_city: string | null;
+  has_upi: boolean; upi_id_masked: string | null; notifications_enabled: boolean; counts: MeCounts; created_at: string;
+}
+
+/** "aarav@okhdfc" → "aar••••@okhdfc": the first three characters of the local part and the bank suffix. */
+export function maskUpi(upiId: string): string {
+  const at = upiId.lastIndexOf('@');
+  const local = at < 0 ? upiId : upiId.slice(0, at);
+  const suffix = at < 0 ? '' : upiId.slice(at);
+  return `${local.slice(0, 3)}••••${suffix}`;
+}
+
+const own = (r: PersonRecord, counts: MeCounts): Me => ({
+  person_id: r.person_id, name: r.name, email: r.email, photo_url: r.photo_url, auth_provider: r.auth_provider, from_city: r.from_city_default,
+  has_upi: !!r.upi_id, upi_id_masked: r.upi_id ? maskUpi(r.upi_id) : null, notifications_enabled: r.notifications_enabled,
+  counts, created_at: r.created_at.toISOString(),
 });
 
-export async function getMyProfile(ctx: Ctx, personId: string) {
+/** A pending invite is a "later" mark on a link that still works, for a trip the person is not in now. */
+export async function meCounts(db: pg.Pool | pg.PoolClient, personId: string): Promise<MeCounts> {
+  const { rows } = await db.query(
+    `select
+       (select count(*)::int from trip_people tp join trips t using (trip_id) where tp.person_id = $1 and tp.left_at is null and t.status <> 'over') as active_trips,
+       (select count(*)::int from trip_people tp join trips t using (trip_id) where tp.person_id = $1 and tp.left_at is null and t.status = 'over') as past_trips,
+       (select count(*)::int from invite_marks m join invites i using (code) join trips t using (trip_id)
+         where m.person_id = $1 and m.state = 'later' and i.revoked_at is null and t.status <> 'over'
+           and not exists (select 1 from trip_people tp where tp.trip_id = t.trip_id and tp.person_id = $1 and tp.left_at is null)) as pending_invites`,
+    [personId],
+  );
+  return rows[0] as MeCounts;
+}
+
+export async function getMyProfile(ctx: Ctx, personId: string): Promise<Me> {
   const { rows } = await ctx.pool.query<PersonRecord>(`select ${PERSON_COLUMNS} from people where person_id = $1`, [personId]);
   if (!rows[0]) throw notFound(`person ${personId} does not exist`);
-  return own(rows[0]);
+  return own(rows[0], await meCounts(ctx.pool, personId));
 }
+
+/** What a profile edit may change: the app's PATCH /me fields, and the UPI id for PUT/DELETE /me/upi. */
+type ProfileEdit = PatchMeBody & { upi_id?: string | null };
 
 /**
  * Edits the person's name, photo link, UPI id, default "travelling from" and notifications switch. One transaction locks the
@@ -38,7 +73,7 @@ export async function getMyProfile(ctx: Ctx, personId: string) {
  * it flips). A new UPI id that replaces another, the default city and the switch change nothing Go can see, so they send
  * nothing. Go never receives the UPI text or the email. `seq` is the last change number written, or null when nothing was sent.
  */
-export async function updateMyProfile(ctx: Ctx, personId: string, input: PatchMeBody) {
+async function editProfile(ctx: Ctx, personId: string, input: ProfileEdit): Promise<Me & { seq: number | null }> {
   return withTx(ctx.pool, async (db, after) => {
     const cur = (await db.query<PersonRecord>(`select ${PERSON_COLUMNS} from people where person_id = $1 for no key update`, [personId])).rows[0];
     if (!cur) throw notFound(`person ${personId} does not exist`);
@@ -50,8 +85,9 @@ export async function updateMyProfile(ctx: Ctx, personId: string, input: PatchMe
       from_city_default: input.from_city === undefined ? cur.from_city_default : input.from_city,
       notifications_enabled: input.notifications_enabled ?? cur.notifications_enabled,
     };
+    const counts = await meCounts(db, personId);
     const same = (['name', 'photo_url', 'upi_id', 'from_city_default', 'notifications_enabled'] as const).every((f) => next[f] === cur[f]);
-    if (same) return { ...own(cur), seq: null };
+    if (same) return { ...own(cur, counts), seq: null };
     await db.query('update people set name = $2, photo_url = $3, upi_id = $4, from_city_default = $5, notifications_enabled = $6 where person_id = $1', [
       personId, next.name, next.photo_url, next.upi_id, next.from_city_default, next.notifications_enabled,
     ]);
@@ -74,9 +110,15 @@ export async function updateMyProfile(ctx: Ctx, personId: string, input: PatchMe
         after(() => ctx.live.publish(trip_id, { kind: 'trip', seq: written }));
       }
     }
-    return { ...own(next), seq };
+    return { ...own(next, counts), seq };
   });
 }
+
+/** PATCH /me: name, photo link, default city, notifications switch. */
+export const updateMyProfile = (ctx: Ctx, personId: string, input: PatchMeBody) => editProfile(ctx, personId, input);
+
+/** PUT /me/upi (a validated id) and DELETE /me/upi (null). Go hears `has_upi` only when it flips. */
+export const setMyUpi = (ctx: Ctx, personId: string, upiId: string | null) => editProfile(ctx, personId, { upi_id: upiId });
 
 // ---------------------------------------------------------------- a person's answers in one trip
 
@@ -101,43 +143,81 @@ export async function getMyTripAnswers(ctx: Ctx, tripId: string, personId: strin
   return { from_city: m.from_city, earliest_leave: m.earliest_leave, know: m.know, budget, role: m.role, go_paused: m.go_paused };
 }
 
-/** Edits the join answers in this trip. One `person.updated` here only, listing what differs; nothing differs: `seq: null`. */
+/**
+ * Edits the join answers in this trip (PUT …/me/join-answers): one `person.updated` here only, listing what differs, and, when
+ * `spend_band` moves the budget answer, a `trip.updated` by the system after it (as a budget set does). Nothing differs:
+ * `seq: null`. Answers the caller's own Person, in full. The vibe lands in `know` as "Vibe: beach"; the band in the private
+ * budget answer (see join-answers.ts).
+ */
 export async function updateMyTripAnswers(ctx: Ctx, tripId: string, personId: string, input: PatchTripMeBody) {
   return withTx(ctx.pool, async (db, after) => {
     const cur = await lockMembership(db, tripId, personId);
     const next = {
       from_city: input.from_city === undefined ? cur.from_city : input.from_city,
       earliest_leave: input.earliest_leave === undefined ? cur.earliest_leave : input.earliest_leave,
-      know: input.know === undefined ? cur.know : input.know,
+      know: knowWithVibe(input.know === undefined ? cur.know : input.know, input.vibe),
     };
     const changed = (['from_city', 'earliest_leave', 'know'] as const).filter((f) => JSON.stringify(next[f]) !== JSON.stringify(cur[f]));
-    if (changed.length === 0) return { seq: null };
-    await db.query(
-      `update trip_people set ${changed.map((f, i) => `${f} = $${i + 3}`).join(', ')} where trip_id = $1 and person_id = $2`,
-      [tripId, personId, ...changed.map((f) => (f === 'know' ? JSON.stringify(next.know) : next[f]))],
-    );
-    const person = (await activePeople(db, tripId)).find((p) => p.person_id === personId)!;
-    const seq = await change(db, tripId, 'person.updated', { person: personForGo(person), changed });
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
-    return { seq };
+    let seq: number | null = null;
+    if (changed.length > 0) {
+      await db.query(
+        `update trip_people set ${changed.map((f, i) => `${f} = $${i + 3}`).join(', ')} where trip_id = $1 and person_id = $2`,
+        [tripId, personId, ...changed.map((f) => (f === 'know' ? JSON.stringify(next.know) : next[f]))],
+      );
+      const person = (await activePeople(db, tripId)).find((p) => p.person_id === personId)!;
+      seq = await change(db, tripId, 'person.updated', { person: personForGo(person), changed });
+    }
+    if (input.spend_band) {
+      const band = BUDGET_BANDS[input.spend_band];
+      const moved = await writeBudget(db, tripId, personId, cur, band.min_minor, band.max_minor);
+      if (moved !== null) seq = moved;
+    }
+    if (seq !== null) {
+      const last = seq;
+      after(() => ctx.live.publish(tripId, { kind: 'trip', seq: last }));
+    }
+    const mine = (await activePeople(db, tripId)).find((p) => p.person_id === personId)!;
+    return { ...personForGo(mine), seq };
   });
 }
 
+/** Writes a budget answer when it differs from the stored one and tells Go the band moved (`trip.updated` by the system). The change number, or null. */
+async function writeBudget(db: pg.PoolClient, tripId: string, personId: string, cur: MembershipRecord, min: number | null, max: number | null): Promise<number | null> {
+  if (cur.budget_min_minor === min && cur.budget_max_minor === max) return null;
+  await db.query('update trip_people set budget_min_minor = $3, budget_max_minor = $4 where trip_id = $1 and person_id = $2', [tripId, personId, min, max]);
+  // Names nobody and no amount: only the lowest band, which Go reads, can move.
+  return change(db, tripId, 'trip.updated', { by: { kind: 'system' }, changed: ['budget'] });
+}
+
 /**
- * Sets the caller's whole budget answer (it cannot be withdrawn). When the stored answer changes Go hears `trip.updated`
- * by the system, `changed: ['budget']`, which names nobody and no amount: only the lowest band, which Go reads, can move.
- * The same answer again sends nothing.
+ * Sets the caller's whole budget answer. When the stored answer changes Go hears `trip.updated` by the system, `changed: ['budget']`,
+ * which names nobody and no amount: only the lowest band, which Go reads, can move. The same answer again sends nothing.
+ * Answers the stored answer, the group's summary and the change number.
  */
 export async function setMyBudget(ctx: Ctx, tripId: string, personId: string, input: PutBudgetBody) {
-  if (input.max_minor !== undefined && input.max_minor < input.min_minor) throw invalid('max_minor must not be below min_minor');
+  if (input.max_minor !== undefined && input.max_minor !== null && input.max_minor < input.min_minor) throw invalid('max_minor must not be below min_minor');
   return withTx(ctx.pool, async (db, after) => {
+    const trip = (await db.query('select currency from trips where trip_id = $1', [tripId])).rows[0];
+    if (!trip) throw notFound(`trip ${tripId} does not exist`);
+    if (input.currency !== undefined && input.currency !== trip.currency) throw invalid(`currency must be the trip's (${trip.currency})`, 'currency');
     const cur = await lockMembership(db, tripId, personId);
     const max = input.max_minor ?? null;
-    if (cur.budget_min_minor === input.min_minor && cur.budget_max_minor === max) return { seq: null };
-    await db.query('update trip_people set budget_min_minor = $3, budget_max_minor = $4 where trip_id = $1 and person_id = $2', [tripId, personId, input.min_minor, max]);
-    const seq = await change(db, tripId, 'trip.updated', { by: { kind: 'system' }, changed: ['budget'] });
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
-    return { seq };
+    const seq = await writeBudget(db, tripId, personId, cur, input.min_minor, max);
+    if (seq !== null) after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
+    const summary = await budgetSummary(db, tripId, trip.currency);
+    return { budget: { min_minor: input.min_minor, max_minor: max, currency: trip.currency as string }, summary, seq };
+  });
+}
+
+/** Withdraws the caller's budget answer (DELETE …/me/budget). The band and the count moved, so Go hears the same `trip.updated` as a set. */
+export async function deleteMyBudget(ctx: Ctx, tripId: string, personId: string) {
+  return withTx(ctx.pool, async (db, after) => {
+    const trip = (await db.query('select currency from trips where trip_id = $1', [tripId])).rows[0];
+    if (!trip) throw notFound(`trip ${tripId} does not exist`);
+    const cur = await lockMembership(db, tripId, personId);
+    const seq = await writeBudget(db, tripId, personId, cur, null, null);
+    if (seq !== null) after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
+    return { summary: await budgetSummary(db, tripId, trip.currency), seq };
   });
 }
 

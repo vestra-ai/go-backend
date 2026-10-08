@@ -29,6 +29,7 @@ export async function seedTrip(
      values ($1, 'Goa 🌴', $2, $3, 'INR', '2026-11-06', '2026-11-09', 7500000, 1)  -- trip.created took change 1`,
     [tripId, people[0]!.id, `inv_${tripId}`],
   );
+  await pool.query('insert into invites (code, trip_id, created_by) values ($1, $2, $3)', [`inv_${tripId}`, tripId, people[0]!.id]); // the trip's working link (005)
   let n = 0;
   for (const p of people) {
     await pool.query(

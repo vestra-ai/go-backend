@@ -28,32 +28,37 @@ describe('the account profile', () => {
     await h.flush();
     expect([first.status, typeof first.body.seq, again.status, again.body.seq, personUpdates('p_rahul').length]).toEqual([200, 'number', 200, null, 2]); // the repeat sent nothing
     expect((await t.api(rahul(), 'GET', '/app/v1/me')).body).toEqual({
-      person_id: 'p_rahul', name: 'Rahul K', photo_url: null, upi_id: 'rahul@upi', email: 'p_rahul@mail.test', auth_provider: 'google', from_city: null, notifications_enabled: true, created_at: expect.any(String),
+      person_id: 'p_rahul', name: 'Rahul K', photo_url: null, has_upi: true, upi_id_masked: 'rah••••@upi', email: 'p_rahul@mail.test', auth_provider: 'google', from_city: null, notifications_enabled: true,
+      counts: { active_trips: 2, past_trips: 0, pending_invites: 0 }, created_at: expect.any(String), // t_goa and t_b; he left t_c
     });
     expect((await t.api(null, 'GET', '/app/v1/me')).status).toBe(401);
     expect((await t.api(null, 'PATCH', '/app/v1/me', { name: 'x' })).status).toBe(401);
     expect((await t.api(rahul(), 'PATCH', '/app/v1/me', { name: 'x', extra: 1 })).status).toBe(422);
   });
 
-  it('saving and clearing a UPI id tells Go only that one exists or not; replacing it tells nothing; no event and no log line holds the text', async () => {
+  it('saving and clearing a UPI id tells Go only that one exists or not; replacing it tells nothing; the answer masks it; no event, answer or log line holds the text', async () => {
     const logged: string[] = [];
     const spies = (['log', 'error', 'warn'] as const).map((k) => vi.spyOn(console, k).mockImplementation((...args: unknown[]) => void logged.push(JSON.stringify(args))));
     const priya = t.as('p_priya');
-    const saved = await t.api(priya, 'PATCH', '/app/v1/me', { upi_id: 'priya@okbank' });
-    const replaced = await t.api(priya, 'PATCH', '/app/v1/me', { upi_id: 'priya@newbank' });
-    const cleared = await t.api(priya, 'PATCH', '/app/v1/me', { upi_id: null });
+    const saved = await t.api(priya, 'PUT', '/app/v1/me/upi', { upi_id: 'priya@okbank' });
+    const replaced = await t.api(priya, 'PUT', '/app/v1/me/upi', { upi_id: 'priya@newbank' });
+    const cleared = await t.api(priya, 'DELETE', '/app/v1/me/upi');
     await h.flush();
     spies.forEach((s) => s.mockRestore());
-    const everything = JSON.stringify([(await rows(h.pool, 'select body from outbox')).map((r) => r.body), logged]); // Go's events and the server's log, not the caller's own answer
-    expect([saved.body.upi_id, personUpdates('p_priya').map((e) => e.data.changed), replaced.body.seq, cleared.body.upi_id]).toEqual(['priya@okbank', Array(6).fill(['has_upi']), null, null]); // 3 trips x (saved, cleared)
-    expect(/okbank|newbank/.test(everything)).toBe(false);
+    const everything = JSON.stringify([(await rows(h.pool, 'select body from outbox')).map((r) => r.body), logged, saved.body, replaced.body, cleared.body]);
+    expect([saved.body.has_upi, saved.body.upi_id_masked, personUpdates('p_priya').map((e) => e.data.changed), replaced.body.seq, replaced.body.upi_id_masked, cleared.body.has_upi, cleared.body.upi_id_masked])
+      .toEqual([true, 'pri••••@okbank', Array(6).fill(['has_upi']), null, 'pri••••@newbank', false, null]); // 3 trips x (saved, cleared)
+    expect(/priya@okbank|priya@newbank/.test(everything)).toBe(false);
   });
 
-  it('refuses a 101-character UPI id without echoing it, a photo link that is not http(s), and a null name, all with 422 naming the field', async () => {
+  it('refuses a UPI id that is not name@bank without echoing it, an upi_id on PATCH /me, a photo link that is not https, and a null name, all with 422 naming the field', async () => {
     const long = 'u'.repeat(101);
-    const tooLong = await t.api(rahul(), 'PATCH', '/app/v1/me', { upi_id: long });
-    expect([tooLong.status, tooLong.body.error.code, tooLong.body.error.field, JSON.stringify(tooLong.body).includes(long)]).toEqual([422, 'invalid', 'upi_id', false]);
+    const notAnId = await t.api(rahul(), 'PUT', '/app/v1/me/upi', { upi_id: long });
+    expect([notAnId.status, notAnId.body.error.code, notAnId.body.error.field, JSON.stringify(notAnId.body).includes(long)]).toEqual([422, 'invalid', 'upi_id', false]);
+    expect((await t.api(rahul(), 'PUT', '/app/v1/me/upi', { upi_id: 'a@b' })).status).toBe(422); // too short on both sides
+    expect((await t.api(rahul(), 'PATCH', '/app/v1/me', { upi_id: 'rahul@upi' })).body.error.field).toBe('upi_id'); // moved to PUT /me/upi
     expect((await t.api(rahul(), 'PATCH', '/app/v1/me', { photo_url: 'ftp://x.example/a.png' })).status).toBe(422);
+    expect((await t.api(rahul(), 'PATCH', '/app/v1/me', { photo_url: 'http://x.example/a.png' })).status).toBe(422);
     expect((await t.api(rahul(), 'PATCH', '/app/v1/me', { name: null })).status).toBe(422);
   });
 

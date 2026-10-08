@@ -67,11 +67,12 @@ describe('request errors', () => {
     const malformed = await send('{"title": ');
     expect(malformed.statusCode).toBe(400);
     expect(JSON.parse(malformed.body).error).toEqual({ code: 'bad_request', message: expect.any(String), field: null, retry_after_seconds: null, request_id: malformed.headers['x-request-id'] });
-    const empty = await send('');
-    expect(empty.statusCode).toBe(422); // read as no body: the title is missing
+    const empty = await send('{"title": 5}');
+    expect(empty.statusCode).toBe(422); // a rule broken: the title is not text
     expect(JSON.parse(empty.body).error).toMatchObject({ code: 'invalid', field: 'title' });
-    const noTitle = await t.api(who, 'POST', '/app/v1/trips', {});
-    expect([noTitle.status, noTitle.body.error.code, noTitle.body.error.field]).toEqual([422, 'invalid', 'title']);
+    const unknown = await t.api(who, 'POST', '/app/v1/trips', { colour: 'blue' });
+    expect([unknown.status, unknown.body.error.code, unknown.body.error.field]).toEqual([422, 'invalid', 'colour']);
+    expect((await send('')).statusCode).toBe(201); // read as no body: everything is optional on this route ("New trip")
     // An address with broken percent-encoding is answered by the framework itself: same shape, and the headers for a listed origin.
     const badUrl = await t.api(null, 'GET', '/app/v1/invites/%zz', undefined, { origin: PWA });
     expect([badUrl.status, badUrl.body.error.code, badUrl.headers['access-control-allow-origin'], badUrl.headers.vary, typeof badUrl.headers['x-request-id']]).toEqual([400, 'bad_request', PWA, 'Origin', 'string']);

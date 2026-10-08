@@ -1,11 +1,13 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import pg from 'pg';
+import { CITIES_FILE, loadCities, readCitiesFile } from '../src/domain/places.js';
 
 /**
- * Applies migrations/*.sql in name order, once each. Several instances may start at the same moment, so the
- * whole run holds a Postgres advisory lock: the second instance waits, then finds everything applied.
+ * Applies migrations/*.sql in name order, once each, then loads the bundled reference data (the cities dataset) once
+ * per version of its file. Several instances may start at the same moment, so the whole run holds a Postgres advisory
+ * lock: the second instance waits, then finds everything applied.
  */
-export async function migrate(db: pg.Client | pg.Pool, dir = new URL('../migrations/', import.meta.url)): Promise<string[]> {
+export async function migrate(db: pg.Client | pg.Pool, dir = new URL('../migrations/', import.meta.url), citiesFile = CITIES_FILE): Promise<string[]> {
   const client = db instanceof pg.Pool ? await db.connect() : db;
   try {
     await client.query(`select pg_advisory_lock(hashtext('go_server_migrate'))`);
@@ -18,6 +20,25 @@ export async function migrate(db: pg.Client | pg.Pool, dir = new URL('../migrati
         await client.query(readFileSync(new URL(file, dir), 'utf8'));
         await client.query('insert into schema_migrations (name) values ($1)', [file]);
         applied.push(file);
+      }
+      // data/cities-in.json → places_cities (005). Recorded as "data/cities-in.json#<hash>", so a changed file loads
+      // again and the same file never does. Skipped while the table does not exist (a database behind 005).
+      const hasPlaces = (await client.query(`select to_regclass('public.places_cities') as t`)).rows[0].t !== null;
+      if (hasPlaces) {
+        const { cities, version } = readCitiesFile(citiesFile);
+        const name = `data/cities-in.json#${version}`;
+        if (!done.has(name)) {
+          await client.query('begin');
+          try {
+            await loadCities(client, cities);
+            await client.query('insert into schema_migrations (name) values ($1)', [name]);
+            await client.query('commit');
+          } catch (err) {
+            await client.query('rollback').catch(() => {});
+            throw err;
+          }
+          applied.push(name);
+        }
       }
       return applied;
     } finally {

@@ -12,7 +12,7 @@ it('creates the person with auth_provider dev and signs them in; a seeded id sig
   const r = await t.api(null, 'POST', v1('/dev/sign-in'), { name: 'Dev Dinesh', email: 'dinesh@x.test', upi_id: 'dinesh@upi' });
   expect([r.status, Object.keys(r.body).sort(), r.body.token.startsWith('s1.')]).toEqual([201, ['person_id', 'token'], true]);
   const me = await t.api({ id: r.body.person_id, token: r.body.token }, 'GET', v1('/me'));
-  expect(me.body).toMatchObject({ person_id: r.body.person_id, name: 'Dev Dinesh', email: 'dinesh@x.test', upi_id: 'dinesh@upi', auth_provider: 'dev' });
+  expect(me.body).toMatchObject({ person_id: r.body.person_id, name: 'Dev Dinesh', email: 'dinesh@x.test', has_upi: true, upi_id_masked: 'din••••@upi', auth_provider: 'dev' });
   const viaHelper = await t.person('Helper');
   expect((await t.api(viaHelper, 'GET', v1('/me'))).body.name).toBe('Helper');
   expect((await t.api(null, 'POST', v1('/dev/sign-in'), {})).status).toBe(422); // the name is required

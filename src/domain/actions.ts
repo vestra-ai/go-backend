@@ -8,7 +8,10 @@ import { newId } from '../db/ids.js';
 import { onceIfKeyed } from '../db/once.js';
 import { withTx } from '../db/pool.js';
 import { change, emit, nextSeq } from '../db/write-change.js';
+import type { Db } from '../db/pool.js';
+import type { PatchTripMeBody } from '../api/bodies.js';
 import { conflict, invalid, notFound } from './errors.js';
+import { BUDGET_BANDS, knowWithVibe } from './join-answers.js';
 import { assertDate } from './limits.js';
 import { expenseOf, messageForGo, personForGo, recordLineOf } from './mappers.js';
 import type { ExpenseRow, MessageRow, RecordLineRow } from './mappers.js';
@@ -54,7 +57,11 @@ export async function createPerson(ctx: Ctx, input: NewPerson): Promise<{ person
 }
 
 export interface NewTrip {
-  title: string;
+  title?: string;
+  /** What the app sends when an idea is tapped: the title when there is no title. */
+  destination_hint?: string;
+  /** The organizer's own "travelling from", saved as their join answer. */
+  from_city?: string;
   destination?: { name: string; [k: string]: unknown };
   dates?: { start: string; end: string };
   vibe?: string[];
@@ -63,73 +70,82 @@ export interface NewTrip {
   currency?: string;
 }
 
-/** Creates the trip with the organizer in it, and sends `trip.created` (change number 1) with the whole trip. */
+/** A fresh invite code: random, URL-safe, at least 10 characters (the contract's rule, so codes cannot be guessed). */
+export const newInviteCode = () => randomBytes(9).toString('base64url');
+
+/**
+ * Creates the trip with the organizer in it, its first invite link, and sends `trip.created` (change number 1) with the whole
+ * trip. Everything is optional: the title falls back to the destination hint, then "New trip".
+ */
 export async function createTrip(ctx: Ctx, organizerId: string, input: NewTrip) {
   if (input.dates) {
     assertDate(input.dates.start, 'dates.start');
     assertDate(input.dates.end, 'dates.end');
     if (input.dates.start > input.dates.end) throw invalid('dates.start must be on or before dates.end');
   }
+  const title = input.title ?? input.destination_hint ?? 'New trip';
   return withTx(ctx.pool, async (db, after) => {
     await lockPersonForRead(db, organizerId);
     const trip_id = newId('t');
-    const invite_code = randomBytes(6).toString('base64url');
+    const invite_code = newInviteCode();
     await db.query(
       `insert into trips (trip_id, title, organizer_person_id, invite_code, destination, dates_start, dates_end, vibe, stay, plan_minor, currency)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-      [trip_id, input.title, organizerId, invite_code, input.destination ? JSON.stringify(input.destination) : null, input.dates?.start ?? null,
+      [trip_id, title, organizerId, invite_code, input.destination ? JSON.stringify(input.destination) : null, input.dates?.start ?? null,
        input.dates?.end ?? null, JSON.stringify(input.vibe ?? []), input.stay ?? null, input.plan_minor ?? null, input.currency ?? 'INR'],
     );
-    await db.query(`insert into trip_people (trip_id, person_id, role) values ($1, $2, 'organizer')`, [trip_id, organizerId]);
+    await db.query('insert into invites (code, trip_id, created_by) values ($1, $2, $3)', [invite_code, trip_id, organizerId]);
+    await db.query(`insert into trip_people (trip_id, person_id, role, from_city) values ($1, $2, 'organizer', $3)`, [trip_id, organizerId, input.from_city ?? null]);
     const seq = await nextSeq(db, trip_id); // 1
     const trip = await buildSnapshot(db, trip_id, ctx.publicBaseUrl);
     await emit(db, trip_id, seq, 'trip.created', { trip });
     after(() => ctx.live.publish(trip_id, { kind: 'trip', seq }));
-    return { trip_id, invite_url: trip.invite_url };
+    after(() => ctx.live.publish(trip_id, { kind: 'home_changed', person_id: organizerId }));
+    return { trip_id, invite_url: trip.invite_url, seq };
   });
 }
 
-export interface JoinAnswers {
-  from_city?: string;
-  earliest_leave?: string;
-  know?: string[];
-  budget?: { min_minor: number; max_minor?: number };
-}
+/** The join answers (contract JoinAnswers): the three group-visible ones, the vibe (one `know` entry) and the spend band (a private budget answer). */
+export type JoinAnswers = PatchTripMeBody;
 
-export async function tripByInvite(ctx: Ctx, code: string) {
-  const { rows } = await ctx.pool.query(
-    `select t.trip_id, t.title, t.destination, t.dates_start, t.dates_end,
-            (select count(*)::int from trip_people tp where tp.trip_id = t.trip_id and tp.left_at is null) as people
-       from trips t where invite_code = $1`,
-    [code],
-  );
-  return rows[0] ?? null;
+/** The trip behind an invite code that still works: unknown → 404, rotated away → 409, trip over → 409. */
+async function tripForInvite(db: Db, code: string): Promise<string> {
+  const row = (await db.query('select i.trip_id, i.revoked_at, t.status from invites i join trips t using (trip_id) where i.code = $1', [code])).rows[0];
+  if (!row) throw notFound('no trip for this invite link');
+  if (row.revoked_at !== null) throw conflict('this invite link was replaced by a new one: ask for the new link');
+  if (row.status === 'over') throw conflict('this trip is over');
+  return row.trip_id as string;
 }
 
 /**
- * Someone joins with the invite link and answers the join questions. Go gets `person.joined` with
- * those answers, never their budget answer: that only moves the lowest band, announced as a
- * `trip.updated` that names nobody (so the band cannot be traced to a person).
+ * Someone joins with the invite link and answers the join questions. Go gets `person.joined` with those answers, never
+ * their budget answer: that only moves the lowest band, announced as a `trip.updated` that names nobody (so the band cannot
+ * be traced to a person). Already in the trip: nothing changes (`already: true`). A mark left on the link ("later" or
+ * "declined") goes, and the joiner's home screen is told to re-read.
  */
 export async function joinTrip(ctx: Ctx, code: string, personId: string, answers: JoinAnswers) {
   return withTx(ctx.pool, async (db, after) => {
     await lockPersonForRead(db, personId);
-    const t = (await db.query('select trip_id from trips where invite_code = $1', [code])).rows[0];
-    if (!t) throw notFound('no trip for this invite link');
-    const tripId: string = t.trip_id;
+    const tripId = await tripForInvite(db, code);
     const existing = (await db.query('select left_at from trip_people where trip_id = $1 and person_id = $2', [tripId, personId])).rows[0];
-    if (existing && existing.left_at === null) return { trip_id: tripId, already: true };
+    if (existing && existing.left_at === null) {
+      const { seq } = (await db.query('select seq from trips where trip_id = $1', [tripId])).rows[0];
+      return { trip_id: tripId, seq: seq as number, already: true };
+    }
+    const know = JSON.stringify(knowWithVibe(answers.know ?? [], answers.vibe));
+    const band = answers.spend_band ? BUDGET_BANDS[answers.spend_band] : null;
+    const values = [tripId, personId, answers.from_city ?? null, answers.earliest_leave ?? null, know, band?.min_minor ?? null, band?.max_minor ?? null];
     if (existing) {
       await db.query(
         `update trip_people set left_at = null, joined_at = now(), from_city = $3, earliest_leave = $4, know = $5, budget_min_minor = $6, budget_max_minor = $7
           where trip_id = $1 and person_id = $2`,
-        [tripId, personId, answers.from_city ?? null, answers.earliest_leave ?? null, JSON.stringify(answers.know ?? []), answers.budget?.min_minor ?? null, answers.budget?.max_minor ?? null],
+        values,
       );
     } else {
       await db.query(
         `insert into trip_people (trip_id, person_id, role, from_city, earliest_leave, know, budget_min_minor, budget_max_minor)
          values ($1, $2, 'member', $3, $4, $5, $6, $7)`,
-        [tripId, personId, answers.from_city ?? null, answers.earliest_leave ?? null, JSON.stringify(answers.know ?? []), answers.budget?.min_minor ?? null, answers.budget?.max_minor ?? null],
+        values,
       );
     }
     // Someone who joins can vote in the votes that are still open.
@@ -138,11 +154,13 @@ export async function joinTrip(ctx: Ctx, code: string, personId: string, answers
         where trip_id = $1 and status = 'open' and not exists (select 1 from votes v where v.decision_id = decisions.decision_id and v.person_id = $2)`,
       [tripId, personId],
     );
+    await db.query('delete from invite_marks where person_id = $1 and code = $2', [personId, code]);
     const person = (await activePeople(db, tripId)).find((p) => p.person_id === personId)!;
     let seq = await change(db, tripId, 'person.joined', { person: personForGo(person) });
-    if (answers.budget) seq = await change(db, tripId, 'trip.updated', { by: { kind: 'system' }, changed: ['budget'] });
+    if (band) seq = await change(db, tripId, 'trip.updated', { by: { kind: 'system' }, changed: ['budget'] });
     after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
-    return { trip_id: tripId, already: false };
+    after(() => ctx.live.publish(tripId, { kind: 'home_changed', person_id: personId }));
+    return { trip_id: tripId, seq, already: false };
   });
 }
 
@@ -169,6 +187,7 @@ export async function leaveTrip(ctx: Ctx, tripId: string, personId: string) {
     if (left.budget_min_minor !== null) seq = await change(db, tripId, 'trip.updated', { by: { kind: 'system' }, changed: ['budget'] });
     const lastSeq = seq;
     after(() => ctx.live.publish(tripId, { kind: 'trip', seq: lastSeq }));
+    after(() => ctx.live.publish(tripId, { kind: 'home_changed', person_id: personId }));
     // A vote that was only waiting for the person who left has now been voted on by everyone.
     const ready = await db.query(
       `select d.decision_id from decisions d where d.trip_id = $1 and d.status = 'open'
@@ -457,34 +476,46 @@ export async function pushOwed(ctx: Ctx, tripId: string, expense: ExpenseRow): P
 
 // ---------------------------------------------------------------- seen, needs you
 
-/** The person opened or left the room. `upToSeq`, when the app sends it, is the last change number they have read (it never moves back). */
-export async function markSeen(ctx: Ctx, tripId: string, personId: string, upToSeq?: number): Promise<void> {
+/**
+ * The person opened or left the room (POST …/read). `upToSeq`, when the app sends it, is the last change number they have read
+ * (it never moves back); `messageId` names a message instead, and its change number is used (422 when it is not in the trip).
+ */
+export async function markSeen(ctx: Ctx, tripId: string, personId: string, upToSeq?: number, messageId?: string): Promise<void> {
+  let upTo = upToSeq ?? null;
+  if (messageId !== undefined) {
+    const m = (await ctx.pool.query('select seq from messages where trip_id = $1 and message_id = $2', [tripId, messageId])).rows[0];
+    if (!m) throw invalid(`message ${messageId} is not in this trip`, 'message_id');
+    upTo = Math.max(upTo ?? 0, m.seq as number);
+  }
   await ctx.pool.query(
     'update trip_people set last_seen_at = now(), last_read_seq = greatest(last_read_seq, coalesce($3::bigint, last_read_seq)) where trip_id = $1 and person_id = $2',
-    [tripId, personId, upToSeq ?? null],
+    [tripId, personId, upTo],
   );
 }
 
 /** The "needs you" strip: what this person has to do in this trip, worked out from our own rows. */
-export async function needsYou(ctx: Ctx, tripId: string, personId: string) {
-  const votes = await ctx.pool.query(
+export const needsYou = (ctx: Ctx, tripId: string, personId: string) => needsYouIn(ctx.pool, tripId, personId);
+
+/** The same, on a given connection (so a trip read can count it inside its own transaction). */
+export async function needsYouIn(db: Db, tripId: string, personId: string) {
+  const votes = await db.query(
     `select d.decision_id, d.question, d.cancels_booking_id from decisions d
       where d.trip_id = $1 and d.status = 'open'
         and not exists (select 1 from votes v where v.decision_id = d.decision_id and v.person_id = $2)`,
     [tripId, personId],
   );
-  const mandates = await ctx.pool.query(
+  const mandates = await db.query(
     `select decision_id, question, options, mandate from decisions
       where trip_id = $1 and status = 'closed' and mandate->>'payer_person_id' = $2
         and mandate->>'confirmed_at' is null and mandate->>'declined_at' is null`,
     [tripId, personId],
   );
-  const cards = await ctx.pool.query(
+  const cards = await db.query(
     `select message_id, card->>'card_id' as card_id, card->>'fallback_text' as text from messages
       where trip_id = $1 and author_kind = 'go' and card->'for_person_ids' ? $2`,
     [tripId, personId],
   );
-  const lines = await ctx.pool.query(
+  const lines = await db.query(
     `select line_id, text from record_lines where trip_id = $1 and kind = 'open' and status = 'active' and person_ids ? $2`,
     [tripId, personId],
   );

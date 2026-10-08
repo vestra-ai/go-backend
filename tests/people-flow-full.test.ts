@@ -51,7 +51,7 @@ it('the whole feature in one walk from the web app\'s origin: every change takes
   await call('p_kabir', 'POST', `${trip}/decisions/${cancel.body.decision_id}/close`);
   // people change their own details, answers, budget and the trip
   await call('p_rahul', 'PATCH', '/app/v1/me', { name: 'Rahul K' });
-  await call('p_priya', 'PATCH', '/app/v1/me', { upi_id: 'priya@okbank' });
+  await call('p_priya', 'PUT', '/app/v1/me/upi', { upi_id: 'priya@okbank' });
   await call('p_arjun', 'PUT', `${trip}/me/join-answers`, { from_city: 'Delhi', know: ['Window seat'] });
   await call('p_kabir', 'PUT', `${trip}/me/budget`, { min_minor: 1234567, max_minor: 2345678 });
   await call('p_meher', 'PATCH', trip, { title: 'Goa, again', status: 'booked' });

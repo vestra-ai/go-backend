@@ -15,7 +15,7 @@ afterAll(async () => {
   if (dir) rmSync(dir, { recursive: true, force: true });
 });
 
-it('migrations 002 to 004 apply on top of a database at 001 with data in it, and keep one open cancellation vote per booking', async () => {
+it('migrations 002 to 005 apply on top of a database at 001 with data in it, and keep one open cancellation vote per booking', async () => {
   const base = process.env.TEST_PG_URL!;
   const name = `t_${randomBytes(6).toString('hex')}`;
   const admin = new pg.Client({ connectionString: `${base}/postgres` });
@@ -41,12 +41,19 @@ it('migrations 002 to 004 apply on top of a database at 001 with data in it, and
   }
   await pool.query(`insert into votes (decision_id, person_id, option_index) values ('d_old_open', 'p_a', 0)`);
 
-  // [2] The real directory applies only 002, the new shape is there, the old table is gone, and old data stayed.
-  expect(await migrate(pool)).toEqual(['002_people_actions.sql', '003_supabase.sql', '004_v1_conventions.sql']);
+  // [2] The real directory applies 002 onwards and loads the cities file; the new shape is there, the old table is gone, and old data stayed.
+  const applied = await migrate(pool);
+  expect(applied.slice(0, 4)).toEqual(['002_people_actions.sql', '003_supabase.sql', '004_v1_conventions.sql', '005_v1_people.sql']);
+  expect([applied.length, applied[4]]).toEqual([5, expect.stringMatching(/^data\/cities-in\.json#[0-9a-f]{12}$/)]);
   const tables = (await pool.query(`select table_name from information_schema.tables where table_schema = 'public'`)).rows.map((r) => r.table_name);
-  expect(tables).toEqual(expect.arrayContaining(['push_subscriptions', 'nudges', 'idempotency_keys', 'invite_marks', 'live_tickets']));
+  expect(tables).toEqual(expect.arrayContaining(['push_subscriptions', 'nudges', 'idempotency_keys', 'invite_marks', 'live_tickets', 'invites', 'places_cities', 'ideas']));
   expect(tables).not.toContain('push_devices');
   expect((await pool.query(`select booking_id from bookings`)).rows).toEqual([{ booking_id: 'b_1' }]);
+  // 005: the existing trip's code became its working invite; the cities file and the ideas are in.
+  expect((await pool.query(`select code, trip_id, created_by, revoked_at from invites`)).rows).toEqual([{ code: 'inv_1', trip_id: 't_1', created_by: 'p_a', revoked_at: null }]);
+  expect((await pool.query(`select count(*)::int as n from places_cities where country = 'IN'`)).rows[0].n).toBeGreaterThan(100);
+  expect((await pool.query(`select name, ascii_name, region from places_cities where id = 'in-bengaluru-ka'`)).rows[0]).toEqual({ name: 'Bengaluru', ascii_name: 'bengaluru', region: 'Karnataka' });
+  expect((await pool.query(`select count(*)::int as n from ideas where from_city is null`)).rows[0].n).toBeGreaterThanOrEqual(6);
   // 004: the Me columns with their defaults, the read marker, and a device id for each existing push registration.
   expect((await pool.query(`select auth_provider, from_city_default, notifications_enabled, deleted_at from people where person_id = 'p_a'`)).rows[0]).toEqual({ auth_provider: null, from_city_default: null, notifications_enabled: true, deleted_at: null });
   await pool.query(`insert into trip_people (trip_id, person_id) values ('t_1', 'p_a')`);

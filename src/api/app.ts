@@ -24,6 +24,12 @@ export interface AppDeps {
   features?: Partial<Features>;
 }
 
+/** True for a person whose account was deleted (people.deleted_at set). An unknown person id is not deleted: trip routes answer 403 for them. */
+async function isDeleted(pool: Ctx['pool'], personId: string): Promise<boolean> {
+  const { rows } = await pool.query('select deleted_at from people where person_id = $1', [personId]);
+  return rows[0]?.deleted_at != null;
+}
+
 /**
  * The app's API, under /app/v1 (app contract rev 3). This is the shell: the request id, CORS, the body parser, the one
  * error shape, sign-in and the Idempotency-Key store; the routes live one file per contract section in src/api/v1.
@@ -78,12 +84,20 @@ export function buildApp({ ctx, go, sessionSecret, auth: authenticator = new Dev
 
   // Every route that is not marked public: "Authorization: Bearer <token>". On any 401 the app refreshes its Supabase
   // session once and retries. Sign-in comes before the body check, so a stranger learns nothing about a route's rules.
+  // A deleted account's token (DELETE /me) is refused on every instance from then on, however the authenticator cached it.
+  // An `optionalAuth` public route gets the person when the token is good and stays anonymous otherwise.
   app.addHook('preValidation', async (req, reply) => {
-    if (req.is404 || req.routeOptions.config.public) return; // an unknown path answers 404, whoever asks
+    if (req.is404) return; // an unknown path answers 404, whoever asks
+    const { public: isPublic, optionalAuth } = req.routeOptions.config;
+    if (isPublic && !optionalAuth) return;
     const token = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '').trim();
+    if (isPublic && !token) return;
     const result = token ? await authenticator.personFor(token) : { error: 'missing' as const };
-    if ('error' in result) {
-      const message = { missing: 'sign in first', expired: 'the sign-in has expired: refresh it and try again', invalid: 'the sign-in token is not valid' }[result.error];
+    const deleted = 'error' in result ? false : await isDeleted(ctx.pool, result.personId);
+    if ('error' in result || deleted) {
+      if (isPublic) return; // anonymous after all
+      const why = 'error' in result ? result.error : 'invalid';
+      const message = { missing: 'sign in first', expired: 'the sign-in has expired: refresh it and try again', invalid: 'the sign-in token is not valid' }[why];
       return sendError(reply, { status: 401, code: 'unauthorized', message }, req.id);
     }
     req.personId = result.personId;

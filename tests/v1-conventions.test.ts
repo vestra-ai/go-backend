@@ -102,7 +102,10 @@ describe('Me', () => {
   it('a new sign-in fills email and auth_provider from the token; the profile shows the app\'s fields', async () => {
     const asha = await h.signIn('Asha', { email: 'asha@gmail.com' });
     const me = await t.api(asha, 'GET', v1('/me'));
-    expect(me.body).toEqual({ person_id: asha.id, name: 'Asha', photo_url: 'https://lh3.googleusercontent.com/a/test-photo', upi_id: null, email: 'asha@gmail.com', auth_provider: 'google', from_city: null, notifications_enabled: true, created_at: expect.any(String) });
+    expect(me.body).toEqual({
+      person_id: asha.id, name: 'Asha', photo_url: 'https://lh3.googleusercontent.com/a/test-photo', has_upi: false, upi_id_masked: null, email: 'asha@gmail.com', auth_provider: 'google', from_city: null,
+      notifications_enabled: true, counts: { active_trips: 0, past_trips: 0, pending_invites: 0 }, created_at: expect.any(String),
+    });
     expect(Date.now() - Date.parse(me.body.created_at)).toBeLessThan(60_000);
   });
 });

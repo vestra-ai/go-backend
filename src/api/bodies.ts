@@ -115,21 +115,38 @@ const cancelVote = {
   properties: { client_id: id },
 } as const;
 
-// The account profile. `upi_id` has a length limit only (no format rule): 1-100. A photo link must be an http(s) URL.
+// The account profile (PATCH /me). A photo link must be an https URL (photo_upload_id comes with uploads, phase 2).
 // `from_city` is the default "travelling from" the app offers in new trips; `notifications_enabled` is the pushes switch.
+// The UPI id has its own routes (PUT/DELETE /me/upi).
 const patchMe = {
   type: 'object',
   additionalProperties: false,
   properties: {
     name: { type: 'string', minLength: 1, maxLength: 80 },
-    photo_url: { type: ['string', 'null'], format: 'uri', pattern: '^https?://' },
-    upi_id: { type: ['string', 'null'], minLength: 1, maxLength: 100 },
+    photo_url: { type: ['string', 'null'], format: 'uri', pattern: '^https://' },
     from_city: { type: ['string', 'null'], minLength: 1, maxLength: 60 },
     notifications_enabled: { type: 'boolean' },
   },
 } as const;
 
-// A person's answers in one trip. `know` replaces the list (an empty list clears it); the two text answers clear with null.
+// PUT /me/upi: the contract's own format rule for a UPI id (`^[\w.\-]{2,256}@[a-zA-Z]{2,64}$`). The value never appears in an answer.
+const putUpi = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['upi_id'],
+  properties: { upi_id: { type: 'string', minLength: 5, maxLength: 321, pattern: '^[\\w.\\-]{2,256}@[a-zA-Z]{2,64}$' } },
+} as const;
+
+// DELETE /me: the person must say so in the body.
+const deleteMe = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['confirm'],
+  properties: { confirm: { type: 'boolean', enum: [true] } },
+} as const;
+
+// A person's answers in one trip (the contract's JoinAnswers). `know` replaces the list (an empty list clears it); the two
+// text answers clear with null. `vibe` becomes one "Vibe: …" entry of `know`; `spend_band` becomes the private budget answer.
 const patchTripMe = {
   type: 'object',
   additionalProperties: false,
@@ -137,17 +154,74 @@ const patchTripMe = {
     from_city: { type: ['string', 'null'], maxLength: 60 },
     earliest_leave: { type: ['string', 'null'], maxLength: 60 },
     know: { type: 'array', maxItems: 20, items: { type: 'string', minLength: 1, maxLength: 80 } },
+    vibe: { type: 'string', enum: ['beach', 'hills', 'city', 'any'] },
+    spend_band: { type: 'string', enum: ['lt15', '15to25', 'gt25'] },
   },
 } as const;
 
-// The whole budget answer, replaced each time. It cannot be withdrawn, so nothing here is clearable.
+// POST /invites/:code/accept: the same answers, wrapped as the contract has them.
+const acceptInvite = {
+  type: 'object',
+  additionalProperties: false,
+  properties: { join_answers: patchTripMe },
+} as const;
+
+// The whole budget answer, replaced each time (DELETE …/me/budget withdraws it). `max_minor: null` means no upper limit; `currency`,
+// when sent, must be the trip's.
 const putBudget = {
   type: 'object',
   additionalProperties: false,
   required: ['min_minor'],
   properties: {
     min_minor: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
-    max_minor: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+    max_minor: { type: ['integer', 'null'], minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+    currency: { type: 'string', maxLength: 3, pattern: '^[A-Z]{3}$' },
+  },
+} as const;
+
+// POST /trips: everything optional (the app may create with only a name, or an idea tapped). `destination_hint` becomes the
+// title when there is no title; `from_city` is saved as the organizer's own join answer. The richer fields are ours:
+// `destination` is a contract Place, `vibe` the trip-level list only Go otherwise writes, `plan_minor` the group's plan.
+const createTrip = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    title: { type: 'string', minLength: 1, maxLength: 80 },
+    destination_hint: { type: 'string', minLength: 1, maxLength: 80 },
+    dates: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['start', 'end'],
+      properties: { start: { type: 'string', format: 'date' }, end: { type: 'string', format: 'date' } },
+    },
+    from_city: { type: 'string', minLength: 1, maxLength: 60 },
+    destination: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['name'],
+      properties: {
+        name: { type: 'string', minLength: 1, maxLength: 120 },
+        place_id: { type: 'string', maxLength: 256 },
+        address: { type: 'string', maxLength: 200 },
+        lat: { type: 'number', minimum: -90, maximum: 90 },
+        lng: { type: 'number', minimum: -180, maximum: 180 },
+        photo_url: uri,
+      },
+    },
+    vibe: { type: 'array', maxItems: 10, items: { type: 'string', minLength: 1, maxLength: 40 } },
+    stay: { type: 'string', minLength: 1, maxLength: 80 },
+    plan_minor: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+    currency: { type: 'string', maxLength: 3, pattern: '^[A-Z]{3}$' },
+  },
+} as const;
+
+// POST /trips/:trip/read: up to a change number, or up to a message (its change number).
+const readTrip = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    up_to_seq: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+    message_id: id,
   },
 } as const;
 
@@ -208,13 +282,16 @@ const addDevice = {
 } as const;
 
 /** Every route's body definition, by name. */
-export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, patchTripMe, putBudget, patchTrip, nudge, addDevice } as const;
+export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, putUpi, deleteMe, patchTripMe, acceptInvite, putBudget, patchTrip, nudge, addDevice, createTrip, readTrip } as const;
 
 /** Nodes the walk in tests/bodies.test.ts does not enter: they are checked against the contract's own definitions elsewhere. */
 export const PASSTHROUGH: readonly string[] = ['patchTrip.itinerary[]'];
 
 /** The only places `null` is a valid value ("clear this field"): `<definition>.<dotted path>`. */
-export const CLEARABLE: readonly string[] = ['updateBooking.refundable_until', 'updateBooking.starts_at', 'updateBooking.ends_at', 'patchMe.photo_url', 'patchMe.upi_id', 'patchMe.from_city', 'patchTripMe.from_city', 'patchTripMe.earliest_leave'];
+export const CLEARABLE: readonly string[] = [
+  'updateBooking.refundable_until', 'updateBooking.starts_at', 'updateBooking.ends_at', 'patchMe.photo_url', 'patchMe.from_city',
+  'patchTripMe.from_city', 'patchTripMe.earliest_leave', 'acceptInvite.join_answers.from_city', 'acceptInvite.join_answers.earliest_leave', 'putBudget.max_minor',
+];
 
 export interface OpenVoteBody {
   client_id?: string;
@@ -253,20 +330,54 @@ export interface UpdateBookingBody {
 export interface PatchMeBody {
   name?: string;
   photo_url?: string | null;
-  upi_id?: string | null;
   from_city?: string | null;
   notifications_enabled?: boolean;
 }
+
+export interface PutUpiBody {
+  upi_id: string;
+}
+
+export interface DeleteMeBody {
+  confirm: true;
+}
+
+export type Vibe = 'beach' | 'hills' | 'city' | 'any';
+export type SpendBand = 'lt15' | '15to25' | 'gt25';
 
 export interface PatchTripMeBody {
   from_city?: string | null;
   earliest_leave?: string | null;
   know?: string[];
+  vibe?: Vibe;
+  spend_band?: SpendBand;
+}
+
+export interface AcceptInviteBody {
+  join_answers?: PatchTripMeBody;
 }
 
 export interface PutBudgetBody {
   min_minor: number;
-  max_minor?: number;
+  max_minor?: number | null;
+  currency?: string;
+}
+
+export interface CreateTripBody {
+  title?: string;
+  destination_hint?: string;
+  dates?: { start: string; end: string };
+  from_city?: string;
+  destination?: { name: string; place_id?: string; address?: string; lat?: number; lng?: number; photo_url?: string };
+  vibe?: string[];
+  stay?: string;
+  plan_minor?: number;
+  currency?: string;
+}
+
+export interface ReadTripBody {
+  up_to_seq?: number;
+  message_id?: string;
 }
 
 export interface PatchTripBody {
@@ -296,8 +407,13 @@ export const checkAddBooking = bodyChecker<AddBookingBody>(bodies.addBooking);
 export const checkUpdateBooking = bodyChecker<UpdateBookingBody>(bodies.updateBooking);
 export const checkCancelVote = bodyChecker<CancelVoteBody>(bodies.cancelVote);
 export const checkPatchMe = bodyChecker<PatchMeBody>(bodies.patchMe);
+export const checkPutUpi = bodyChecker<PutUpiBody>(bodies.putUpi);
+export const checkDeleteMe = bodyChecker<DeleteMeBody>(bodies.deleteMe);
 export const checkPatchTripMe = bodyChecker<PatchTripMeBody>(bodies.patchTripMe);
+export const checkAcceptInvite = bodyChecker<AcceptInviteBody>(bodies.acceptInvite);
 export const checkPutBudget = bodyChecker<PutBudgetBody>(bodies.putBudget);
+export const checkCreateTrip = bodyChecker<CreateTripBody>(bodies.createTrip);
+export const checkReadTrip = bodyChecker<ReadTripBody>(bodies.readTrip);
 export const checkPatchTrip = bodyChecker<PatchTripBody>(bodies.patchTrip);
 export const checkNudge = bodyChecker<NudgeBody>(bodies.nudge);
 export const checkAddDevice = bodyChecker<AddDeviceBody>(bodies.addDevice);

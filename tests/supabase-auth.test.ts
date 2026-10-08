@@ -30,8 +30,8 @@ describe('the first sign-in creates the person from the Google profile', () => {
     const me = await api(token, 'GET', '/app/v1/me');
     expect(me.status).toBe(200);
     expect(me.body).toEqual({
-      person_id: expect.any(String), name: 'Asha Rao', photo_url: 'https://lh3.googleusercontent.com/a/asha', upi_id: null,
-      email: 'asha@gmail.com', auth_provider: 'google', from_city: null, notifications_enabled: true, created_at: expect.any(String),
+      person_id: expect.any(String), name: 'Asha Rao', photo_url: 'https://lh3.googleusercontent.com/a/asha', has_upi: false, upi_id_masked: null,
+      email: 'asha@gmail.com', auth_provider: 'google', from_city: null, notifications_enabled: true, counts: { active_trips: 0, past_trips: 0, pending_invites: 0 }, created_at: expect.any(String),
     });
     const [row] = await rows(h.pool, 'select name, email, auth_user_id, auth_provider from people where person_id = $1', [me.body.person_id]);
     expect(row).toEqual({ name: 'Asha Rao', email: 'asha@gmail.com', auth_user_id: auth.userId({ email: 'asha@gmail.com' }), auth_provider: 'google' });
@@ -65,7 +65,7 @@ describe('the whole app works with Supabase tokens', () => {
     const trip = await api(asha, 'POST', '/app/v1/trips', { title: 'Goa with Supabase sign-in' });
     expect(trip.status).toBe(201);
     const code = trip.body.invite_url.split('/j/')[1];
-    expect((await api(ben, 'POST', `/app/v1/invites/${code}/accept`, { from_city: 'Pune' })).body).toMatchObject({ already: false });
+    expect((await api(ben, 'POST', `/app/v1/invites/${code}/accept`, { join_answers: { from_city: 'Pune' } })).body).toMatchObject({ landing: 'trip_home' });
     expect((await api(ben, 'POST', `/app/v1/trips/${trip.body.trip_id}/messages`, { client_id: 'sb-1', text: '@Go hello from Supabase' })).status).toBe(200);
     expect((await api(asha, 'PATCH', '/app/v1/me', { name: 'Asha' })).status).toBe(200);
     await h.flush();

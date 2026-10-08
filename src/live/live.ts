@@ -7,7 +7,12 @@ export type LiveEvent =
   /** Something in the trip that is not a message changed. The app reads again when `seq` is higher than it holds. */
   | { kind: 'trip'; seq: number }
   /** "Go is typing...". `until` is when it runs out by itself, 10 seconds after Go's notification. */
-  | { kind: 'typing'; who: { kind: 'go' } | { kind: 'person'; person_id: string }; on: boolean; until?: string };
+  | { kind: 'typing'; who: { kind: 'go' } | { kind: 'person'; person_id: string }; on: boolean; until?: string }
+  /**
+   * One person's home screen moved (app contract §3.1 `home_changed`): they created, joined or left a trip, or marked an
+   * invite. Published under the trip it is about, for that person only; the app re-reads GET /home. Never replayed.
+   */
+  | { kind: 'home_changed'; person_id: string };
 
 export interface Live {
   publish(tripId: string, event: LiveEvent): Promise<void>;
