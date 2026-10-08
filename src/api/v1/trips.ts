@@ -5,13 +5,14 @@ import { createTrip, leaveTrip, markSeen, requireMember, setGoPaused } from '../
 import { inviteOf, rotateInvite } from '../../domain/invites.js';
 import { deleteMyBudget, getMyTripAnswers, setMyBudget, updateMyTripAnswers, updateTripDetails } from '../../domain/person-edits.js';
 import { parseInclude, readTripView } from '../../domain/trip-view.js';
-import { checkCreateTrip, checkPatchTrip, checkPatchTripMe, checkPutBudget, checkReadTrip } from '../bodies.js';
+import { checkCreateTrip, checkPatchTrip, checkPatchTripMe, checkPauseGo, checkPutBudget, checkReadTrip } from '../bodies.js';
 import { SECTIONS, type RouteMeta } from './meta.js';
-import { atLeastOneField, body, bool, inTrip, type V1Deps } from './shared.js';
+import { atLeastOneField, inTrip, type V1Deps } from './shared.js';
 
 const PERSON = { person_id: 'p_aarav', name: 'Aarav Shah', role: 'organizer', joined_at: '2026-10-08T10:00:00.000Z', from_city: 'Bengaluru', know: ['Vibe: beach'], has_upi: true, go_paused: false };
+// `seq` is 2 after a create: trip.created is change 1, the "Trip created · Aarav joined" pill is change 2.
 const TRIP_VIEW = {
-  trip_id: 't_goa', seq: 1, title: 'Goa 🌴', status: 'planning', created_at: '2026-10-08T10:00:00.000Z', organizer_person_id: 'p_aarav', invite_url: 'https://go.example/j/k3Jd8Qw2Lp9a',
+  trip_id: 't_goa', seq: 2, title: 'Goa 🌴', status: 'planning', created_at: '2026-10-08T10:00:00.000Z', organizer_person_id: 'p_aarav', invite_url: 'https://go.example/j/k3Jd8Qw2Lp9a',
   vibe: [], budget: { answered: 0, of: 1 }, people: [PERSON], decisions: [], bookings: [], expenses: [], money: { currency: 'INR', spent_minor: 0, by_category: [], transfers: [] }, itinerary: [], record: [],
   stage: 'new', me: { person: PERSON, budget: null, last_read_seq: 0, unread_count: 0 }, chat: { unread_count: 0, participants_preview: [] }, needs_you_count: 0, can: { invite: true, manage_trip: true },
 };
@@ -34,10 +35,10 @@ export const routes: RouteMeta[] = [
     example: { body: { min_minor: 1500000, max_minor: 2500000, currency: 'INR' }, responses: [{ name: 'Set', status: 200, body: { budget: { min_minor: 1500000, max_minor: 2500000, currency: 'INR' }, summary: SUMMARY, seq: 8 } }] } },
   { method: 'DELETE', path: '/app/v1/trips/:trip/me/budget', section: SECTIONS.trips, title: 'Clear my budget', summary: 'Withdraws your answer; the band moves (trip.updated by the system). Answers the summary and seq.',
     example: { responses: [{ name: 'Cleared', status: 200, body: { summary: { answered: 0, of: 4 }, seq: 9 } }] } },
-  { method: 'PATCH', path: '/app/v1/trips/:trip/me', section: SECTIONS.trips, title: 'Pause Go', summary: '{ go_paused: true|false }: while paused your messages reach Go with no words (the room still sees them in full). Answers { seq }.',
-    example: { body: { go_paused: true }, responses: [{ name: 'Paused', status: 200, body: { seq: 11 } }] } },
-  { method: 'POST', path: '/app/v1/trips/:trip/leave', section: SECTIONS.trips, title: 'Leave the trip', summary: 'Leaves the trip; a vote waiting only for you closes. Answers { seq }; from then on every route of this trip answers 403.',
-    example: { body: {}, responses: [{ name: 'Left', status: 200, body: { seq: 12 } }] } },
+  { method: 'PATCH', path: '/app/v1/trips/:trip/me', section: SECTIONS.trips, title: 'Pause Go', summary: '{ go_paused: true|false } (strict): while paused your messages reach Go with no words (the room still sees them in full). Answers your own Person (whole) plus seq.',
+    example: { body: { go_paused: true }, responses: [{ name: 'Person', status: 200, body: { ...PERSON, go_paused: true, seq: 11 } }] } },
+  { method: 'POST', path: '/app/v1/trips/:trip/leave', section: SECTIONS.trips, title: 'Leave the trip', summary: 'Leaves the trip; a vote waiting only for you closes. 204; from then on every route of this trip answers 403.',
+    example: { body: {}, responses: [{ name: 'Left', status: 204 }] } },
   { method: 'POST', path: '/app/v1/trips/:trip/read', section: SECTIONS.trips, title: 'Mark as read', summary: '{ up_to_seq } or { message_id }: the room is read up to there (never moves back). Drives unread counts and catch-up. 204.',
     example: { body: { up_to_seq: 42 }, responses: [{ name: 'Read', status: 204 }] } },
 ];
@@ -81,9 +82,11 @@ export function register(app: FastifyInstance, ctx: Ctx, deps: V1Deps): void {
   }));
   app.put('/app/v1/trips/:trip/me/budget', inTrip(ctx, (req, trip, me) => setMyBudget(ctx, trip, me, checkPutBudget(req.body))));
   app.delete('/app/v1/trips/:trip/me/budget', inTrip(ctx, (_req, trip, me) => deleteMyBudget(ctx, trip, me)));
-  app.patch('/app/v1/trips/:trip/me', { ...body({ go_paused: bool }, ['go_paused']), ...inTrip(ctx, (req, trip, me) => setGoPaused(ctx, trip, me, req.body.go_paused)) });
+  app.patch('/app/v1/trips/:trip/me', inTrip(ctx, (req, trip, me) => setGoPaused(ctx, trip, me, checkPauseGo(req.body).go_paused)));
 
-  app.post('/app/v1/trips/:trip/leave', inTrip(ctx, (_r, trip, me) => leaveTrip(ctx, trip, me)));
+  app.post('/app/v1/trips/:trip/leave', inTrip(ctx, async (_r, trip, me) => {
+    await leaveTrip(ctx, trip, me);
+  }, 204));
   app.post('/app/v1/trips/:trip/read', inTrip(ctx, async (req, trip, me) => {
     const input = checkReadTrip(req.body);
     await markSeen(ctx, trip, me, input.up_to_seq, input.message_id);

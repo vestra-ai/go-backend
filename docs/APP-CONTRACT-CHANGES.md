@@ -101,7 +101,7 @@ Accepted. ℹ️ Two simplifications on the Server's side that change nothing fo
 | Endpoint | |
 |---|---|
 | `POST /auth/google`, `/auth/refresh`, `/auth/logout` | 🔁 Removed (§1.2). |
-| `PATCH /me` | ℹ️ `photo_upload_id` once uploads land; `photo_url` (an `https` link) is accepted meanwhile. |
+| `PATCH /me` | ℹ️ `photo_upload_id` (a `profile_photo` upload of yours, §4.5) or `photo_url` (an `https` link), not both. |
 | `POST /me/devices` | 🔁 v1 accepts `platform: "web_push"` only (the product is the PWA). At most 10 devices per person; the oldest is replaced silently. |
 | `DELETE /me` | ℹ️ Accepted with your exact sequence. Lowest priority of the list; tell us if a store review needs it earlier. |
 

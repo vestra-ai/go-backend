@@ -92,3 +92,18 @@ describe('the checklist card', () => {
     expect(await attention('p_arjun')).toEqual({ kind: 'needs_you', count: 1 }); // what he owes Priya: the usual rule again
   });
 });
+
+describe('the rate limit (app contract Appendix A: 6 vault links a minute per person)', () => {
+  it('the one over the limit is 429 rate_limited with retry_after_seconds and Retry-After, and Go is not asked; another person is not affected', async () => {
+    h.ctx.limits = { vaultLinksPerMinute: 2 };
+    try {
+      for (let i = 0; i < 2; i++) expect((await link('p_kabir', { start: 'home' })).status).toBe(200);
+      const asked = vaultRequests().length;
+      const r = await link('p_kabir', { start: 'home' });
+      expect([r.status, r.body.error.code, r.body.error.retry_after_seconds > 0, Number(r.headers['retry-after']) === r.body.error.retry_after_seconds, vaultRequests().length]).toEqual([429, 'rate_limited', true, true, asked]);
+      expect((await link('p_meher', { start: 'home' })).status).toBe(200);
+    } finally {
+      delete h.ctx.limits;
+    }
+  });
+});

@@ -76,25 +76,17 @@ reach Go with distinct `tap_id`s.
 
 **Known gaps now (October 2026).** From the code, in no particular order:
 
-- The two in-memory rate limiters (invite preview 30/min/IP, city search 5/s/person) are **per instance**; with several
-  instances the real limit is that many times higher. The other limits in rev 2's Appendix A (reactions, card taps,
-  votes, vault link, uploads per minute) are **not enforced**.
+- The in-memory rate limiters (invite preview 30/min/IP, city search 5/s/person, and rev 2 Appendix A's reactions 20,
+  card taps 10, votes 20, vault links 6 and uploads 20 a minute per person) are **per instance**; with several
+  instances the real limit is that many times higher.
 - Uploads: **no EXIF stripping and no virus scanning** (files are only shared inside a trip). Upload URLs are valid two
   hours (Supabase's own limit).
-- `POST …/transfers/nudge` answers `200 { reminded, nudge_allowed_at }`, not the contract's 204; `POST …/leave` answers
-  `200 { seq }`; `PATCH …/me { go_paused }` answers `{ seq }`, not a `Person`; `POST …/bookings` answers `201 { booking_id,
-  seq }`, not the `Booking`. `API.md` documents what the code does.
-- `PATCH /me` accepts `photo_url` (an https link) but not `photo_upload_id` yet; `resolveUploadUrl` exists for it.
-- Four routes use Fastify's default body check instead of the strict one (unknown fields dropped, types coerced):
-  `PATCH …/messages/:id`, `PATCH /trips/:trip/me`, `PATCH /me/go`, `POST /me/vault-link`.
 - `claim`, the flexible vote, taking a vote back, web check-in, visa documents and call recordings **wait on Go's side**
   (`GO-CHANGES.md`); each is behind a flag that is off by default (expense approval is on). Go must also confirm it
   tolerates `author.kind = "system"` in `read_messages` and a `replace_card` that moves `updated_seq`.
 - The city dataset is a **starter set** (311 Indian cities from GeoNames); other countries answer 422.
 - `home_changed` is sent for a trip created, joined or left and for invite marks, **not** when a trip's `attention`
   alone changes (that is a `trip_changed` to the trip); the app should re-read home on resume.
-- `settlement`, `expense` and `nudge` pushes carry no id in their `tag` (`<trip>:settlement`), so two of the same kind
-  collapse into one notification.
 - The `Idempotency-Key` store is written after the handler: two copies of a request that race past the lookup both
   run (the domain keys still keep a double press to one write where it matters).
 - Real Web Push delivery and the production Storage bucket have not been exercised against a real browser or the

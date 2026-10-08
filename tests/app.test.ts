@@ -108,7 +108,9 @@ describe('messages', () => {
 
   it('a person who paused Go: Go gets the change number but no words; the room still sees them', async () => {
     const p = await api(priya, 'PATCH', `/app/v1/trips/${trip}/me`, { go_paused: true });
-    expect(p.status).toBe(200);
+    const { seq: pauseSeq, ...pausedPerson } = p.body;
+    expect([p.status, typeof pauseSeq, check('Person', pausedPerson).ok]).toEqual([200, 'number', true]); // the answer is her own Person, whole, plus seq
+    expect(pausedPerson).toMatchObject({ person_id: priya.id, name: 'Priya', role: 'member', go_paused: true });
     await h.flush();
     expect(events('person.updated').at(-1)!.data).toMatchObject({ changed: ['go_paused'], person: { person_id: priya.id, go_paused: true } });
     const m = await api(priya, 'POST', `/app/v1/trips/${trip}/messages`, { client_message_id: 'c4', text: 'a secret plan @Go' });
@@ -265,7 +267,8 @@ describe('leaving a trip', () => {
     const o = await goCall('open_vote', { question: 'Last call?', kind: 'choice', anonymous: false, options: [{ label: 'A' }, { label: 'B' }] }, trip);
     for (const w of [rahul, priya, kabir]) await api(w, 'PUT', `/app/v1/trips/${trip}/decisions/${o.decision_id}/vote`, { option_index: 0 });
     expect((await rows(h.pool, 'select status from decisions where decision_id = $1', [o.decision_id]))[0].status).toBe('open'); // waiting for the leaver
-    await api(leaver, 'POST', `/app/v1/trips/${trip}/leave`);
+    const left = await api(leaver, 'POST', `/app/v1/trips/${trip}/leave`);
+    expect([left.status, left.body]).toEqual([204, null]);
     expect((await rows(h.pool, 'select status from decisions where decision_id = $1', [o.decision_id]))[0].status).toBe('closed');
     await h.flush();
     expect(events('decision.closed').find((e) => e.data.decision.decision_id === o.decision_id)!.data.reason).toBe('everyone_voted');

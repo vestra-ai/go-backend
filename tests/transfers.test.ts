@@ -57,13 +57,15 @@ describe('pay by UPI', () => {
 });
 
 describe('nudges', () => {
-  it('send one notification to the right person with the amount in the trip\'s currency, write no event and move no change number; refuse someone who does not owe and an unknown field', async () => {
+  it('answer 204 and send one notification to the right person with the amount in the trip\'s currency, tagged by the nudger; write no event and move no change number; refuse someone who does not owe and an unknown field', async () => {
     const seqBefore = (await rows(h.pool, `select seq from trips where trip_id = 't_usd'`))[0].seq;
     const outboxBefore = (await rows(h.pool, `select count(*)::int as n from outbox where trip_id = 't_usd'`))[0].n;
     const ok = await t.api(t.as('p_rahul'), 'POST', '/app/v1/trips/t_usd/transfers/nudge', { from_person_id: 'p_priya' });
-    const sent = reminders().filter((s) => s.n.data.trip_id === 't_usd');
-    expect([ok.status, ok.body.reminded, sent.length, sent[0]!.to, sent[0]!.n.body, sent[0]!.n.data]).toEqual([200, true, 1, ['p_priya'], 'Rahul reminded you: you owe $12.50', { trip_id: 't_usd' }]);
-    expect(Math.abs(Date.parse(ok.body.nudge_allowed_at) - Date.now() - 24 * 3_600_000) < 60_000).toBe(true); // 24 hours on
+    const sent = reminders().filter((s) => s.n.trip_id === 't_usd');
+    expect([ok.status, ok.body, sent.length, sent[0]!.to]).toEqual([204, null, 1, ['p_priya']]);
+    expect(sent[0]!.n).toEqual({ type: 'nudge', trip_id: 't_usd', title: 'Goa 🌴', body: 'Rahul reminded you: you owe $12.50', deep_link: '/trips/t_usd/expenses', tag: 't_usd:nudge:p_rahul' });
+    const [claim] = await rows(h.pool, `select last_sent_at from nudges where trip_id = 't_usd' and from_person_id = 'p_rahul' and to_person_id = 'p_priya'`);
+    expect(Math.abs(Date.now() - new Date(claim.last_sent_at).getTime()) < 60_000).toBe(true); // the 24 hours run from now
     expect([(await rows(h.pool, `select seq from trips where trip_id = 't_usd'`))[0].seq, (await rows(h.pool, `select count(*)::int as n from outbox where trip_id = 't_usd'`))[0].n]).toEqual([seqBefore, outboxBefore]);
     expect(refusal(await t.api(t.as('p_rahul'), 'POST', '/app/v1/trips/t_usd/transfers/nudge', { from_person_id: 'p_kabir' })).slice(0, 2)).toEqual([409, 'conflict']); // Kabir owes nothing here
     expect(refusal(await t.api(t.as('p_rahul'), 'POST', '/app/v1/trips/t_usd/transfers/nudge', { from_person_id: 'p_priya', extra: 1 })).slice(0, 2)).toEqual([422, 'invalid']);
@@ -75,11 +77,11 @@ describe('nudges', () => {
     const first = await nudge('p_arjun');
     const second = await nudge('p_arjun');
     const wait = second.body.error.retry_after_seconds;
-    expect([first.status, second.status, second.body.error.code, wait > 0 && wait <= 86400, Number(second.headers['retry-after']), reminders().filter((s) => s.n.data.trip_id === 't_n').length]).toEqual([200, 429, 'rate_limited', true, wait, 1]);
+    expect([first.status, second.status, second.body.error.code, wait > 0 && wait <= 86400, Number(second.headers['retry-after']), reminders().filter((s) => s.n.trip_id === 't_n').length]).toEqual([204, 429, 'rate_limited', true, wait, 1]);
     const two = await Promise.all([nudge('p_meher'), nudge('p_meher')]);
-    expect([two.map((r) => r.status).sort(), reminders().filter((s) => s.n.data.trip_id === 't_n').length]).toEqual([[200, 429], 2]); // one more send, not two
+    expect([two.map((r) => r.status).sort(), reminders().filter((s) => s.n.trip_id === 't_n').length]).toEqual([[204, 429], 2]); // one more send, not two
     await h.pool.query(`update nudges set last_sent_at = now() - interval '25 hours' where trip_id = 't_n' and to_person_id = 'p_arjun'`);
-    expect([(await nudge('p_arjun')).status, reminders().filter((s) => s.n.data.trip_id === 't_n').length]).toEqual([200, 3]);
+    expect([(await nudge('p_arjun')).status, reminders().filter((s) => s.n.trip_id === 't_n').length]).toEqual([204, 3]);
   });
 
   it('refuse reminding someone who has left, and a debtor reminding the person they owe', async () => {

@@ -12,6 +12,7 @@ let t: ReturnType<typeof appApi>;
 beforeAll(async () => {
   h = await startHarness(); // t_goa: p_rahul (organizer), p_priya, p_arjun, p_meher, p_kabir
   t = appApi(h);
+  h.ctx.limits = { uploadsPerMinute: 1000 }; // Priya signs well over 20 uploads a minute here; the 20-a-minute rule has its own test below
 });
 afterAll(() => h.stop());
 
@@ -128,7 +129,7 @@ describe('the rules', () => {
     expect(await sweepUploads(h.ctx)).toBe(0);
   });
 
-  it('resolveUploadUrl (for PATCH /me { photo_upload_id }) takes a profile_photo upload once and answers a long-lived link', async () => {
+  it('resolveUploadUrl (behind PATCH /me { photo_upload_id }) takes a profile_photo upload once and answers a long-lived link', async () => {
     const up = (await sign({ purpose: 'profile_photo', kind: 'photo', mime: 'image/png', size_bytes: 3 })).body;
     await put(up.upload_url, Buffer.from('png'), 'image/png');
     const url = await resolveUploadUrl(h.ctx, h.pool, 'p_priya', up.upload_id);
@@ -138,5 +139,56 @@ describe('the rules', () => {
     h.storage.now = () => Date.now();
     await expect(resolveUploadUrl(h.ctx, h.pool, 'p_priya', up.upload_id)).rejects.toMatchObject({ code: 422, field: 'photo_upload_id' });
     await expect(resolveUploadUrl(h.ctx, h.pool, 'p_rahul', (await sign({ purpose: 'profile_photo', kind: 'photo', mime: 'image/png', size_bytes: 3 })).body.upload_id)).rejects.toMatchObject({ code: 422 }); // Priya's, not Rahul's
+  });
+});
+
+describe('PATCH /me { photo_upload_id } (app contract §4.1)', () => {
+  const profile = (who = priya()) => sign({ purpose: 'profile_photo', kind: 'photo', mime: 'image/png', size_bytes: 3 }, who);
+  const refused = async (body: unknown, who = priya()) => {
+    const r = await t.api(who, 'PATCH', '/app/v1/me', body);
+    return [r.status, r.body.error.code, r.body.error.field];
+  };
+
+  it('a profile_photo upload of mine becomes my stored photo link (fetchable, long-lived); every active trip hears person.updated photo_url; the upload is used', async () => {
+    const up = (await profile()).body;
+    await put(up.upload_url, Buffer.from('png'), 'image/png');
+    const before = t.events('person.updated').length;
+    const r = await t.api(priya(), 'PATCH', '/app/v1/me', { photo_upload_id: up.upload_id });
+    expect([r.status, typeof r.body.seq, r.body.person_id]).toEqual([200, 'number', 'p_priya']);
+    expect(r.body.photo_url).toContain('/_dev/storage/');
+    expect((await fetchLink(r.body.photo_url)).body).toBe('png');
+    expect((await t.api(priya(), 'GET', '/app/v1/me')).body.photo_url).toBe(r.body.photo_url);
+    expect((await rows(h.pool, 'select used_at from uploads where upload_id = $1', [up.upload_id]))[0].used_at).not.toBeNull();
+    await h.flush();
+    const told = t.events('person.updated').slice(before).filter((e) => e.data.person.person_id === 'p_priya');
+    expect(told.map((e) => [e.trip_id, e.data.changed, e.data.person.photo_url === r.body.photo_url])).toEqual([['t_goa', ['photo_url'], true]]);
+  });
+
+  it('422 photo_upload_id for an upload already used, not mine, not a profile photo or unknown; photo_url and photo_upload_id together; photo_url still works on its own', async () => {
+    const used = (await profile()).body.upload_id;
+    await t.api(priya(), 'PATCH', '/app/v1/me', { photo_upload_id: used });
+    expect(await refused({ photo_upload_id: used })).toEqual([422, 'invalid', 'photo_upload_id']);
+    expect(await refused({ photo_upload_id: (await profile(t.as('p_rahul'))).body.upload_id })).toEqual([422, 'invalid', 'photo_upload_id']); // Rahul's
+    expect(await refused({ photo_upload_id: (await sign(photo)).body.upload_id })).toEqual([422, 'invalid', 'photo_upload_id']); // a chat attachment
+    expect(await refused({ photo_upload_id: 'up_nope' })).toEqual([422, 'invalid', 'photo_upload_id']);
+    expect(await refused({ photo_upload_id: (await profile()).body.upload_id, photo_url: 'https://x.example/me.png' })).toEqual([422, 'invalid', 'photo_upload_id']);
+    expect((await rows(h.pool, `select photo_url from people where person_id = 'p_priya'`))[0].photo_url).toContain('/_dev/storage/'); // nothing refused was written
+    const link = await t.api(priya(), 'PATCH', '/app/v1/me', { photo_url: 'https://x.example/me.png' });
+    expect([link.status, link.body.photo_url]).toEqual([200, 'https://x.example/me.png']);
+  });
+});
+
+describe('the rate limit (app contract Appendix A: 20 uploads a minute per person)', () => {
+  it('the one over the limit is 429 rate_limited with retry_after_seconds and Retry-After; another person is not affected', async () => {
+    h.ctx.limits = { uploadsPerMinute: 2 };
+    try {
+      const kabir = t.as('p_kabir');
+      for (let i = 0; i < 2; i++) expect((await sign(photo, kabir)).status).toBe(201);
+      const r = await sign(photo, kabir);
+      expect([r.status, r.body.error.code, r.body.error.retry_after_seconds > 0, Number(r.headers['retry-after']) === r.body.error.retry_after_seconds]).toEqual([429, 'rate_limited', true, true]);
+      expect((await sign(photo, t.as('p_meher'))).status).toBe(201);
+    } finally {
+      h.ctx.limits = { uploadsPerMinute: 1000 };
+    }
   });
 });

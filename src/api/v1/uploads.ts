@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Ctx } from '../../context.js';
 import { newId } from '../../db/ids.js';
 import { invalid } from '../../domain/errors.js';
+import { RateLimiter } from '../rate-limit.js';
 import { checkUpload, type UploadBody } from '../bodies.js';
 import { SECTIONS, type RouteMeta } from './meta.js';
 import type { V1Deps } from './shared.js';
@@ -12,6 +13,8 @@ import type { V1Deps } from './shared.js';
 /** App contract §4.5. */
 export const MAX_UPLOAD_BYTES = 26_214_400; // 25 MB
 export const UPLOAD_EXPIRES_HOURS = 24;
+/** App contract Appendix A: 20 uploads signed a minute per person. */
+export const UPLOADS_PER_MINUTE = 20;
 export const IMAGE = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic']);
 export const DOCUMENT = new Set(['application/pdf']);
 export const AUDIO = new Set(['audio/mp4', 'audio/mpeg', 'audio/webm', 'audio/ogg']);
@@ -24,20 +27,23 @@ export const extensionFor = (mime: string): string => EXTENSION[mime.toLowerCase
 export const routes: RouteMeta[] = [
   {
     method: 'POST', path: '/app/v1/uploads', section: SECTIONS.uploads, title: 'Sign an upload',
-    summary: 'Before attaching a photo, a PDF or a voice note, or changing the profile photo: { purpose: chat_attachment | profile_photo, kind: photo | file | audio, mime, name?, size_bytes, width?, height?, duration_s? }. MIME allow-list image/jpeg|png|webp|heic, application/pdf, audio/mp4|mpeg|webm|ogg; at most 25 MB (422 otherwise). PUT the bytes to upload_url with the headers, then use upload_id. Unused uploads expire after 24 hours.',
+    summary: `Before attaching a photo, a PDF or a voice note, or changing the profile photo: { purpose: chat_attachment | profile_photo, kind: photo | file | audio, mime, name?, size_bytes, width?, height?, duration_s? }. MIME allow-list image/jpeg|png|webp|heic, application/pdf, audio/mp4|mpeg|webm|ogg; at most 25 MB (422 otherwise). PUT the bytes to upload_url with the headers, then use upload_id (in a message, or as PATCH /me photo_upload_id). Unused uploads expire after 24 hours. ${UPLOADS_PER_MINUTE} a minute per person (429).`,
     example: {
       body: { purpose: 'chat_attachment', kind: 'photo', mime: 'image/jpeg', name: 'seats.jpg', size_bytes: 482113, width: 1280, height: 960, duration_s: null },
       responses: [
         { name: 'signed', status: 201, body: { upload_id: 'up_01JA', upload_url: 'https://<ref>.supabase.co/storage/v1/object/upload/sign/go-files/chat_attachment/up_01JA.jpg?token=…', headers: { 'content-type': 'image/jpeg', 'x-upsert': 'false' }, expires_at: '2026-10-08T09:12:00Z', max_size_bytes: MAX_UPLOAD_BYTES } },
         { name: 'wrong type', status: 422, body: { error: { code: 'invalid', message: 'mime: image/gif is not allowed for a photo', field: 'mime', retry_after_seconds: null, request_id: 'req_01JA7Q3V8Z' } } },
+        { name: 'rate_limited', status: 429, body: { error: { code: 'rate_limited', message: `at most ${UPLOADS_PER_MINUTE} uploads a minute: slow down`, field: null, retry_after_seconds: 42, request_id: 'req_01JA7Q3V8Z' } } },
       ],
     },
   },
 ];
 
 export function register(app: FastifyInstance, ctx: Ctx, _deps: V1Deps): void {
+  const uploads = new RateLimiter(() => ctx.limits?.uploadsPerMinute ?? UPLOADS_PER_MINUTE, 60_000, { what: 'uploads' });
   app.post('/app/v1/uploads', async (req, reply) => {
     const input = checkUpload(req.body);
+    uploads.take(req.personId);
     const mime = input.mime.toLowerCase();
     if (!ALLOWED[input.kind].has(mime)) throw invalid(`mime: ${input.mime} is not allowed for a ${input.kind === 'audio' ? 'voice note' : input.kind}`, 'mime');
     if (input.size_bytes > MAX_UPLOAD_BYTES) throw invalid(`size_bytes: at most ${MAX_UPLOAD_BYTES} bytes (25 MB)`, 'size_bytes');

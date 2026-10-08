@@ -123,9 +123,7 @@ The WebSocket cannot be driven from Postman; §3 has a `wscat` example.
   not listed, all answer `422 invalid` with `field`. `null` is accepted only where this page says a field clears
   (`PATCH /me` `photo_url`/`from_city`, join answers `from_city`/`earliest_leave`, `PUT …/me/budget` `max_minor`,
   booking `refundable_until`/`starts_at`/`ends_at`, reaction `emoji`, upload `width`/`height`/`duration_s`). Nothing
-  is converted or dropped silently. Four small routes use Fastify's own check instead and are looser: unknown fields are
-  ignored and simple types coerced on `PATCH /trips/:trip/messages/:id`, `PATCH /trips/:trip/me`, `PATCH /me/go` and
-  `POST /me/vault-link`.
+  is converted or dropped silently, on any route.
 - Also refused with 422, on every route: a NUL character or an unpaired surrogate anywhere in a body, a `__proto__` key,
   nesting deeper than 32 levels. A body over Fastify's 1 MiB limit is `413 invalid`. JSON that cannot be read at all is
   `400 bad_request`. A POST that needs no body may be sent with none (or with `{}`).
@@ -160,7 +158,7 @@ Every non-2xx answer has this body, and every answer (2xx too) carries `X-Reques
 | 413 | `invalid` | Body over 1 MiB | No |
 | 422 | `invalid` | A body or query rule (`field` names it when known), a rule about the trip (not in the trip, not an option, wrong currency, a seat not on the map...), `idempotency_key_reused`, `add_documents` while `features.visa` is off | No |
 | 426 | `upgrade_required` | A plain GET on `/live` (it is a WebSocket) | No |
-| 429 | `rate_limited` | Messages (30/min), city search (5/s), invite preview (30/min/IP), a nudge inside 24 h, Go busy. `retry_after_seconds` and the `Retry-After` header say how long | Yes, after that wait |
+| 429 | `rate_limited` | Messages (30/min), reactions (20/min), card taps (10/min), votes (20/min), uploads (20/min), vault links (6/min), city search (5/s), invite preview (30/min/IP), a nudge inside 24 h, Go busy (Appendix A). `retry_after_seconds` and the `Retry-After` header say how long | Yes, after that wait |
 | 500 | `internal` | Server bug: quote the `request_id` | Yes, with backoff |
 | 502 / 503 / 504 | `go_unavailable` | Something that needs Go did not get an answer (504 timeout, 503 Go refused, 502 Go's answer was wrong or Go left facts behind). A person is waiting: show the message, let them tap again. **Do not auto-retry** | Not automatically |
 | 503 | `unavailable` | A call recording could not be fetched (`POST …/cards/:id/share`) | Later |
@@ -408,12 +406,12 @@ There are no `/auth/*` routes (§1.2).
 | Method & path | Request | Answer | Errors | Go hears |
 |---|---|---|---|---|
 | `GET /me` | — | `Me` (`no-store`) | | — |
-| `PATCH /me` | any of `name` (1-80), `photo_url` (an `https://` link, or `null` to clear), `from_city` (1-60, or `null`), `notifications_enabled` (boolean). Strict; at least one field (`422`). `photo_upload_id` is **not** accepted yet: upload a photo and send its signed link, or keep the Google photo. | `Me` plus `seq`: the last change number written, or `null` when nothing changed or Go was not told | 422 | `person.updated` in **every active trip** the person is in, `changed` among `name`, `photo_url`. A new default city or the switch tells Go nothing. Live: `trip_changed` in each trip. |
+| `PATCH /me` | any of `name` (1-80), `photo_upload_id` (a `profile_photo` upload of yours, §4.5: taken **once**, it becomes the stored `photo_url`, a long-lived signed link), `photo_url` (an `https://` link, or `null` to clear; not together with `photo_upload_id`), `from_city` (1-60, or `null`), `notifications_enabled` (boolean). Strict; at least one field (`422`). | `Me` plus `seq`: the last change number written, or `null` when nothing changed or Go was not told | 422 (`photo_upload_id` when the upload is not yours, not a profile photo, already used or expired) | `person.updated` in **every active trip** the person is in, `changed` among `name`, `photo_url`. A new default city or the switch tells Go nothing. Live: `trip_changed` in each trip. |
 | `PUT /me/upi` | `{ "upi_id": "name@bank" }`, matching `^[\w.\-]{2,256}@[a-zA-Z]{2,64}$` | `Me` (`has_upi: true`, `upi_id_masked`, `seq`) | 422 `upi_id` | `person.updated` `changed: ["has_upi"]` per active trip, **only when it flips** (replacing one id by another sends nothing) |
 | `DELETE /me/upi` | — | `Me` (`has_upi: false`) | | `person.updated` `changed: ["has_upi"]` per active trip when it flips |
 | `POST /me/devices` | `{ "platform": "web_push", "web_push": { "endpoint", "keys": { "p256dh", "auth" } }, "locale"?, "tz"? }` (strict; leave out `expirationTime` from `subscription.toJSON()`). `platform` is `web_push` only in v1. The endpoint must be an `https` address on a known push service (Google FCM, Mozilla, `*.push.apple.com`, `*.notify.windows.com`, ≤ 2048 chars); the keys must have a browser's shape (65-byte `p256dh`, 16-byte `auth`, base64url). | `201 { "device_id" }` | 422 `web_push.endpoint` / `web_push.keys` | — |
 | `DELETE /me/devices/:device_id` | — | `204`. Only your own; safe to repeat | | — |
-| `POST /me/vault-link` | `{ "start"?: "home" \| "add_card" \| "add_login" \| "add_documents", "context"?: { "trip_id", "purpose": "visa" } }` | `{ "url", "expires_at" }` (Go's `Link`): open it **immediately** in the system browser sheet, never a WebView, never ahead of time, never from a push. Links expire after 5 minutes. | 422 `start` when `add_documents` and `features.visa` is off; 502/503/504 `go_unavailable`; 429 | `vault_link { kind: "vault", person_id, start?, context? }` (2 s) |
+| `POST /me/vault-link` | `{ "start"?: "home" \| "add_card" \| "add_login" \| "add_documents", "context"?: { "trip_id", "purpose": "visa" } }` (strict) | `{ "url", "expires_at" }` (Go's `Link`): open it **immediately** in the system browser sheet, never a WebView, never ahead of time, never from a push. Links expire after 5 minutes. | 422 `start` when `add_documents` and `features.visa` is off; 502/503/504 `go_unavailable`; 429 above **6 a minute per person** (Go is not asked), or Go busy | `vault_link { kind: "vault", person_id, start?, context? }` (2 s) |
 | `DELETE /me` | `{ "confirm": true }` (strict) | `202`, no body. In order: Go forgets the person everywhere (`forget_person`; **if Go does not answer, nothing else happens**: `502`), join answers cleared, the person leaves every trip (`person.left` each, with everything a leave does), their messages stay and read "Former member" with no photo, email, phone, UPI id, default city and budget answers go, devices and tickets are deleted, their tokens stop working | 502 `go_unavailable` | `forget_person`, then `person.left` per trip |
 
 Rules: the signed-in `person_id` is the same person in every trip; `Me.counts` is computed (`active_trips` = trips I
@@ -474,8 +472,8 @@ the `joined` push. Codes are random URL-safe strings of 12 characters.
 | `PUT /trips/:trip/me/join-answers` | member | `JoinAnswers` (below); strict; at least one field | your own `Person` (whole) plus `seq` (`null` when nothing changed) | 422 | `person.updated` with `changed` among `from_city`, `earliest_leave`, `know` (only what differs); a `spend_band` that moves your budget answer also sends `trip.updated` `changed: ["budget"]` by the system. Live: `trip_changed` |
 | `PUT /trips/:trip/me/budget` | member | `{ "min_minor" (≥ 0), "max_minor"?: number \| null (≥ min; null or missing = no upper limit), "currency"? (must be the trip's) }` | `{ "budget": { min_minor, max_minor, currency }, "summary": BudgetSummary, "seq" }` (`seq: null` for the same answer again) | 422 | `trip.updated` **`changed: ["budget"]`, `by: { kind: "system" }`**: names nobody and no amount. Live: `trip_changed` |
 | `DELETE /trips/:trip/me/budget` | member | — | `{ "summary": BudgetSummary, "seq" }` (`null` when you had no answer) | | the same `trip.updated` by the system |
-| `PATCH /trips/:trip/me` | member | `{ "go_paused": boolean }` (required) | `{ "seq" }`. While paused your messages reach Go with no words; the room sees them in full | 422 | `person.updated` `changed: ["go_paused"]`. Live: `trip_changed kinds: ["people"]` |
-| `POST /trips/:trip/leave` | member | — | `200 { "seq" }` | 403 | `person.left` (+ `trip.updated` budget by the system when you had an answer); the system message "Priya left"; an open vote that was waiting only for you closes. Live: `trip_changed kinds: ["people"]`, `home_changed` |
+| `PATCH /trips/:trip/me` | member | `{ "go_paused": boolean }` (required; strict) | your own `Person` (whole) plus `seq`. While paused your messages reach Go with no words; the room sees them in full | 422 | `person.updated` `changed: ["go_paused"]`. Live: `trip_changed kinds: ["people"]` |
+| `POST /trips/:trip/leave` | member | — | `204` | 403 | `person.left` (+ `trip.updated` budget by the system when you had an answer); the system message "Priya left"; an open vote that was waiting only for you closes. Live: `trip_changed kinds: ["people"]`, `home_changed` |
 | `POST /trips/:trip/read` | member | `{ "up_to_seq"?: number }` or `{ "message_id"?: Id }` (strict; both optional) | `204`. Marks the room read up to that change number (it never moves back) and notes you opened the room now (catch-up uses it). An empty body only notes the visit | 422 `message_id` not in the trip | — |
 
 **`JoinAnswers`** (strict): `from_city` (≤ 60, `null` clears), `earliest_leave` (≤ 60, `null` clears), `know` (≤ 20
@@ -506,11 +504,13 @@ Go-visible, not the trip-level `TripSnapshot.vibe`. `spend_band` is stored as **
 ```
 
 1. `PUT` the bytes to `upload_url` with exactly the returned `headers`. The URL is good for 2 hours (`expires_at`).
-2. Name the `upload_id` in a message (§4.6, `attachments: [{ "upload_id", "caption"? }]`). The Server resolves it to a
-   contract `PhotoAttachment` (`kind: "photo"`, `url`, `width`, `height`, `caption`) or `FileAttachment` (`kind:
-   "file"`, `url`, `name`, `mime`, `size_bytes`, `duration_s` for a voice note), plus `upload_id`. An upload is used
-   **once**, by the person who signed it, for the purpose it was signed for, within **24 hours** (`422` naming
-   `attachments[i].upload_id` otherwise). Unused uploads are deleted after 24 hours.
+2. Name the `upload_id` in a message (§4.6, `attachments: [{ "upload_id", "caption"? }]`), or, for a `profile_photo`,
+   in `PATCH /me { "photo_upload_id" }` (§4.1). In a message the Server resolves it to a contract `PhotoAttachment`
+   (`kind: "photo"`, `url`, `width`, `height`, `caption`) or `FileAttachment` (`kind: "file"`, `url`, `name`, `mime`,
+   `size_bytes`, `duration_s` for a voice note), plus `upload_id`; as a profile photo it becomes `Me.photo_url`. An
+   upload is used **once**, by the person who signed it, for the purpose it was signed for, within **24 hours** (`422`
+   naming `attachments[i].upload_id` or `photo_upload_id` otherwise). Unused uploads are deleted after 24 hours.
+   **20 uploads a minute per person** (`429`).
 3. Rules: `kind: photo` takes `image/jpeg|png|webp|heic`; `file` takes `application/pdf` or an image; `audio` takes
    `audio/mp4|mpeg|webm|ogg`; at most **25 MB**; a `profile_photo` must be a `photo`. `name` ≤ 200, `mime` ≤ 100,
    `width`/`height` 1-100000 or null, `duration_s` 0-86400 or null. **No EXIF stripping and no virus scanning** in v1
@@ -525,9 +525,9 @@ Go-visible, not the trip-level `TripSnapshot.vibe`. `spend_band` is stored as **
 |---|---|---|---|---|
 | `GET /trips/:trip/messages` | **History mode:** no cursor (the newest page) or `?before_seq=<n>`, `limit` 1-100 (default 50). **Changes mode:** `?after_seq=<n>`, `limit` 1-200 (default 200). Never both | `{ "messages": [Message], "has_more", "seq" }` (`seq` = the trip change number the page matches) | 422 `after_seq` when both cursors are sent; 422 `limit` | — |
 | `POST /trips/:trip/messages` | below | `201 Message` (the stored message, signed links) | 422; 429 above 30/min (`retry_after_seconds: 10`) | `message.created` (`withheld: true` and no text when you paused Go). Live: `message` |
-| `PATCH /trips/:trip/messages/:id` | `{ "text" }` (1-4000; Fastify check, see §1.3) | `200 Message` (`edited_at` set) | 403 not yours; 404; 409 deleted | `message.edited`. Live: `message` |
+| `PATCH /trips/:trip/messages/:id` | `{ "text" }` (1-4000; strict) | `200 Message` (`edited_at` set) | 403 not yours; 404; 409 deleted | `message.edited`. Live: `message` |
 | `DELETE /trips/:trip/messages/:id` | — | `200 Message` (`deleted: true`, no text, no attachments) | 403; 404; 409 already deleted | `message.deleted`. Live: `message` |
-| `PUT /trips/:trip/messages/:id/reaction` | `{ "emoji": "🔥" \| null }` (1-16 chars; strict). **One reaction per person per message**: a new emoji replaces the old one, `null` takes it back. The same emoji again (or `null` with none) changes nothing | `200 Message` | 404; 409 deleted | `reaction.removed` then `reaction.added` on a switch, each its own change; `updated_seq` is the last. Live: `message` |
+| `PUT /trips/:trip/messages/:id/reaction` | `{ "emoji": "🔥" \| null }` (1-16 chars; strict). **One reaction per person per message**: a new emoji replaces the old one, `null` takes it back. The same emoji again (or `null` with none) changes nothing | `200 Message` | 404; 409 deleted; 429 above **20 a minute per person per trip** | `reaction.removed` then `reaction.added` on a switch, each its own change; `updated_seq` is the last. Live: `message` |
 | `GET /trips/:trip/catch-up` | `?force=1` to ask Go whatever the gap (testing) | `200 CatchUp` (Go's `summary`, `items`), or `204` when not away long enough, or when Go did not answer within its time | 502/503 `go_unavailable`; 429 | `catch_up { trip_id, person_id, since }` (3 s) where `since` = your last `POST …/read` (else your join). Asked when you were away **3 hours or more**, or have **15 or more** unread messages from others. Nothing is posted. |
 
 **The two read modes**
@@ -574,6 +574,8 @@ Upsert by `message_id`, place by `seq`, whichever mode brought the message.
 - `action_id`: `^[a-z][a-z_]{0,31}$`. `option_id` only when the button was on one option (`per_option`). `press_id`
   (1-64) becomes Go's `tap_id`, tied to you (nobody can replay your press and get your answer); without it the
   Server makes one per call. `payload { trip: "oneway" | "round" }` (1.1) goes to Go as it is.
+- **10 taps a minute per person per trip** (`429 rate_limited`); a repeat of a `press_id` already counted is free, so a
+  double tap or a retry never costs a tap.
 - Only for a card on one of Go's messages of kind `options`, `working`, `call`, `pay`, `notice` or `checklist`
   (`404 not_found` otherwise; `422 card_id` for a record card: `vote`, `mandate`, `expense`, ... are the Server's).
 - The Server sends `card_tap { tap_id, trip_id, card_id, action_id, person_id, option_id?, payload? }` and waits 3.5 s.
@@ -600,7 +602,7 @@ Upsert by `message_id`, place by `seq`, whichever mode brought the message.
 |---|---|---|---|---|---|
 | `GET /trips/:trip/decisions/:id` | member | — | `Decision` + `my_vote` (`{ option_index }` \| `{ flexible: true }` \| `null`), + `cancels_booking_id` on a cancellation vote | 404 | — |
 | `POST /trips/:trip/decisions` | any member | `{ "client_id"? (1-64), "question" (1-200), "kind": "choice" \| "yesno", "anonymous": boolean, "options": [2-10 × { "label" (1-120), "image_url"?, "price_minor"? (≥ 0, shown in the trip's currency), "note"? (≤ 120) }], "closes_at"? (ISO, in the future) }`. Strict; `client_id` **or** an `Idempotency-Key` is required | `201 { "decision": Decision + my_vote, "message": Message }`: the Server posts the system message carrying the `vote` card, so the poll shows in the room at once. `of` = people in the trip now (a joiner adds one, a leaver who had not voted removes one) | 422 | `decision.opened` by you. Live: `message`, `trip_changed kinds: ["decision"]` |
-| `PUT /trips/:trip/decisions/:id/vote` | member | `{ "option_index": 0-9 }` **or** `{ "flexible": true }` (never both or neither: `422`). Cast or move your vote until the vote closes. `flexible` needs `features.vote_flexible` (`409` otherwise); it counts in `voted` and `flexible_count`, not in `tally` | `200 Decision` + `my_vote` (the closed decision when your vote was the last) | 404; 409 closed or cancelled; 422 `option_index` out of range | `decision.voted` (`person_id` and `option_index` omitted when anonymous; `flexible: true` when so). **The vote closes by itself when everyone has voted.** Live: `trip_changed kinds: ["decision"]` |
+| `PUT /trips/:trip/decisions/:id/vote` | member | `{ "option_index": 0-9 }` **or** `{ "flexible": true }` (never both or neither: `422`). Cast or move your vote until the vote closes. `flexible` needs `features.vote_flexible` (`409` otherwise); it counts in `voted` and `flexible_count`, not in `tally` | `200 Decision` + `my_vote` (the closed decision when your vote was the last) | 404; 409 closed or cancelled; 422 `option_index` out of range; 429 above **20 votes a minute per person** (taking one back counts) | `decision.voted` (`person_id` and `option_index` omitted when anonymous; `flexible: true` when so). **The vote closes by itself when everyone has voted.** Live: `trip_changed kinds: ["decision"]` |
 | `DELETE /trips/:trip/decisions/:id/vote` | member | — | `200 Decision` + `my_vote: null`. Needs `features.vote_retract` | 409 flag off, vote not open, or you have not voted | `decision.voted` with `retracted: true` and the new totals |
 | `POST /trips/:trip/decisions/:id/close` | **organizer or opener** | — | `200 Decision` (`result_index` set unless nobody voted or the top tied) | 403; 409 already closed/cancelled | `decision.closed`, then, when there is a result, `record.changed` (the **decided** line, by the system) and the system message "Villa Sol won · 4 votes". Live: `trip_changed kinds: ["decision","record"]` |
 | `POST /trips/:trip/decisions/:id/cancel` | organizer or opener | — | `200 Decision` (`status: "cancelled"`). No record line | 403; 409 not open | `decision.cancelled` by you |
@@ -632,7 +634,7 @@ card action returning `open` to the vault page; the payer confirms with Face ID 
 | `POST /trips/:trip/settlements/:id/confirm` | **the payee** | — | `200 Settlement` (`confirmed`, `responded_at`) | 403; 404; 409 already answered | `settlement.recorded` (contract 1.1): **the one moment Go hears of the payment** |
 | `POST /trips/:trip/settlements/:id/dispute` | the payee | — | `200 Settlement` (`disputed`): the amount goes back into the transfers | 403; 404; 409 | nothing (a change number only) |
 | `POST /trips/:trip/transfers/pay-link` | the one who owes | `{ "to_person_id", "amount_minor" (≥ 1; the app prefills what is owed) }` | `{ "upi_uri": "upi://pay?pa=…&pn=…&am=1700.00&cu=INR&tn=…", "expires_at" (+10 min, advisory: the Server keeps nothing) }`. The link carries the payee's UPI id: a convenience, not a privacy measure | 409 payee not in the trip or has no UPI id (`has_upi: false`: offer Record a payment instead); 422 `to_person_id` when you do not owe them right now | nothing |
-| `POST /trips/:trip/transfers/nudge` | the one who is owed | `{ "from_person_id" }` | `200 { "reminded": true, "nudge_allowed_at" }`: the reminder was accepted, not that it arrived | 409 they do not owe you in the current transfers, or are not in the trip; 429 inside the 24-hour window (`retry_after_seconds`, `Retry-After`; also for a retry after a lost answer: show "already reminded") | nothing. Push `nudge` to the debtor: "Rahul reminded you: you owe ₹5,800" |
+| `POST /trips/:trip/transfers/nudge` | the one who is owed | `{ "from_person_id" }` | `204`: the reminder was accepted, not that it arrived | 409 they do not owe you in the current transfers, or are not in the trip; 429 inside the 24-hour window (`retry_after_seconds`, `Retry-After`; also for a retry after a lost answer: show "already reminded") | nothing. Push `nudge` to the debtor: "Rahul reminded you: you owe ₹5,800" |
 
 **Expense approval** (`features.expense_approval`, on from day one). Every expense that is not a vault payment needs the
 people in its split to agree. `Expense.confirmations` has one entry per person in `split_person_ids` **other than the
@@ -662,7 +664,7 @@ With the flag off every expense starts `approved` and approve/dispute answer `40
 | `GET /trips/:trip/bookings` | member | — | `{ "items": [Booking], "seq" }`: every booking, `confirmed` and `cancelled`, newest first. `passengers[]` and `documents[]` only in bookings that cover you; `details` and `return_journey` for everyone | | — |
 | `GET /trips/:trip/bookings/:id` | member | — | `Booking` (same rule) | 404 not in this trip | — |
 | `GET /trips/:trip/bookings/:id/documents/:document_id` | a **covered person**, or anyone in the trip when the document is `visibility: "group"` | — | `302` to a **signed link valid 10 minutes** (`private, no-store`). Render the PDF client-side from it; "Share to the group" is a normal message with the file attached | 403 not covered; 404 booking not in the trip, or document not on this booking | — |
-| `POST /trips/:trip/bookings` | any member | `AddBooking` (below), strict | `201 { "booking_id", "seq" }`. Stored `confirmed`, in the trip's currency, with you as `added_by_person_id`; **no expense** is created | 422 | `booking.changed` `change: "added"` by you, then `record.changed` (the **booked** line: a decided line of the vote it names becomes booked, else a new line), then the system message "<title> booked". Live: `trip_changed kinds: ["booking","record"]` |
+| `POST /trips/:trip/bookings` | any member | `AddBooking` (below), strict | `201 Booking` as you see it (the covered-people rule above; `documents: []` for now) plus `seq`. Stored `confirmed`, in the trip's currency, with you as `added_by_person_id`; **no expense** is created | 422 | `booking.changed` `change: "added"` by you, then `record.changed` (the **booked** line: a decided line of the vote it names becomes booked, else a new line), then the system message "<title> booked". Live: `trip_changed kinds: ["booking","record"]` |
 | `PATCH /trips/:trip/bookings/:id` | any member, any booking | any of `ref` (1-80), `refundable_until`, `starts_at`, `ends_at` (ISO; `null` clears a time); strict; at least one field | `{ "seq" }`, or `{ "seq": null }` when nothing differed | 404; 409 the booking is cancelled; 422 ends before starts | `booking.changed` `change: "updated"`. Live: `trip_changed kinds: ["booking"]` |
 | `POST /trips/:trip/bookings/:id/cancel-vote` | any member | `{}` (strict; send an `Idempotency-Key`) | `201 { "decision_id", "seq" }` | 404; 409 already cancelled, **paid through the vault**, or a cancellation vote is already open (the message names it) | `decision.opened` by you; the system message carrying the vote card. Live: `message`, `trip_changed kinds: ["decision"]` |
 | `GET /trips/:trip/itinerary` | member | `?scope=everyone` (default) \| `me` | `{ "days": [Day], "seq" }`. `days: []` is "No plan yet" | 422 `scope` | — |
@@ -757,7 +759,7 @@ Every route asks Go for the **signed-in person only**.
 | Method & path | Server → Go | Answer | Errors |
 |---|---|---|---|
 | `GET /me/go` | `get_person { person_id }` (2 s) | `PersonPage` (`carry_over`, `facts[]` with `fact_id`, `topic`, `text`, `trip_id`, `message_id`?, `said_at`). A fact with a `message_id` opens that message; without one it came from the join answers | 502/503/504 `go_unavailable` ("Couldn't load what Go knows. Try again."); 429 |
-| `PATCH /me/go` | `update_person { person_id, carry_over }` | `{ "ok": true }`. Body `{ "carry_over": boolean }` (required; off by default) | `go_unavailable` (put the switch back) |
+| `PATCH /me/go` | `update_person { person_id, carry_over }` | `{ "ok": true }`. Body `{ "carry_over": boolean }` (required; strict; off by default) | `go_unavailable` (put the switch back) |
 | `DELETE /me/go/facts/:fact_id` | `delete_fact { person_id, fact_id }` | `{ "ok": true }` | 404 Go has no such fact (remove it from the screen); `go_unavailable` |
 | `DELETE /me/go?trip_id=<id>` | `forget_person { person_id, trip_id? }` | `ForgetResult { "deleted_facts", "remaining_facts": 0 }`. With `trip_id`: that trip (also one you have left); without: everywhere. **Then** the Server clears your join answers (`from_city`, `earliest_leave`, `know`) in those trips and sends `person.updated` where you are still a member. **Never says you were forgotten when Go failed**: `502` when Go reports facts left, `go_unavailable` when it did not answer. Safe to repeat | 403 a trip you were never in; 502/503/504 |
 
@@ -899,9 +901,9 @@ transport in v1; the app registers with `POST /me/devices` (§4.1) and reads the
 ```
 
 - `title` is the trip's title; `body` is cut to 300 characters; `message_id` only when the push is about one message.
-- `tag` is `<trip>:<message>` for a message, else `<trip>:<type>[:<id>]` (the vote, the payee, the joiner, the booking),
-  so the same thing twice collapses into one notification. `settlement`, `expense` and `nudge` pushes carry no id:
-  `<trip>:settlement`.
+- `tag` is `<trip>:<message>` for a message, else `<trip>:<type>:<id>` (the vote, the payee, the expense, the settlement,
+  the person who nudged, the joiner, the booking), so the same thing twice collapses into one notification and two
+  different expenses do not.
 - `Me.notifications_enabled` is the single switch: off (or a deleted account), nothing is sent. No per-trip mute yet.
 - Rules for the client: show a visible notification for every push, route `deep_link` on tap, drop a push when the room
   is open and focused (a live frame already showed it), re-register when the browser replaces the subscription or
@@ -945,8 +947,8 @@ person-opened votes (the Server does).
 
 ## Appendix A: limits and rate limits
 
-As the code enforces them today. Everything else in rev 2's Appendix A (reactions 20/min, card taps 10/min, votes
-20/min, vault link 6/min, uploads 20/min) is **not enforced** yet.
+As the code enforces them today. The per-minute limits are counted **per Server instance** (in memory; with several
+instances the real limit is that many times higher). Every `429` carries `retry_after_seconds` and `Retry-After`.
 
 | Thing | Limit |
 |---|---|
@@ -954,9 +956,14 @@ As the code enforces them today. Everything else in rev 2's Appendix A (reaction
 | Attachments per message | 10; each ≤ 25 MB; caption ≤ 500 |
 | `mentions` | 30 |
 | Messages | **30 per minute per person per trip** (`429`, `retry_after_seconds: 10`) |
+| Reactions | **20 per minute per person per trip** |
+| Card taps | **10 per minute per person per trip**; a repeat of a `press_id` already counted is free |
+| Votes | **20 per minute per person** (cast, moved or taken back) |
 | Typing frames | 1 `on` per 2 s per trip per socket; a person's typing runs out after 6 s, Go's after 10 s |
-| City search | **5 per second per person** (per Server instance) |
-| Invite preview (`GET /invites/:code`) | **30 per minute per IP address** (per instance) |
+| City search | **5 per second per person** |
+| Invite preview (`GET /invites/:code`) | **30 per minute per IP address** |
+| `POST /me/vault-link` | **6 per minute per person** |
+| Uploads (`POST /uploads`) | **20 per minute per person** |
 | Nudge | 1 per debtor per trip per 24 hours |
 | Idempotency-Key | 1 to 128 characters; kept 24 hours |
 | Live socket | 1 per (person, device); 50 trips per socket; replay ≤ 200 messages and < 900 KB (else `resync`); inbound frame ≤ 64 KB; ticket 30 s, single use; heartbeat 25 s, 2 missed pongs |

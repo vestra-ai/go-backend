@@ -139,14 +139,16 @@ const cancelVote = {
   properties: {},
 } as const;
 
-// The account profile (PATCH /me). A photo link must be an https URL (photo_upload_id comes with uploads, phase 2).
-// `from_city` is the default "travelling from" the app offers in new trips; `notifications_enabled` is the pushes switch.
-// The UPI id has its own routes (PUT/DELETE /me/upi).
+// The account profile (PATCH /me). The photo is a `profile_photo` upload of the person's (app contract §4.1: `photo_upload_id`,
+// resolved to a stored link) or a plain https link; never both (checked in the domain). `from_city` is the default
+// "travelling from" the app offers in new trips; `notifications_enabled` is the pushes switch. The UPI id has its own routes
+// (PUT/DELETE /me/upi).
 const patchMe = {
   type: 'object',
   additionalProperties: false,
   properties: {
     name: { type: 'string', minLength: 1, maxLength: 80 },
+    photo_upload_id: id,
     photo_url: { type: ['string', 'null'], format: 'uri', pattern: '^https://' },
     from_city: { type: ['string', 'null'], minLength: 1, maxLength: 60 },
     notifications_enabled: { type: 'boolean' },
@@ -268,6 +270,14 @@ const patchTrip = {
   },
 } as const;
 
+// "Pause Go in this trip" (PATCH /trips/:trip/me): while paused the person's messages reach Go with no words.
+const pauseGo = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['go_paused'],
+  properties: { go_paused: { type: 'boolean' } },
+} as const;
+
 // A reminder to the person who owes the caller (POST /trips/:trip/transfers/nudge).
 const nudge = {
   type: 'object',
@@ -320,6 +330,14 @@ const postMessage = {
     about_message_id: id,
     mentions: { type: 'array', maxItems: 30, items: id },
   },
+} as const;
+
+// A new text for your own message (PATCH /trips/:trip/messages/:id): the contract's 4,000 characters.
+const editMessage = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['text'],
+  properties: { text: { type: 'string', minLength: 1, maxLength: 4000 } },
 } as const;
 
 // Your one reaction on a message: an emoji (the contract's 16-character limit), or null to take it back.
@@ -376,6 +394,30 @@ const liveTicket = {
   type: 'object',
   additionalProperties: false,
   properties: { device_id: id },
+} as const;
+
+// ---- §4.13 and the vault: two small bodies that go to Go as they are.
+// "Remember me in future trips" (PATCH /me/go).
+const carryOver = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['carry_over'],
+  properties: { carry_over: { type: 'boolean' } },
+} as const;
+
+// The vault link (POST /me/vault-link): where the page opens, and for `add_documents` which trip's visa it is for (GO-CHANGES 2.2).
+const vaultLink = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    start: { type: 'string', enum: ['home', 'add_card', 'add_login', 'add_documents'] },
+    context: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['trip_id', 'purpose'],
+      properties: { trip_id: id, purpose: { type: 'string', enum: ['visa'] } },
+    },
+  },
 } as const;
 
 // ---- §4.9 money. Amounts are whole minor units above zero; the category and the lengths are the contract's Expense.
@@ -447,7 +489,7 @@ const patchCheckin = {
 } as const;
 
 /** Every route's body definition, by name. */
-export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, putUpi, deleteMe, patchTripMe, acceptInvite, putBudget, patchTrip, nudge, addDevice, createTrip, readTrip, postMessage, putReaction, cardAction, castVote, upload, liveTicket, addExpense, patchExpense, disputeExpense, recordSettlement, payLink, patchCheckin } as const;
+export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, putUpi, deleteMe, patchTripMe, acceptInvite, putBudget, patchTrip, pauseGo, nudge, addDevice, createTrip, readTrip, postMessage, editMessage, putReaction, cardAction, castVote, upload, liveTicket, carryOver, vaultLink, addExpense, patchExpense, disputeExpense, recordSettlement, payLink, patchCheckin } as const;
 
 /** Nodes the walk in tests/bodies.test.ts does not enter: they are checked against the contract's own definitions elsewhere. */
 export const PASSTHROUGH: readonly string[] = ['patchTrip.itinerary[]', 'postMessage.attachments[]'];
@@ -497,6 +539,7 @@ export interface UpdateBookingBody {
 
 export interface PatchMeBody {
   name?: string;
+  photo_upload_id?: string;
   photo_url?: string | null;
   from_city?: string | null;
   notifications_enabled?: boolean;
@@ -553,6 +596,10 @@ export interface PatchTripBody {
   dates?: { start: string; end: string };
   itinerary?: Array<Record<string, unknown>>;
   status?: 'planning' | 'booked' | 'on_trip' | 'over';
+}
+
+export interface PauseGoBody {
+  go_paused: boolean;
 }
 
 export interface NudgeBody {
@@ -615,6 +662,10 @@ export interface PostMessageBody {
   mentions?: string[];
 }
 
+export interface EditMessageBody {
+  text: string;
+}
+
 export interface PutReactionBody {
   emoji: string | null;
 }
@@ -646,6 +697,15 @@ export interface LiveTicketBody {
   device_id?: string;
 }
 
+export interface CarryOverBody {
+  carry_over: boolean;
+}
+
+export interface VaultLinkBody {
+  start?: 'home' | 'add_card' | 'add_login' | 'add_documents';
+  context?: { trip_id: string; purpose: 'visa' };
+}
+
 export const checkOpenVote = bodyChecker<OpenVoteBody>(bodies.openVote);
 export const checkAddBooking = bodyChecker<AddBookingBody>(bodies.addBooking);
 export const checkUpdateBooking = bodyChecker<UpdateBookingBody>(bodies.updateBooking);
@@ -659,14 +719,18 @@ export const checkPutBudget = bodyChecker<PutBudgetBody>(bodies.putBudget);
 export const checkCreateTrip = bodyChecker<CreateTripBody>(bodies.createTrip);
 export const checkReadTrip = bodyChecker<ReadTripBody>(bodies.readTrip);
 export const checkPatchTrip = bodyChecker<PatchTripBody>(bodies.patchTrip);
+export const checkPauseGo = bodyChecker<PauseGoBody>(bodies.pauseGo);
 export const checkNudge = bodyChecker<NudgeBody>(bodies.nudge);
 export const checkAddDevice = bodyChecker<AddDeviceBody>(bodies.addDevice);
 export const checkPostMessage = bodyChecker<PostMessageBody>(bodies.postMessage);
+export const checkEditMessage = bodyChecker<EditMessageBody>(bodies.editMessage);
 export const checkPutReaction = bodyChecker<PutReactionBody>(bodies.putReaction);
 export const checkCardAction = bodyChecker<CardActionBody>(bodies.cardAction);
 export const checkCastVote = bodyChecker<CastVoteBody>(bodies.castVote);
 export const checkUpload = bodyChecker<UploadBody>(bodies.upload);
 export const checkLiveTicket = bodyChecker<LiveTicketBody>(bodies.liveTicket);
+export const checkCarryOver = bodyChecker<CarryOverBody>(bodies.carryOver);
+export const checkVaultLink = bodyChecker<VaultLinkBody>(bodies.vaultLink);
 export const checkAddExpense = bodyChecker<AddExpenseBody>(bodies.addExpense);
 export const checkPatchExpense = bodyChecker<PatchExpenseBody>(bodies.patchExpense);
 export const checkDisputeExpense = bodyChecker<DisputeExpenseBody>(bodies.disputeExpense);

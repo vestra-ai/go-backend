@@ -1,5 +1,6 @@
 // What the section files share: the dependencies the shell hands them, the small JSON-schema pieces for Fastify's own
-// body checks, and the two ways a trip route runs for a signed-in person.
+// checks of a query string or the dev sign-in body (every app body is strict: src/api/bodies.ts), and the two ways a
+// trip route runs for a signed-in person.
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Features } from '../../config.js';
 import type { Ctx } from '../../context.js';
@@ -46,10 +47,6 @@ export const OPTIONAL_AUTH = { config: { public: true, optionalAuth: true } } as
 
 export const str = { type: 'string', minLength: 1, maxLength: 4000 } as const;
 export const id = { type: 'string', minLength: 1, maxLength: 64 } as const;
-export const bool = { type: 'boolean' } as const;
-export const minor = { type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER } as const;
-/** A JSON body with these fields. The limits are the contract's, so what the app sends always fits Go's events. */
-export const body = (properties: Record<string, object>, required: string[] = []) => ({ schema: { body: { type: 'object', required, properties } } });
 
 /** The route params every trip route has. The HTTP edge is loosely typed; the domain functions are not. */
 export type TripRequest = FastifyRequest & { params: { trip: string; [k: string]: string }; body: any; query: any };

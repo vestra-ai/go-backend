@@ -2,6 +2,7 @@
 // knows about a person, forget me and vault links. A person is waiting for each one, so none is
 // sent again on its own: a failure is shown to them and they try again.
 import { createHash } from 'node:crypto';
+import type { VaultLinkBody } from '../api/bodies.js';
 import type { Ctx } from '../context.js';
 import { check, METHODS } from '../contract/index.js';
 import { newId } from '../db/ids.js';
@@ -134,9 +135,9 @@ export const getPerson = (go: GoClient, personId: string) => askGo(go, 'get_pers
 export const updateCarryOver = (go: GoClient, personId: string, carryOver: boolean) => askGo(go, 'update_person', { person_id: personId, carry_over: carryOver });
 export const deleteFact = (go: GoClient, personId: string, factId: string) => askGo(go, 'delete_fact', { person_id: personId, fact_id: factId });
 
-export type VaultStart = 'home' | 'add_card' | 'add_login' | 'add_documents';
+export type VaultStart = NonNullable<VaultLinkBody['start']>;
 /** Why the vault page is opened (GO-CHANGES 2.2): the visa form for a trip. Passport data never touches the server. */
-export type VaultContext = { trip_id: string; purpose: 'visa' };
+export type VaultContext = NonNullable<VaultLinkBody['context']>;
 
 /** A short-lived link to the person's vault page, for the system browser sheet. Never kept, never put in a push. */
 export const vaultLink = (go: GoClient, personId: string, start?: VaultStart, context?: VaultContext) =>

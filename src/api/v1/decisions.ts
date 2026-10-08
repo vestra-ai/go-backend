@@ -4,9 +4,13 @@ import type { Ctx } from '../../context.js';
 import { answerMandate, cancelDecision, castVote, closeVoteByPerson, getDecision, getRecord, redoRecordLine, retractVote, undoRecordLine } from '../../domain/actions.js';
 import { conflict, invalid } from '../../domain/errors.js';
 import { openPersonVote } from '../../domain/votes-bookings.js';
+import { RateLimiter } from '../rate-limit.js';
 import { checkCastVote, checkOpenVote } from '../bodies.js';
 import { SECTIONS, type RouteMeta } from './meta.js';
 import { inTrip, requirePressKey, withTrip, type V1Deps } from './shared.js';
+
+/** App contract Appendix A: 20 votes a minute per person (cast, moved or taken back). */
+export const VOTES_PER_MINUTE = 20;
 
 const decision = {
   decision_id: 'd_01JA', question: 'Where do we stay?', kind: 'choice', anonymous: false, status: 'open', opened_by_person_id: 'p_priya',
@@ -20,8 +24,8 @@ const refused = (status: number, code: string, msg: string) => ({ name: code, st
 export const routes: RouteMeta[] = [
   {
     method: 'GET', path: '/app/v1/trips/:trip/decisions/:id', section: SECTIONS.decisions, title: 'Read a vote',
-    summary: 'The Decision plus my_vote ({ option_index } | { flexible: true } | null), to redraw a vote card. flexible_count when anyone is flexible.',
-    example: { responses: [{ name: 'decision', status: 200, body: decision }] },
+    summary: 'The Decision plus my_vote ({ option_index } | { flexible: true } | null), to redraw a vote card. flexible_count when anyone is flexible; cancels_booking_id on a vote about cancelling a booking (as in TripView.decisions and the needs-you target).',
+    example: { responses: [{ name: 'decision', status: 200, body: decision }, { name: 'a cancellation vote', status: 200, body: { ...decision, decision_id: 'd_01JB', question: 'Cancel this booking?', kind: 'yesno', options: [{ label: 'Yes, cancel' }, { label: 'No, keep it' }], closes_at: '2026-10-09T07:00:00Z', cancels_booking_id: 'b_01JA' } }] },
   },
   {
     method: 'POST', path: '/app/v1/trips/:trip/decisions', section: SECTIONS.decisions, title: 'Open a vote',
@@ -33,8 +37,8 @@ export const routes: RouteMeta[] = [
   },
   {
     method: 'PUT', path: '/app/v1/trips/:trip/decisions/:id/vote', section: SECTIONS.decisions, title: 'Vote',
-    summary: '{ option_index } casts or moves your vote; { flexible: true } says "any of these work" (counts in voted, not in the tally; only when features.vote_flexible, else 409). Until the vote closes (409 after). It closes by itself when everyone has voted. Answers the Decision with my_vote.',
-    example: { body: { option_index: 0 }, responses: [{ name: 'voted', status: 200, body: decision }, refused(409, 'conflict', 'decision d_01JA is closed')] },
+    summary: `{ option_index } casts or moves your vote; { flexible: true } says "any of these work" (counts in voted, not in the tally; only when features.vote_flexible, else 409). Until the vote closes (409 after). It closes by itself when everyone has voted. Answers the Decision with my_vote. ${VOTES_PER_MINUTE} votes a minute per person (429), taking one back included.`,
+    example: { body: { option_index: 0 }, responses: [{ name: 'voted', status: 200, body: decision }, refused(409, 'conflict', 'decision d_01JA is closed'), { name: 'rate_limited', status: 429, body: { error: { code: 'rate_limited', message: `at most ${VOTES_PER_MINUTE} votes a minute: slow down`, field: null, retry_after_seconds: 42, request_id: 'req_01JA7Q3V8Z' } } }] },
   },
   {
     method: 'DELETE', path: '/app/v1/trips/:trip/decisions/:id/vote', section: SECTIONS.decisions, title: 'Take a vote back',
@@ -81,14 +85,17 @@ export const routes: RouteMeta[] = [
 export function register(app: FastifyInstance, ctx: Ctx, deps: V1Deps): void {
   app.get('/app/v1/trips/:trip/decisions/:id', inTrip(ctx, (req, trip, me) => getDecision(ctx, trip, me, req.params.id!)));
   app.post('/app/v1/trips/:trip/decisions', inTrip(ctx, (req, trip, me) => (requirePressKey(req), openPersonVote(ctx, trip, me, checkOpenVote(req.body))), 201));
+  const votes = new RateLimiter(() => ctx.limits?.votesPerMinute ?? VOTES_PER_MINUTE, 60_000, { what: 'votes' });
   app.put('/app/v1/trips/:trip/decisions/:id/vote', withTrip((t, me, r) => {
     const { option_index, flexible } = checkCastVote(r.body);
     if ((option_index === undefined) === (flexible === undefined)) throw invalid('send option_index or flexible: true, not both', option_index === undefined ? 'option_index' : 'flexible');
     if (flexible && !deps.features.vote_flexible) throw conflict('"I\'m flexible" is not on yet (features.vote_flexible)');
+    votes.take(me);
     return castVote(ctx, t, me, r.params.id!, flexible ? { flexible: true } : { option_index: option_index! });
   }));
   app.delete('/app/v1/trips/:trip/decisions/:id/vote', withTrip((t, me, r) => {
     if (!deps.features.vote_retract) throw conflict('taking a vote back is not on yet (features.vote_retract)');
+    votes.take(me);
     return retractVote(ctx, t, me, r.params.id!);
   }));
   app.post('/app/v1/trips/:trip/decisions/:id/close', withTrip((t, me, r) => closeVoteByPerson(ctx, t, me, r.params.id!)));

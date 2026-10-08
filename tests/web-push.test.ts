@@ -3,7 +3,7 @@ import webpush from 'web-push';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/api/app.js';
 import { pushClosingSoon } from '../src/jobs/votes.js';
-import { LogPush, pushPayload, upgradeNotification } from '../src/push/push.js';
+import { LogPush, pushPayload } from '../src/push/push.js';
 import { WebPushSender, createPush, isAllowedPushEndpoint, payloadOf, type SendFn } from '../src/push/web-push.js';
 import { appApi } from './helpers/app-api.js';
 import { rows, startHarness, type Harness } from './helpers/harness.js';
@@ -136,7 +136,7 @@ describe('delivery', () => {
   it('deletes a subscription the push service says is gone, and keeps one after any other failure without logging its address or keys; the write already succeeded', async () => {
     await subscribe('p_meher', FCM);
     svc.set('gone');
-    await sender.send(['p_meher'], { body: 'x', data: { trip_id: 't_goa' } });
+    await sender.send(['p_meher'], pushPayload({ type: 'nudge', trip_id: 't_goa', title: 'Goa 🌴', body: 'x' }));
     await sender.drain();
     const afterGone = await subscriptionOwner(FCM);
     await subscribe('p_meher', FCM);
@@ -155,19 +155,19 @@ describe('delivery', () => {
     const limited = own({ sendTimeoutMs: 60, drainWaitMs: 2000 });
     ours.set('hang');
     const t0 = Date.now();
-    await limited.send(['p_kabir'], { body: 'x', data: { trip_id: 't_goa' } });
+    await limited.send(['p_kabir'], pushPayload({ type: 'nudge', trip_id: 't_goa', title: 'Goa 🌴', body: 'x' }));
     await limited.drain();
     const hangEnded = Date.now() - t0 < 1500;
     ours.release();
     let finished = false;
     const slowish: SendFn = async () => (await sleep(80), void (finished = true));
     const finishing = new WebPushSender({ pool: h.pool, vapid: VAPID, send: slowish, sendTimeoutMs: 4000, drainWaitMs: 2000 });
-    await finishing.send(['p_kabir'], { body: 'x', data: { trip_id: 't_goa' } });
+    await finishing.send(['p_kabir'], pushPayload({ type: 'nudge', trip_id: 't_goa', title: 'Goa 🌴', body: 'x' }));
     await finishing.drain();
     const finishedBeforeDrainReturned = finished;
     const stuck = own({ sendTimeoutMs: 5000, drainWaitMs: 150 });
     ours.set('hang');
-    await stuck.send(['p_kabir'], { body: 'x', data: { trip_id: 't_goa' } });
+    await stuck.send(['p_kabir'], pushPayload({ type: 'nudge', trip_id: 't_goa', title: 'Goa 🌴', body: 'x' }));
     const t1 = Date.now();
     await stuck.drain();
     const bounded = Date.now() - t1 < 1500;
@@ -214,10 +214,6 @@ describe('the payload per type (app contract §8), and the notifications switch'
     expect(p('checkin', {})).toMatchObject({ deep_link: '/trips/t_goa', tag: 't_goa:checkin' });
     for (const type of ['owe', 'settlement', 'nudge', 'expense']) expect(p(type, { id: 'x' })).toMatchObject({ deep_link: '/trips/t_goa/expenses', tag: `t_goa:${type}:x` });
     expect(Object.keys(p('owe'))).not.toContain('badge_count');
-    // The shape from before phase 4 is upgraded at delivery: a message is a mention, anything else a nudge unless data.type says.
-    expect(upgradeNotification({ body: 'b', data: { trip_id: 't_goa', message_id: 'm_9' } }, 'Goa 🌴')).toMatchObject({ type: 'mention', title: 'Goa 🌴', deep_link: '/trips/t_goa/chat?msg=m_9' });
-    expect(upgradeNotification({ body: 'b', data: { trip_id: 't_goa' } }, 'Goa 🌴')).toMatchObject({ type: 'nudge', deep_link: '/trips/t_goa/expenses', tag: 't_goa:nudge' });
-    expect(upgradeNotification({ body: 'b', data: { trip_id: 't_goa', type: 'settlement' } }, 'Goa 🌴')).toMatchObject({ type: 'settlement', tag: 't_goa:settlement' });
   });
 
   it('a mention, a card, an owe and a vote closing soon each reach the browser with their type, the trip\'s title and the deep link', async () => {
@@ -254,14 +250,14 @@ describe('the payload per type (app contract §8), and the notifications switch'
     expect(received(from)).toEqual([{ type: 'joined', trip_id: 't_goa', title: 'Goa 🌴', body: 'Asha joined Goa 🌴', deep_link: '/trips/t_goa', tag: `t_goa:joined:${asha.id}` }]);
   });
 
-  it('a person with notifications off gets nothing, from any site: the domain drops them before the sender, and the sender drops them again for a legacy caller; on again, they are back', async () => {
+  it('a person with notifications off gets nothing, from any site: the domain drops them before the sender, and the sender drops them again for a payload handed to it directly; on again, they are back', async () => {
     await h.pool.query('delete from push_subscriptions');
     await subscribe('p_meher', 'https://fcm.googleapis.com/fcm/send/meher');
     await t.api(t.as('p_meher'), 'PATCH', '/app/v1/me', { notifications_enabled: false });
     const from = svc.calls.length;
     await h.go.call('post_message', { request_id: 'rq_off_1', trip_id: 't_goa', text: 'Meher?', mentions: ['p_meher'] });
     await t.api(t.as('p_rahul'), 'POST', '/app/v1/trips/t_goa/expenses', { paid_by_person_id: 'p_rahul', amount_minor: 20000, note: 'Chai', category: 'food', split_person_ids: ['p_rahul', 'p_meher'] });
-    await sender.send(['p_meher'], { body: 'legacy', data: { trip_id: 't_goa' } }); // a call site that bypasses sendPush
+    await sender.send(['p_meher'], pushPayload({ type: 'nudge', trip_id: 't_goa', title: 'Goa 🌴', body: 'direct' })); // a payload that did not come through sendPush
     await sleep(100);
     await sender.drain();
     expect(svc.calls.length - from).toBe(0);

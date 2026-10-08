@@ -6,6 +6,7 @@ import type { Ctx } from '../context.js';
 import { newId } from '../db/ids.js';
 import { withTx } from '../db/pool.js';
 import { emit, nextSeq } from '../db/write-change.js';
+import { sendPush } from '../push/send.js';
 import { Forbidden, formatMoney, requireMember } from './actions.js';
 import { conflict, invalid, notFound } from './errors.js';
 import { moneyChanged } from './expenses.js';
@@ -24,7 +25,7 @@ export interface NewSettlement {
 /**
  * The caller paid `to_person_id` outside Go. The payee must be someone else in the trip and the amount in the trip's
  * currency (422 otherwise). Answers the settlement, the transfers as they now stand, and the change number. The payee
- * is pushed to confirm.
+ * is pushed to confirm (§8 `settlement`, tagged by the settlement).
  */
 export async function recordSettlement(ctx: Ctx, tripId: string, personId: string, input: NewSettlement): Promise<{ settlement: Settlement; transfers: Transfer[]; seq: number }> {
   return withTx(ctx.pool, async (db, after) => {
@@ -43,7 +44,7 @@ export async function recordSettlement(ctx: Ctx, tripId: string, personId: strin
     const { money } = await tripMoney(db, tripId);
     const payer = (await db.query('select name from people where person_id = $1', [personId])).rows[0]?.name ?? 'Someone';
     after(() => moneyChanged(ctx, tripId, seq));
-    after(() => ctx.push.send([input.to_person_id], { type: 'settlement', body: `${payer} says they paid you ${formatMoney(input.amount_minor, input.currency)}. Got it?`, data: { trip_id: tripId } }));
+    after(() => sendPush(ctx, tripId, [input.to_person_id], { type: 'settlement', body: `${payer} says they paid you ${formatMoney(input.amount_minor, input.currency)}. Got it?`, id: row.settlement_id }));
     return { settlement: settlementOf(row), transfers: money.transfers, seq };
   });
 }

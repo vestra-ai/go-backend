@@ -1,5 +1,5 @@
 // The "Run in order" folder of the Postman collection: one end-to-end run of the app API against the local dev stack
-// (`pnpm dev:stack --features checkin`), with a check on every answer and the ids saved to the environment as it goes.
+// (`pnpm dev:stack --features checkin,visa,calls`), with a check on every answer and the ids saved to the environment as it goes.
 // scripts/postman-build.ts turns these steps into Postman requests with their pre-request and test scripts. Nothing here
 // touches the server: when a step disagrees with the server, it is the step (or the contract) that needs looking at.
 //
@@ -151,6 +151,11 @@ export const journeys: JourneyFolder[] = [
         checks: [['attachment photo with a signed link, size and caption', "j.attachments.length === 1 && j.attachments[0].kind === 'photo' && j.attachments[0].upload_id === env('uploadId') && /^https?:\\/\\//.test(j.attachments[0].url) && j.attachments[0].caption === 'Seats' && j.attachments[0].width === 1280"]],
         save: { messageId3: 'j.message_id' } },
       { name: 'An upload of the wrong type: 422', method: 'POST', url: `${B}/uploads`, body: { purpose: 'chat_attachment', kind: 'photo', mime: 'image/gif', size_bytes: 10 }, status: 422, checks: [['invalid, field mime', "j.error.code === 'invalid' && j.error.field === 'mime'"]] },
+      { name: 'Priya signs a profile photo', method: 'POST', url: `${B}/uploads`, as: 'token2', body: { purpose: 'profile_photo', kind: 'photo', mime: 'image/png', size_bytes: 3 }, status: 201, save: { photoUploadId: 'j.upload_id', photoUploadUrl: 'j.upload_url' } },
+      { name: 'PUT the photo bytes', method: 'PUT', url: '{{photoUploadUrl}}', as: 'none', body: 'PNG', headers: { 'Content-Type': 'image/png', 'x-upsert': 'false' }, noIdempotency: true, status: 200 },
+      { name: 'Priya makes it her profile photo (PATCH /me photo_upload_id)', method: 'PATCH', url: `${B}/me`, as: 'token2', body: { photo_upload_id: '{{photoUploadId}}' }, status: 200,
+        checks: [['Me with the stored photo link and seq', "j.person_id === env('personId2') && /^https?:\\/\\//.test(j.photo_url) && typeof j.seq === 'number'"]] },
+      { name: 'The same upload again: 422 photo_upload_id (taken once)', method: 'PATCH', url: `${B}/me`, as: 'token2', body: { photo_upload_id: '{{photoUploadId}}' }, status: 422, checks: [['invalid, field photo_upload_id', "j.error.code === 'invalid' && j.error.field === 'photo_upload_id'"]] },
     ],
   },
   {
@@ -225,7 +230,7 @@ export const journeys: JourneyFolder[] = [
       { name: 'Priya\'s money view: what she owes', method: 'GET', url: `${T}/money`, as: 'token2', status: 200, checks: [['me.i_owe has Aarav ₹3,400', "j.me.i_owe.some(t => t.to_person_id === env('personId') && t.amount_minor === 340000) && j.me.owed_to_me.length === 0"]] },
       { name: 'Transactions, newest first', method: 'GET', url: `${T}/transactions?filter=all&limit=50`, status: 200, checks: [['rows with expense_status, total_count, next_cursor', "j.items.some(r => r.expense_id === env('expenseId') && r.expense_status === 'approved' && r.kind === 'booking') && j.total_count >= 2 && 'next_cursor' in j"]] },
       { name: 'Priya pays Aarav by UPI: the link', method: 'POST', url: `${T}/transfers/pay-link`, as: 'token2', body: { to_person_id: '{{personId}}', amount_minor: 340000 }, status: 200, checks: [['upi://pay link and expiry', "/^upi:\\/\\/pay\\?pa=/.test(j.upi_uri) && /am=3400\\.00/.test(j.upi_uri) && typeof j.expires_at === 'string'"]] },
-      { name: 'Aarav nudges Priya', method: 'POST', url: `${T}/transfers/nudge`, body: { from_person_id: '{{personId2}}' }, status: 200, checks: [['reminded, next allowed in a day', "j.reminded === true && typeof j.nudge_allowed_at === 'string'"]] },
+      { name: 'Aarav nudges Priya: 204', method: 'POST', url: `${T}/transfers/nudge`, body: { from_person_id: '{{personId2}}' }, status: 204, description: 'Accepted, not delivered: the reminder is a push to Priya (type nudge), best-effort.' },
       { name: 'Again within 24 hours: 429 with Retry-After', method: 'POST', url: `${T}/transfers/nudge`, body: { from_person_id: '{{personId2}}' }, status: 429, checks: [['rate_limited with retry_after_seconds and the header', "j.error.code === 'rate_limited' && j.error.retry_after_seconds > 0 && Number(pm.response.headers.get('Retry-After')) > 0"]] },
       { name: 'Priya records the payment', method: 'POST', url: `${T}/settlements`, as: 'token2', body: { to_person_id: '{{personId}}', amount_minor: 340000, currency: 'INR', method: 'upi', note: 'cab share' }, status: 201,
         checks: [['settlement pending_confirmation; transfers already shrink', "j.settlement && j.settlement.status === 'pending_confirmation' && Array.isArray(j.transfers) && !j.transfers.some(t => t.from_person_id === env('personId2')) && typeof j.seq === 'number'"]], save: { settlementId: 'j.settlement.settlement_id' } },
@@ -243,7 +248,7 @@ export const journeys: JourneyFolder[] = [
     description: 'A booking a member adds (§4.10) with its passengers; passengers and documents are shown only to the people the booking covers (§1.7, rev 3); the itinerary in its two scopes; a vote to cancel the booking (rev 3 §4.4), called off by its opener so the flight stays for check-in.',
     steps: [
       { name: 'Aarav adds his flight (covers only him)', method: 'POST', url: `${T}/bookings`, body: { kind: 'flight', title: 'BLR → GOX · 6E 5313', vendor: 'ixigo', ref: 'K7QX2M', amount_minor: 1184000, payer_person_id: '{{personId}}', for_person_ids: ['{{personId}}'], starts_at: '2026-11-06T14:10:00Z', ends_at: '2026-11-06T16:25:00Z', journey: JOURNEY, details: [{ label: 'Baggage', value: '15 kg' }], passengers: [{ person_id: '{{personId}}', pnr: 'K7QX2M' }] }, status: 201,
-        checks: [['booking_id and seq', '/^b_/.test(j.booking_id) && j.seq > 0']], save: { bookingId: 'j.booking_id' } },
+        checks: [['the Booking as Aarav sees it (confirmed, his passenger row, documents []) plus seq', "/^b_/.test(j.booking_id) && j.status === 'confirmed' && j.currency === 'INR' && j.added_by_person_id === env('personId') && j.passengers.length === 1 && Array.isArray(j.documents) && j.seq > 0"]], save: { bookingId: 'j.booking_id' } },
       { name: 'A passenger who is not covered: 422', method: 'POST', url: `${T}/bookings`, body: { kind: 'cab', title: 'Airport cab', vendor: 'Uber', ref: 'U1', amount_minor: 160000, payer_person_id: '{{personId}}', for_person_ids: ['{{personId}}'], passengers: [{ person_id: '{{personId2}}' }] }, status: 422, checks: [['invalid, field passengers[0].person_id', "j.error.code === 'invalid' && j.error.field === 'passengers[0].person_id'"]] },
       { name: 'Bookings as Aarav: passengers and documents shown', method: 'GET', url: `${T}/bookings`, status: 200, checks: [['his booking with passengers[], documents[], details', "j.items.some(b => b.booking_id === env('bookingId') && Array.isArray(b.passengers) && Array.isArray(b.documents) && b.details.length === 1 && b.status === 'confirmed') && typeof j.seq === 'number'"]] },
       { name: 'One booking as Priya: no passengers, no documents (not covered)', method: 'GET', url: `${T}/bookings/{{bookingId}}`, as: 'token2', status: 200, checks: [['the booking without those two keys', "j.booking_id === env('bookingId') && j.passengers === undefined && j.documents === undefined && j.journey && j.journey.number === '5313'"]] },
@@ -254,9 +259,8 @@ export const journeys: JourneyFolder[] = [
       { name: 'Itinerary, just me', method: 'GET', url: `${T}/itinerary?scope=me`, status: 200, checks: [['days[] and seq', "Array.isArray(j.days) && typeof j.seq === 'number'"]] },
       { name: 'Itinerary for everyone', method: 'GET', url: `${T}/itinerary`, as: 'token2', status: 200, checks: [['days[]', 'Array.isArray(j.days)']] },
       { name: 'Priya proposes cancelling the flight', method: 'POST', url: `${T}/bookings/{{bookingId}}/cancel-vote`, as: 'token2', body: {}, status: 201, checks: [['decision_id and seq', '/^d_/.test(j.decision_id) && j.seq > 0']], save: { cancelDecisionId: 'j.decision_id' } },
-      { name: 'The vote: yes/no, closes in 24 h', method: 'GET', url: `${T}/decisions/{{cancelDecisionId}}`, status: 200, checks: [['yes/no, not anonymous, closes_at set, no result yet', "j.kind === 'yesno' && j.anonymous === false && typeof j.closes_at === 'string' && j.status === 'open'"]],
-        description: 'Note: this single-decision read does not carry `cancels_booking_id`; the TripView\'s decisions (next request) and the needs-you target do.' },
-      { name: 'In the TripView it carries cancels_booking_id', method: 'GET', url: `${T}?include=decisions`, status: 200, checks: [['the decision names the booking', "j.decisions.some(d => d.decision_id === env('cancelDecisionId') && d.cancels_booking_id === env('bookingId'))"]] },
+      { name: 'The vote: yes/no, closes in 24 h, names the booking', method: 'GET', url: `${T}/decisions/{{cancelDecisionId}}`, status: 200, checks: [['yes/no, not anonymous, closes_at set, no result yet, cancels_booking_id', "j.kind === 'yesno' && j.anonymous === false && typeof j.closes_at === 'string' && j.status === 'open' && j.cancels_booking_id === env('bookingId')"]] },
+      { name: 'In the TripView it carries cancels_booking_id too', method: 'GET', url: `${T}?include=decisions`, status: 200, checks: [['the decision names the booking', "j.decisions.some(d => d.decision_id === env('cancelDecisionId') && d.cancels_booking_id === env('bookingId'))"]] },
       { name: 'In Aarav\'s strip too', method: 'GET', url: `${T}/needs-you`, status: 200, checks: [['a vote item with target.cancels_booking_id', "j.items.some(i => i.kind === 'vote' && i.target.decision_id === env('cancelDecisionId') && i.target.cancels_booking_id === env('bookingId'))"]] },
       { name: 'Proposing again while it is open: 409', method: 'POST', url: `${T}/bookings/{{bookingId}}/cancel-vote`, body: {}, status: 409, checks: [ERR('conflict')] },
       { name: 'Priya calls the vote off', method: 'POST', url: `${T}/decisions/{{cancelDecisionId}}/cancel`, as: 'token2', body: {}, status: 200, checks: [['cancelled', "j.status === 'cancelled'"]] },
@@ -291,7 +295,7 @@ export const journeys: JourneyFolder[] = [
       { name: 'Vault link: add a card', method: 'POST', url: `${B}/me/vault-link`, body: { start: 'add_card' }, status: 200, checks: [['an https link with an expiry; never cached', "/^https:\\/\\//.test(j.url) && typeof j.expires_at === 'string'"]] },
       { name: 'Vault link: the visa documents (200 with features.visa, else 422 start)', method: 'POST', url: `${B}/me/vault-link`, body: { start: 'add_documents', context: { trip_id: '{{tripId}}', purpose: 'visa' } }, status: [200, 422],
         checks: [['matches the flag', "env('featureVisa') === 'true' ? (pm.response.code === 200 && /^https:\\/\\//.test(j.url)) : (pm.response.code === 422 && j.error.field === 'start')"]] },
-      { name: 'Priya pauses Go', method: 'PATCH', url: `${T}/me`, as: 'token2', body: { go_paused: true }, status: 200, checks: [['seq', "typeof j.seq === 'number'"]] },
+      { name: 'Priya pauses Go', method: 'PATCH', url: `${T}/me`, as: 'token2', body: { go_paused: true }, status: 200, checks: [['her own Person, go_paused true, plus seq', "j.person_id === env('personId2') && j.go_paused === true && j.role === 'member' && typeof j.seq === 'number'"]] },
       { name: 'Her answers say so', method: 'GET', url: `${T}/me`, as: 'token2', status: 200, checks: [['go_paused true', 'j.go_paused === true']] },
       { name: 'Priya unpauses Go', method: 'PATCH', url: `${T}/me`, as: 'token2', body: { go_paused: false }, status: 200 },
       { name: 'Priya: forget me in this trip', method: 'DELETE', url: `${B}/me/go?trip_id={{tripId}}`, as: 'token2', status: 200, checks: [['deleted_facts, remaining_facts 0', "typeof j.deleted_facts === 'number' && j.remaining_facts === 0"]] },
@@ -309,6 +313,8 @@ export const journeys: JourneyFolder[] = [
       { name: 'An unknown route: 404', method: 'GET', url: `${B}/nope`, status: 404, checks: [ERR('not_found')] },
       { name: 'An unknown field: 422 naming it', method: 'POST', url: `${B}/trips`, body: { title: 'Manali', bogus: 1 }, status: 422, checks: [['invalid, field bogus', "j.error.code === 'invalid' && j.error.field === 'bogus'"]] },
       { name: 'A wrong type: 422 naming the field', method: 'PUT', url: `${T}/me/budget`, body: { min_minor: '15000' }, status: 422, checks: [['invalid, field min_minor', "j.error.code === 'invalid' && j.error.field === 'min_minor'"]] },
+      { name: 'Pause Go with an unknown field: 422 (strict like every body)', method: 'PATCH', url: `${T}/me`, body: { go_paused: true, bogus: 1 }, status: 422, checks: [['invalid, field bogus', "j.error.code === 'invalid' && j.error.field === 'bogus'"]] },
+      { name: 'A vault link with an unknown context field: 422', method: 'POST', url: `${B}/me/vault-link`, body: { start: 'add_documents', context: { trip_id: '{{tripId}}', purpose: 'visa', extra: 1 } }, status: 422, checks: [['invalid, field context.extra', "j.error.code === 'invalid' && j.error.field === 'context.extra'"]] },
       { name: 'Broken JSON: 400', method: 'POST', url: `${B}/trips`, body: '{ "title": ', status: 400, checks: [ERR('bad_request')] },
       { name: 'Neither an option nor flexible: 422', method: 'PUT', url: `${T}/decisions/{{decisionId}}/vote`, body: {}, status: 422, checks: [['invalid', "j.error.code === 'invalid'"]] },
       { name: 'Idempotency-Key: the first write', method: 'POST', url: `${T}/messages`, body: { client_message_id: 'cm-{{runId}}-k1', text: 'once' }, headers: { 'Idempotency-Key': 'journey-{{runId}}' }, status: 201, save: { idemMessageId: 'j.message_id' } },
@@ -321,7 +327,7 @@ export const journeys: JourneyFolder[] = [
     name: '13. Leaving',
     description: 'Priya leaves (§4.4); from then on every route of the trip answers 403 for her, and the TripView has one person.',
     steps: [
-      { name: 'Priya leaves the trip', method: 'POST', url: `${T}/leave`, as: 'token2', body: {}, status: 200, checks: [['seq', "typeof j.seq === 'number'"]] },
+      { name: 'Priya leaves the trip: 204', method: 'POST', url: `${T}/leave`, as: 'token2', body: {}, status: 204 },
       { name: 'She can no longer read it: 403', method: 'GET', url: T, as: 'token2', status: 403, checks: [ERR('forbidden')] },
       { name: 'Aarav is alone', method: 'GET', url: `${T}?include=people`, status: 200, checks: [['one person', "j.people.length === 1 && j.people[0].person_id === env('personId')"]] },
       { name: 'Her home no longer lists it', method: 'GET', url: `${B}/home`, as: 'token2', status: 200, checks: [['not in trips', "!j.trips.some(t => t.trip_id === env('tripId'))"]] },

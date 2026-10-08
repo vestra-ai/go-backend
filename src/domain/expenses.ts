@@ -11,6 +11,7 @@ import type { Db } from '../db/pool.js';
 import { withTx } from '../db/pool.js';
 import { change } from '../db/write-change.js';
 import type { LiveEvent } from '../live/live.js';
+import { sendPush } from '../push/send.js';
 import { Forbidden, formatMoney, pushOwed, requireMember } from './actions.js';
 import { conflict, invalid, notFound } from './errors.js';
 import { expenseView, loadExpenses, type ConfirmationRow, type ExpenseStatusRow, type ExpenseView } from './ledger.js';
@@ -91,9 +92,9 @@ const payerOrOrganizer = (row: ExpenseStatusRow, personId: string, role: string,
   if (row.paid_by_person_id !== personId && role !== 'organizer') throw new Forbidden(`only the payer or the organizer can ${what} an expense`);
 };
 
-// ---------------------------------------------------------------- pushes (§8 `expense`)
+// ---------------------------------------------------------------- pushes (§8 `expense`, tagged by the expense)
 
-/** "<payer> added <note> · your share ₹1,700. Approve?" to the people whose entry is pending. */
+/** "<payer> added <note> · your share ₹1,700. Approve?" to the people whose entry is pending (each their own share, so one push each). */
 export async function pushApprovals(ctx: Ctx, tripId: string, expense: ExpenseView, to: string[]): Promise<void> {
   if (to.length === 0) return;
   const people = await activePeople(ctx.pool, tripId);
@@ -101,7 +102,7 @@ export async function pushApprovals(ctx: Ctx, tripId: string, expense: ExpenseVi
   const shares = sharesOf(expense, people.map((p) => p.person_id));
   const payer = names.get(expense.paid_by_person_id) ?? 'Someone';
   for (const id of to) {
-    await ctx.push.send([id], { type: 'expense', body: `${payer} added ${expense.note} · your share ${formatMoney(shares.get(id) ?? 0, expense.currency)}. Approve?`, data: { trip_id: tripId } });
+    await sendPush(ctx, tripId, [id], { type: 'expense', body: `${payer} added ${expense.note} · your share ${formatMoney(shares.get(id) ?? 0, expense.currency)}. Approve?`, id: expense.expense_id });
   }
 }
 
@@ -115,8 +116,8 @@ export async function tellSplit(ctx: Ctx, tripId: string, expense: ExpenseView):
 /** "<name> disputed <note>: <reason>. Fix the split or remove it." to the payer. */
 async function pushDispute(ctx: Ctx, tripId: string, expense: ExpenseView, byPersonId: string, reason: string | undefined): Promise<void> {
   const who = (await ctx.pool.query('select name from people where person_id = $1', [byPersonId])).rows[0]?.name ?? 'Someone';
-  const body = `${who} disputed ${expense.note}${reason ? `: ${reason}` : ''}. Fix the split or remove it.`.slice(0, 300);
-  await ctx.push.send([expense.paid_by_person_id], { type: 'expense', body, data: { trip_id: tripId } });
+  const body = `${who} disputed ${expense.note}${reason ? `: ${reason}` : ''}. Fix the split or remove it.`;
+  await sendPush(ctx, tripId, [expense.paid_by_person_id], { type: 'expense', body, id: expense.expense_id });
 }
 
 // ---------------------------------------------------------------- what people do

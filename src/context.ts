@@ -16,8 +16,8 @@ export interface Ctx {
   /** GO_SPEND_PRIVATE_KEY (PEM) */
   spendPrivateKey: string;
   now?: () => Date;
-  /** Rate limits a test may loosen; the defaults are the app contract's. */
-  limits?: { messagesPerMinute?: number };
+  /** Rate limits a test may loosen or tighten; the defaults are the app contract's (Appendix A). */
+  limits?: { messagesPerMinute?: number; reactionsPerMinute?: number; cardTapsPerMinute?: number; votesPerMinute?: number; vaultLinksPerMinute?: number; uploadsPerMinute?: number };
   /** The feature flags the environment set (the rest take their defaults): the domain reads the ones that change a rule, such as `expense_approval`. */
   features?: Partial<Features>;
 }

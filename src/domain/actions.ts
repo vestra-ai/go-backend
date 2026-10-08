@@ -25,7 +25,7 @@ import { moneyOf, sharesOf } from './money.js';
 import { loadMessageForApp } from './room.js';
 import { activePeople, buildSnapshot } from './snapshot.js';
 import { joinedText, leftText, personName, postSystemMessage, tripCreatedText } from './system-messages.js';
-import type { Decision, Mandate, Message, RecordLine } from './types.js';
+import type { Decision, Mandate, Message, Person, RecordLine } from './types.js';
 import { closeDecision, lockBooking, lockDecision, votesOf } from './voting.js';
 
 export class Forbidden extends Error {}
@@ -215,15 +215,15 @@ export async function leaveTrip(ctx: Ctx, tripId: string, personId: string) {
   });
 }
 
-/** "Pause Go in this trip": the person's later messages still reach Go, as `withheld`, with no words. */
-export async function setGoPaused(ctx: Ctx, tripId: string, personId: string, paused: boolean) {
+/** "Pause Go in this trip": the person's later messages still reach Go, as `withheld`, with no words. Answers the person's own Person (whole) plus the change number. */
+export async function setGoPaused(ctx: Ctx, tripId: string, personId: string, paused: boolean): Promise<Person & { seq: number }> {
   return withTx(ctx.pool, async (db, after) => {
     await requireMember(db, tripId, personId);
     await db.query('update trip_people set go_paused = $3 where trip_id = $1 and person_id = $2', [tripId, personId, paused]);
-    const person = (await activePeople(db, tripId)).find((p) => p.person_id === personId)!;
-    const seq = await change(db, tripId, 'person.updated', { person: personForGo(person), changed: ['go_paused'] });
+    const person = personForGo((await activePeople(db, tripId)).find((p) => p.person_id === personId)!);
+    const seq = await change(db, tripId, 'person.updated', { person, changed: ['go_paused'] });
     after(() => ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['people'] }));
-    return { seq };
+    return { ...person, seq };
   });
 }
 
@@ -362,15 +362,22 @@ export async function setReaction(ctx: Ctx, tripId: string, personId: string, me
 
 // ---------------------------------------------------------------- votes, mandates and the record
 
-/** A Decision as the app reads it: the contract's object plus this person's own vote (app contract §4.8). */
-export type DecisionForPerson = Decision & { my_vote: { option_index: number } | { flexible: true } | null };
+/**
+ * A Decision as the app reads it: the contract's object plus this person's own vote (app contract §4.8) and, on a vote about
+ * cancelling a booking, `cancels_booking_id` (as the TripView's decisions and the needs-you target carry it; Go never sees it).
+ */
+export type DecisionForPerson = Decision & { my_vote: { option_index: number } | { flexible: true } | null; cancels_booking_id?: string };
 
 const myVoteOf = (votes: VoteRow[], personId: string): DecisionForPerson['my_vote'] => {
   const mine = votes.find((v) => v.person_id === personId);
   return !mine ? null : mine.flexible ? { flexible: true } : { option_index: mine.option_index! };
 };
 
-export const decisionForPerson = (row: DecisionRow, votes: VoteRow[], personId: string): DecisionForPerson => ({ ...decisionOf(row, votes), my_vote: myVoteOf(votes, personId) });
+export const decisionForPerson = (row: DecisionRow, votes: VoteRow[], personId: string): DecisionForPerson => ({
+  ...decisionOf(row, votes),
+  ...(row.cancels_booking_id ? { cancels_booking_id: row.cancels_booking_id } : {}),
+  my_vote: myVoteOf(votes, personId),
+});
 
 export async function getDecision(ctx: Ctx, tripId: string, personId: string, decisionId: string): Promise<DecisionForPerson> {
   const row = (await ctx.pool.query<DecisionRow>('select * from decisions where decision_id = $1 and trip_id = $2', [decisionId, tripId])).rows[0];

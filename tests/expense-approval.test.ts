@@ -65,7 +65,7 @@ describe('scenario 21: Priya adds an expense split 4 ways', () => {
     h.push.sent.length = 0;
     const r = await t.api(t.as('p_kabir'), 'POST', `${trip}/expenses/${cab}/dispute`, { reason: 'I took the bus' });
     expect([r.status, r.body.status, r.body.confirmations[1]]).toEqual([200, 'disputed', { person_id: 'p_kabir', state: 'disputed', at: expect.any(String), reason: 'I took the bus' }]);
-    expect(h.push.sent).toEqual([{ to: ['p_priya'], n: { type: 'expense', body: 'Kabir disputed Airport cab: I took the bus. Fix the split or remove it.', data: { trip_id: 't_goa' } } }]);
+    expect(h.push.sent).toEqual([{ to: ['p_priya'], n: { type: 'expense', trip_id: 't_goa', title: 'Goa 🌴', body: 'Kabir disputed Airport cab: I took the bus. Fix the split or remove it.', deep_link: '/trips/t_goa/expenses', tag: `t_goa:expense:${cab}` } }]);
     const money = (await t.api(t.as('p_meher'), 'GET', `${trip}/money`)).body;
     expect([money.spent_minor, money.by_category, money.transfers, money.me.spent_minor, money.me.i_owe]).toEqual([0, [], [], 0, []]);
     expect((await h.go.call('read_trip', { trip_id: 't_goa' })).result.money.transfers).toEqual([]);
@@ -132,7 +132,7 @@ describe("Go's add_expense", () => {
     const snap = (await h.go.call('read_trip', { trip_id: 't_goa' })).result;
     expect(snap.expenses.find((x: any) => x.expense_id === r.result.expense_id)).toMatchObject({ status: 'pending', confirmations: [{ person_id: 'p_priya', state: 'pending' }] });
     expect(check('TripSnapshot', snap)).toMatchObject({ ok: true });
-    expect(h.push.sent).toEqual([{ to: ['p_priya'], n: { type: 'expense', body: 'Rahul added Villa deposit · your share ₹200. Approve?', data: { trip_id: 't_goa' } } }]);
+    expect(h.push.sent).toEqual([{ to: ['p_priya'], n: { type: 'expense', trip_id: 't_goa', title: 'Goa 🌴', body: 'Rahul added Villa deposit · your share ₹200. Approve?', deep_link: '/trips/t_goa/expenses', tag: `t_goa:expense:${r.result.expense_id}` } }]);
     await t.api(t.as('p_rahul'), 'DELETE', `${trip}/expenses/${r.result.expense_id}`);
   });
 

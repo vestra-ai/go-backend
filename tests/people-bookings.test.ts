@@ -67,10 +67,12 @@ const journey = {
 };
 
 describe('adding a booking', () => {
-  it('stores it with the person, confirmed, no approval and no expense; Go hears the booking and then the booked line; a repeat with the same Idempotency-Key is the same booking', async () => {
+  it('stores it with the person, confirmed, no approval and no expense, and answers 201 Booking as the app sees it plus seq; Go hears the booking and then the booked line; a repeat with the same Idempotency-Key is the same booking', async () => {
     const body = booking({ kind: 'flight', title: 'Flight DEL to GOI', journey, starts_at: '2026-11-06T08:00:00Z', ends_at: '2026-11-06T10:30:00Z', refundable_until: '2026-11-01T00:00:00Z' });
     const r = await add(body);
-    expect([r.status, Object.keys(r.body).sort()]).toEqual([201, ['booking_id', 'seq']]);
+    const { seq, documents, ...stored } = r.body;
+    expect([r.status, typeof seq, documents, check('Booking', stored).ok]).toEqual([201, 'number', [], true]); // Arjun is covered: passengers (none) and documents ([]) are his to see
+    expect(stored).toMatchObject({ booking_id: expect.stringMatching(/^b_/), kind: 'flight', title: 'Flight DEL to GOI', status: 'confirmed', currency: 'INR', added_by_person_id: 'p_arjun', journey, refundable_until: '2026-11-01T00:00:00.000Z' });
     await h.flush();
     const added = t.events('booking.changed').find((e) => e.data.booking.booking_id === r.body.booking_id)!;
     const line = t.events('record.changed').find((e) => e.data.line.booking_id === r.body.booking_id)!;

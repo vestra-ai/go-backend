@@ -160,3 +160,36 @@ describe('the mandate and the record', () => {
     expect((await t.api(as('p_rahul'), 'POST', '/app/v1/trips/t_goa/record/r_nope/redo')).status).toBe(404);
   });
 });
+
+describe('a vote about cancelling a booking', () => {
+  it('carries cancels_booking_id in GET and in the vote answer (as TripView.decisions and the needs-you target do); an ordinary vote has no such key', async () => {
+    const booking = await t.api(as('p_arjun'), 'POST', '/app/v1/trips/t_goa/bookings', { kind: 'stay', title: 'Villa Sol', vendor: 'ixigo', ref: 'R1', amount_minor: 100, payer_person_id: 'p_rahul', for_person_ids: ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'] }, { 'idempotency-key': 'dec-cancel-1' });
+    const bid = booking.body.booking_id as string;
+    const did = (await t.api(as('p_priya'), 'POST', `/app/v1/trips/t_goa/bookings/${bid}/cancel-vote`, {}, { 'idempotency-key': 'dec-cancel-2' })).body.decision_id as string;
+    const mine = await get('p_rahul', did);
+    expect([mine.status, mine.body.cancels_booking_id, mine.body.kind, mine.body.my_vote]).toEqual([200, bid, 'yesno', null]);
+    expect((await vote('p_rahul', did, { option_index: 1 })).body).toMatchObject({ cancels_booking_id: bid, my_vote: { option_index: 1 } });
+    const { my_vote: _m, cancels_booking_id: _c, ...decision } = mine.body;
+    expect(check('Decision', decision)).toMatchObject({ ok: true }); // the rest is the contract's Decision
+    expect('cancels_booking_id' in (await get('p_rahul', await openVote())).body).toBe(false);
+  });
+});
+
+describe('the rate limit (app contract Appendix A: 20 votes a minute per person)', () => {
+  it('the one over the limit is 429 rate_limited with retry_after_seconds and Retry-After, cast and taken back alike; another person is not affected', async () => {
+    const [voter, other] = await Promise.all([t.person('Voter'), t.person('Other voter')]); // nobody has counted a vote of theirs yet
+    for (const who of [voter, other]) await t.api(who, 'POST', '/app/v1/invites/inv_t_goa/accept', {});
+    const did = await openVote();
+    h.ctx.limits = { votesPerMinute: 3 };
+    try {
+      expect((await t.api(voter, 'PUT', `/app/v1/trips/t_goa/decisions/${did}/vote`, { option_index: 0 })).status).toBe(200);
+      expect((await t.api(voter, 'PUT', `/app/v1/trips/t_goa/decisions/${did}/vote`, { option_index: 1 })).status).toBe(200);
+      expect((await t.api(voter, 'DELETE', `/app/v1/trips/t_goa/decisions/${did}/vote`)).status).toBe(200);
+      const r = await t.api(voter, 'PUT', `/app/v1/trips/t_goa/decisions/${did}/vote`, { option_index: 0 });
+      expect([r.status, r.body.error.code, r.body.error.retry_after_seconds > 0, Number(r.headers['retry-after']) === r.body.error.retry_after_seconds]).toEqual([429, 'rate_limited', true, true]);
+      expect((await t.api(other, 'PUT', `/app/v1/trips/t_goa/decisions/${did}/vote`, { option_index: 0 })).status).toBe(200); // per person
+    } finally {
+      delete h.ctx.limits;
+    }
+  });
+});

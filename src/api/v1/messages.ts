@@ -5,9 +5,13 @@ import type { Ctx } from '../../context.js';
 import { deleteMessage, editMessage, postPersonMessage, setReaction } from '../../domain/actions.js';
 import { catchUp } from '../../domain/ask-go.js';
 import { pageMessages } from '../../domain/room.js';
-import { checkPostMessage, checkPutReaction } from '../bodies.js';
+import { RateLimiter } from '../rate-limit.js';
+import { checkEditMessage, checkPostMessage, checkPutReaction } from '../bodies.js';
 import { SECTIONS, type RouteMeta } from './meta.js';
-import { body, inTrip, str, withTrip, type V1Deps } from './shared.js';
+import { inTrip, withTrip, type V1Deps } from './shared.js';
+
+/** App contract Appendix A: 20 reactions a minute per person per trip. */
+export const REACTIONS_PER_MINUTE = 20;
 
 const message = {
   message_id: 'm_01JA7R', seq: 42, updated_seq: 42, author: { kind: 'person', person_id: 'p_priya' }, text: 'in, but only after 6pm fri',
@@ -29,7 +33,7 @@ export const routes: RouteMeta[] = [
   },
   {
     method: 'PATCH', path: '/app/v1/trips/:trip/messages/:id', section: SECTIONS.messages, title: 'Edit a message',
-    summary: 'Edit your own message { text }. Answers the Message (edited_at set). 403 not yours, 409 deleted.',
+    summary: 'Edit your own message { text } (1-4000, strict). Answers the Message (edited_at set). 403 not yours, 409 deleted.',
     example: { body: { text: 'in, after 7pm fri' }, responses: [{ name: 'edited', status: 200, body: { ...message, text: 'in, after 7pm fri', updated_seq: 43, edited_at: '2026-10-08T07:06:00Z' } }] },
   },
   {
@@ -39,8 +43,8 @@ export const routes: RouteMeta[] = [
   },
   {
     method: 'PUT', path: '/app/v1/trips/:trip/messages/:id/reaction', section: SECTIONS.messages, title: 'React',
-    summary: '{ emoji | null }: your one reaction on a message. A new emoji replaces the old one (Go hears reaction.removed, then reaction.added); null takes it back. Answers the Message.',
-    example: { body: { emoji: '🔥' }, responses: [{ name: 'reacted', status: 200, body: { ...message, updated_seq: 45, reactions: [{ emoji: '🔥', person_id: 'p_rahul' }] } }] },
+    summary: `{ emoji | null }: your one reaction on a message. A new emoji replaces the old one (Go hears reaction.removed, then reaction.added); null takes it back. Answers the Message. ${REACTIONS_PER_MINUTE} a minute per person per trip (429).`,
+    example: { body: { emoji: '🔥' }, responses: [{ name: 'reacted', status: 200, body: { ...message, updated_seq: 45, reactions: [{ emoji: '🔥', person_id: 'p_rahul' }] } }, { name: 'rate_limited', status: 429, body: { error: { code: 'rate_limited', message: `at most ${REACTIONS_PER_MINUTE} reactions a minute: slow down`, field: null, retry_after_seconds: 42, request_id: 'req_01JA7Q3V8Z' } } }] },
   },
   {
     method: 'GET', path: '/app/v1/trips/:trip/catch-up', section: SECTIONS.messages, title: 'Catch-up',
@@ -58,9 +62,14 @@ export function register(app: FastifyInstance, ctx: Ctx, deps: V1Deps): void {
     ...inTrip(ctx, (req, trip) => pageMessages(ctx, trip, req.query)),
   });
   app.post('/app/v1/trips/:trip/messages', withTrip((trip, me, r) => postPersonMessage(ctx, trip, me, checkPostMessage(r.body)), 201));
-  app.patch('/app/v1/trips/:trip/messages/:id', { ...body({ text: str }, ['text']), ...withTrip((trip, me, r) => editMessage(ctx, trip, me, r.params.id!, r.body.text)) });
+  app.patch('/app/v1/trips/:trip/messages/:id', withTrip((trip, me, r) => editMessage(ctx, trip, me, r.params.id!, checkEditMessage(r.body).text)));
   app.delete('/app/v1/trips/:trip/messages/:id', withTrip((trip, me, r) => deleteMessage(ctx, trip, me, r.params.id!)));
-  app.put('/app/v1/trips/:trip/messages/:id/reaction', withTrip((trip, me, r) => setReaction(ctx, trip, me, r.params.id!, checkPutReaction(r.body).emoji)));
+  const reactions = new RateLimiter(() => ctx.limits?.reactionsPerMinute ?? REACTIONS_PER_MINUTE, 60_000, { what: 'reactions' });
+  app.put('/app/v1/trips/:trip/messages/:id/reaction', withTrip((trip, me, r) => {
+    const { emoji } = checkPutReaction(r.body);
+    reactions.take(`${me}:${trip}`);
+    return setReaction(ctx, trip, me, r.params.id!, emoji);
+  }));
   app.get('/app/v1/trips/:trip/catch-up', {
     schema: { querystring: { type: 'object', properties: { force: { type: 'string', enum: ['1', '0', 'true', 'false'] } } } },
     handler: async (req: any, reply) => {

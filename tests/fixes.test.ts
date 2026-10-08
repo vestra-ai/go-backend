@@ -67,8 +67,11 @@ describe('A2: bad app input answers 422 with the standard error (400 only for un
     ['a card press with an action id the contract refuses', 'POST', `/app/v1/trips/${T}/cards/c_any/actions`, { action_id: 'Pick' }, 422],
     ['a card press with no action', 'POST', `/app/v1/trips/${T}/cards/c_any/actions`, {}, 422],
     ['pausing Go with no answer', 'PATCH', `/app/v1/trips/${T}/me`, {}, 422],
+    ['pausing Go with a string', 'PATCH', `/app/v1/trips/${T}/me`, { go_paused: 'true' }, 422],
     ['a vault link to a page that does not exist', 'POST', '/app/v1/me/vault-link', { start: 'bogus' }, 422],
     ['carry-over with no value', 'PATCH', '/app/v1/me/go', {}, 422],
+    ['carry-over with a string', 'PATCH', '/app/v1/me/go', { carry_over: 'yes' }, 422],
+    ['an edit with no text', 'PATCH', `/app/v1/trips/${T}/messages/m_any`, {}, 422],
   ];
   for (const [what, method, url, body, status] of bad) {
     it(`${what}: ${status}`, async () => {
@@ -77,6 +80,21 @@ describe('A2: bad app input answers 422 with the standard error (400 only for un
       expect(r.body.error.code).toBe('invalid');
     });
   }
+
+  it('the four routes that once used Fastify\'s own check are strict like the rest: an unknown field is 422 naming it, nothing is coerced', async () => {
+    const unknown: Array<[Method, string, unknown, string]> = [
+      ['PATCH', `/app/v1/trips/${T}/messages/m_any`, { text: 'x', bogus: 1 }, 'bogus'],
+      ['PATCH', `/app/v1/trips/${T}/me`, { go_paused: true, bogus: 1 }, 'bogus'],
+      ['PATCH', '/app/v1/me/go', { carry_over: true, bogus: 1 }, 'bogus'],
+      ['POST', '/app/v1/me/vault-link', { start: 'add_card', bogus: 1 }, 'bogus'],
+      ['POST', '/app/v1/me/vault-link', { start: 'add_documents', context: { trip_id: T, purpose: 'visa', extra: 1 } }, 'context.extra'],
+      ['POST', '/app/v1/me/vault-link', { context: { trip_id: T } }, 'context.purpose'],
+    ];
+    for (const [method, url, body, field] of unknown) {
+      const r = await api('p_rahul', method, url, body);
+      expect([url, r.status, r.body.error.code, r.body.error.field]).toEqual([url, 422, 'invalid', field]);
+    }
+  });
 
   it('join answers over the contract limits: 422, naming the field', async () => {
     const stranger = await h.signIn('New');
@@ -154,7 +172,7 @@ describe('A4: the "you owe" push comes from money.transfers', () => {
     // Asha pays ₹1,000 for both: Ben is asked to approve his ₹500 share (phase 3: the "you owe" push is for an expense that needs no approval).
     h.push.sent.length = 0;
     const dinner = await api(asha!, 'POST', `/app/v1/trips/${t.trip_id}/expenses`, { paid_by_person_id: a, amount_minor: 100000, note: 'Dinner', category: 'food', split_person_ids: [a, b] });
-    expect(h.push.sent).toEqual([{ to: [b], n: { type: 'expense', body: 'Asha added Dinner · your share ₹500. Approve?', data: { trip_id: t.trip_id } } }]);
+    expect(h.push.sent).toEqual([{ to: [b], n: { type: 'expense', trip_id: t.trip_id, title: 'Owe test', body: 'Asha added Dinner · your share ₹500. Approve?', deep_link: `/trips/${t.trip_id}/expenses`, tag: `${t.trip_id}:expense:${dinner.body.expense_id}` } }]);
     await api(ben!, 'POST', `/app/v1/trips/${t.trip_id}/expenses/${dinner.body.expense_id}/approve`);
     // Ben pays ₹200 for both through the vault (approved at once, so the "you owe" rule runs): Asha's share is ₹100, but she is still owed ₹400 overall, so she gets no push.
     h.push.sent.length = 0;

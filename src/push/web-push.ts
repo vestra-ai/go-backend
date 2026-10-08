@@ -5,8 +5,8 @@
 import { parse as legacyParse } from 'node:url';
 import type pg from 'pg';
 import webpush from 'web-push';
-import { LogPush, isLegacyNotification, upgradeNotification } from './push.js';
-import type { Notification, Push, PushPayload } from './push.js';
+import { LogPush } from './push.js';
+import type { Push, PushPayload } from './push.js';
 
 export interface Vapid {
   publicKey: string;
@@ -113,25 +113,18 @@ export class WebPushSender implements Push {
   }
 
   /** Returns at once. The work happens in the background: a slow or failing push service never touches the caller. */
-  send(personIds: string[], notification: Notification): Promise<void> {
+  send(personIds: string[], payload: PushPayload): Promise<void> {
     if (personIds.length === 0) return Promise.resolve();
-    const task: Promise<void> = this.deliver(personIds, notification)
+    const task: Promise<void> = this.deliver(personIds, payload)
       .catch((err) => this.log(`web push delivery failed: ${err instanceof Error ? err.name : 'error'}`))
       .finally(() => this.inflight.delete(task));
     this.inflight.add(task);
     return Promise.resolve();
   }
 
-  /** The payload as sent: a legacy notification gets the trip's title and the rest of the new shape here. */
-  private async payloadFor(notification: Notification): Promise<string> {
-    if (!isLegacyNotification(notification)) return payloadOf(notification);
-    const title = ((await this.o.pool.query('select title from trips where trip_id = $1', [notification.data.trip_id])).rows[0]?.title as string | undefined) ?? 'Go';
-    return payloadOf(upgradeNotification(notification, title));
-  }
-
-  private async deliver(personIds: string[], notification: Notification): Promise<void> {
-    const payload = await this.payloadFor(notification);
-    // Only people whose notifications switch is on (app contract §8): checked here too, for a caller that did not go through sendPush.
+  private async deliver(personIds: string[], p: PushPayload): Promise<void> {
+    const payload = payloadOf(p);
+    // Only people whose notifications switch is on (app contract §8): sendPush dropped them already; checked again here at delivery time, in case the switch went off since.
     const { rows } = await this.o.pool.query(
       'select s.endpoint, s.p256dh, s.auth from push_subscriptions s join people p using (person_id) where s.person_id = any($1) and p.notifications_enabled',
       [personIds],

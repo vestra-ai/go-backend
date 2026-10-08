@@ -10,6 +10,7 @@ import { withTx } from '../db/pool.js';
 import { change, emit, nextSeq } from '../db/write-change.js';
 import type { AddBookingBody, CancelVoteBody, OpenVoteBody, UpdateBookingBody } from '../api/bodies.js';
 import { assertPeopleInTrip } from '../requests/guards.js';
+import { bookingForApp, type BookingForApp } from './bookings.js';
 import { conflict, invalid, notFound } from './errors.js';
 import { bookingOf, compact, decisionOf, recordLineOf } from './mappers.js';
 import type { BookingRow, RecordLineRow } from './mappers.js';
@@ -66,8 +67,10 @@ const endsBeforeStarts = (starts: Date | null, ends: Date | null) => !!starts &&
  * expense. Go hears `booking.changed` (added, by the person) and then the booked line in the record as its own change,
  * as on Go's path. Where the booking names a vote that has already been decided, that decided line becomes the booked line.
  * The 1.1 fields (`details`, `return_journey`, `passengers`) are stored as sent; each passenger must be a covered person.
+ * Answers the stored Booking as the person may see it (§1.7: passengers only when it covers them; it has no documents yet)
+ * plus the change number of `booking.changed`.
  */
-export async function addPersonBooking(ctx: Ctx, tripId: string, personId: string, input: AddBookingBody) {
+export async function addPersonBooking(ctx: Ctx, tripId: string, personId: string, input: AddBookingBody): Promise<BookingForApp & { seq: number }> {
   return withTx(ctx.pool, async (db, after) => {
     await requireMember(db, tripId, personId);
     const currency = (await db.query('select currency from trips where trip_id = $1', [tripId])).rows[0]!.currency as string;
@@ -112,7 +115,7 @@ export async function addPersonBooking(ctx: Ctx, tripId: string, personId: strin
     await emit(db, tripId, lineSeq, 'record.changed', { line: recordLineOf(line), change: decided ? 'updated' : 'added', by: { kind: 'system' } });
     await postSystemMessage(ctx, db, after, tripId, bookedText(input.title)); // the room's pill (D8), after the events
     after(() => ctx.live.publish(tripId, { kind: 'trip', seq: lineSeq, kinds: ['booking', 'record'] }));
-    return { booking_id: booking.booking_id, seq };
+    return { ...bookingForApp(bookingOf(booking), [], personId), seq };
   });
 }
 

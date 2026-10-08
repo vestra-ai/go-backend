@@ -8,6 +8,7 @@ import { change } from '../db/write-change.js';
 import { check } from '../contract/index.js';
 import type { PatchMeBody, PatchTripBody, PatchTripMeBody, PutBudgetBody } from '../api/bodies.js';
 import { Forbidden, requireMember as requireMemberTx } from './actions.js';
+import { resolveUploadUrl } from './attachments.js';
 import { invalid, notFound } from './errors.js';
 import { BUDGET_BANDS, knowWithVibe } from './join-answers.js';
 import { assertDate, assertItinerarySize } from './limits.js';
@@ -67,20 +68,24 @@ export async function getMyProfile(ctx: Ctx, personId: string): Promise<Me> {
 type ProfileEdit = PatchMeBody & { upi_id?: string | null };
 
 /**
- * Edits the person's name, photo link, UPI id, default "travelling from" and notifications switch. One transaction locks the
+ * Edits the person's name, photo, UPI id, default "travelling from" and notifications switch. One transaction locks the
  * person's row first, writes, and then tells every trip the person is in now (in ascending trip id, so two edits by people who
  * share trips cannot cross): one `person.updated` each, with `changed` drawn from name, photo_url and has_upi (has_upi only when
  * it flips). A new UPI id that replaces another, the default city and the switch change nothing Go can see, so they send
  * nothing. Go never receives the UPI text or the email. `seq` is the last change number written, or null when nothing was sent.
+ * A `photo_upload_id` (a `profile_photo` upload of the person's, taken once: 422 when it is not theirs, used or expired) becomes
+ * the stored photo link, inside the same transaction, so a refused upload writes nothing.
  */
 async function editProfile(ctx: Ctx, personId: string, input: ProfileEdit): Promise<Me & { seq: number | null }> {
+  if (input.photo_upload_id !== undefined && input.photo_url !== undefined) throw invalid('send photo_upload_id or photo_url, not both', 'photo_upload_id');
   return withTx(ctx.pool, async (db, after) => {
     const cur = (await db.query<PersonRecord>(`select ${PERSON_COLUMNS} from people where person_id = $1 for no key update`, [personId])).rows[0];
     if (!cur) throw notFound(`person ${personId} does not exist`);
+    const photoUrl = input.photo_upload_id !== undefined ? await resolveUploadUrl(ctx, db, personId, input.photo_upload_id) : input.photo_url;
     const next: PersonRecord = {
       ...cur,
       name: input.name ?? cur.name,
-      photo_url: input.photo_url === undefined ? cur.photo_url : input.photo_url,
+      photo_url: photoUrl === undefined ? cur.photo_url : photoUrl,
       upi_id: input.upi_id === undefined ? cur.upi_id : input.upi_id,
       from_city_default: input.from_city === undefined ? cur.from_city_default : input.from_city,
       notifications_enabled: input.notifications_enabled ?? cur.notifications_enabled,
@@ -114,7 +119,7 @@ async function editProfile(ctx: Ctx, personId: string, input: ProfileEdit): Prom
   });
 }
 
-/** PATCH /me: name, photo link, default city, notifications switch. */
+/** PATCH /me: name, photo (an upload of mine, or a link), default city, notifications switch. */
 export const updateMyProfile = (ctx: Ctx, personId: string, input: PatchMeBody) => editProfile(ctx, personId, input);
 
 /** PUT /me/upi (a validated id) and DELETE /me/upi (null). Go hears `has_upi` only when it flips. */

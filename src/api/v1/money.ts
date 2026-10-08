@@ -54,8 +54,8 @@ export const routes: RouteMeta[] = [
     example: { responses: [{ name: 'Disputed', status: 200, body: { ...SETTLEMENT, status: 'disputed', responded_at: '2026-11-07T09:05:00.000Z' } }, { name: 'Already answered', status: 409, body: ERR('conflict', 'settlement st_01 is already confirmed') }] } },
   { method: 'POST', path: '/app/v1/trips/:trip/transfers/pay-link', section: SECTIONS.money, title: 'Pay by UPI', summary: '{ to_person_id, amount_minor } → { upi_uri: "upi://pay?pa=…&pn=…&am=…&cu=INR&tn=…", expires_at (+10 min) }. Only to someone you owe in the current transfers (422). 409 when the payee is not in the trip or has no UPI id (has_upi false): record the payment instead.',
     example: { body: { to_person_id: 'p_aarav', amount_minor: 170000 }, responses: [{ name: 'Link', status: 200, body: { upi_uri: 'upi://pay?pa=aarav%40okhdfc&pn=Aarav%20Shah&am=1700.00&cu=INR&tn=Goa%20%F0%9F%8C%B4%20%C2%B7%20settle%20up', expires_at: '2026-11-07T09:10:00.000Z' } }, { name: 'No UPI id', status: 409, body: ERR('conflict', 'Aarav Shah has no UPI id saved: record the payment instead') }] } },
-  { method: 'POST', path: '/app/v1/trips/:trip/transfers/nudge', section: SECTIONS.money, title: 'Nudge', summary: '{ from_person_id }: remind someone who owes you (409 when they do not). One per person per trip every 24 hours: 429 with retry_after_seconds and Retry-After after that. Answers { reminded: true, nudge_allowed_at }.',
-    example: { body: { from_person_id: 'p_priya' }, responses: [{ name: 'Reminded', status: 200, body: { reminded: true, nudge_allowed_at: '2026-11-08T09:00:00.000Z' } }, { name: 'Too soon', status: 429, body: ERR('rate_limited', 'p_priya was reminded recently: try again later', null, 86340) }] } },
+  { method: 'POST', path: '/app/v1/trips/:trip/transfers/nudge', section: SECTIONS.money, title: 'Nudge', summary: '{ from_person_id }: remind someone who owes you (409 when they do not). One per person per trip every 24 hours: 429 with retry_after_seconds and Retry-After after that. 204: the reminder was accepted (not that it arrived).',
+    example: { body: { from_person_id: 'p_priya' }, responses: [{ name: 'Reminded', status: 204 }, { name: 'Too soon', status: 429, body: ERR('rate_limited', 'p_priya was reminded recently: try again later', null, 86340) }] } },
 ];
 
 /** `?status=` on the expenses list: one of the three standings, or none. */
@@ -102,5 +102,7 @@ export function register(app: FastifyInstance, ctx: Ctx, _deps: V1Deps): void {
 
   // ---- the settle_up card's buttons
   app.post('/app/v1/trips/:trip/transfers/pay-link', inTrip(ctx, (req, trip, me) => payLinkFor(ctx, trip, me, checkPayLink(req.body))));
-  app.post('/app/v1/trips/:trip/transfers/nudge', inTrip(ctx, (req, trip, me) => nudgePerson(ctx, trip, me, checkNudge(req.body))));
+  app.post('/app/v1/trips/:trip/transfers/nudge', inTrip(ctx, async (req, trip, me) => {
+    await nudgePerson(ctx, trip, me, checkNudge(req.body));
+  }, 204));
 }

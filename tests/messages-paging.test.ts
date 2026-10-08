@@ -90,6 +90,20 @@ describe('the rate limit', () => {
       delete h.ctx.limits;
     }
   });
+
+  it('a person\'s 21st reaction in a minute in one trip is 429 rate_limited with retry_after_seconds and Retry-After (app contract Appendix A); another person is not affected', async () => {
+    const mid = await insert('m_react', 'react to me');
+    const react = (who: string, emoji: string | null) => t.api(t.as(who), 'PUT', `/app/v1/trips/t_goa/messages/m_react/reaction`, { emoji });
+    h.ctx.limits = { reactionsPerMinute: 3 };
+    try {
+      for (const emoji of ['🔥', '👍', null]) expect((await react('p_arjun', emoji)).status).toBe(200);
+      const r = await react('p_arjun', '🔥');
+      expect([r.status, r.body.error.code, r.body.error.retry_after_seconds > 0, Number(r.headers['retry-after']) === r.body.error.retry_after_seconds, mid > 0]).toEqual([429, 'rate_limited', true, true, true]);
+      expect((await react('p_kabir', '🔥')).status).toBe(200); // per person
+    } finally {
+      delete h.ctx.limits;
+    }
+  });
 });
 
 describe('quick replies from Go (GO-CHANGES 1.3)', () => {

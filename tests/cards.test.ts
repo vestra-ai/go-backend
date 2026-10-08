@@ -171,3 +171,20 @@ describe('POST /cards/:card_id/share', () => {
     }
   });
 });
+
+describe('the rate limit on taps (app contract Appendix A: 10 a minute per person per trip; a repeat of one press_id is free)', () => {
+  it('counts distinct presses: the one over the limit is 429 rate_limited with retry_after_seconds and Retry-After, a press already seen still goes through, another person is not affected', async () => {
+    await post({ ...fakeCard('notice', 'c_taps', 'p_rahul'), actions: [{ action_id: 'ok', label: 'OK', style: 'primary' }] });
+    const tap = (who: string, press: string) => t.api(t.as(who), 'POST', '/app/v1/trips/t_goa/cards/c_taps/actions', { action_id: 'ok', press_id: press });
+    h.ctx.limits = { cardTapsPerMinute: 2 };
+    try {
+      expect([(await tap('p_meher', 'press-1')).status, (await tap('p_meher', 'press-1')).status, (await tap('p_meher', 'press-2')).status]).toEqual([200, 200, 200]); // two presses, one of them twice
+      const r = await tap('p_meher', 'press-3');
+      expect([r.status, r.body.error.code, r.body.error.retry_after_seconds > 0, Number(r.headers['retry-after']) === r.body.error.retry_after_seconds]).toEqual([429, 'rate_limited', true, true]);
+      expect((await tap('p_meher', 'press-1')).status).toBe(200); // a retry of a press that got through is still free
+      expect((await tap('p_arjun', 'press-1')).status).toBe(200); // per person
+    } finally {
+      delete h.ctx.limits;
+    }
+  });
+});

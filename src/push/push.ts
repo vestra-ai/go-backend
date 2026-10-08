@@ -18,23 +18,6 @@ export interface PushPayload {
   tag: string;
 }
 
-/**
- * The shape pushes had before phase 4: the text and where a tap goes. Still accepted by every sender, so a call site that
- * has not moved yet (and the money phase's `settlement` and `expense` pushes, written at the same time as this) keeps
- * working: the sender fills in the trip's title and the rest. `data.type` names the type when the caller knows it; without
- * it a push about a message is a `mention` and any other is a `nudge` (today's only legacy caller without a message).
- */
-export interface LegacyNotification {
-  /** The type, when the caller knows it (the money pushes name theirs here). */
-  type?: PushType;
-  body: string;
-  data: { trip_id: string; message_id?: string; type?: PushType };
-}
-
-export type Notification = PushPayload | LegacyNotification;
-
-export const isLegacyNotification = (n: Notification): n is LegacyNotification => 'data' in n;
-
 /** The push types whose tap lands on the Expenses tab. */
 const MONEY: ReadonlySet<PushType> = new Set(['owe', 'settlement', 'nudge', 'expense']);
 
@@ -52,7 +35,7 @@ export interface PushInput {
   title: string;
   body: string;
   message_id?: string;
-  /** The thing the push is about when it is not a message (a vote, a payee, a joiner): part of the tag. */
+  /** The thing the push is about when it is not a message (a vote, a payee, an expense, a settlement, a nudger, a joiner, a booking): part of the tag. */
   id?: string;
 }
 
@@ -69,19 +52,14 @@ export function pushPayload(input: PushInput): PushPayload {
   };
 }
 
-/** A legacy notification as the new payload, once the trip's title is known. */
-export function upgradeNotification(n: LegacyNotification, title: string): PushPayload {
-  const type = n.type ?? n.data.type ?? (n.data.message_id ? 'mention' : 'nudge');
-  return pushPayload({ type, trip_id: n.data.trip_id, title, body: n.body, message_id: n.data.message_id });
-}
-
 /**
  * Pushes go out only when someone needs to look now (app contract §8): Go names them, a new card needs them, a vote is
- * about to close for them, they owe money, someone paid them or nudged them, a friend joined their trip. Never for every
- * message. Callers go through `sendPush` (src/push/send.ts), which drops people whose notifications are off.
+ * about to close for them, they owe money, an expense needs their approval, someone paid them or nudged them, a friend
+ * joined their trip, check-in opened. Never for every message. Every caller goes through `sendPush` (src/push/send.ts),
+ * which drops people whose notifications are off and fills in the trip's title: a sender only receives finished payloads.
  */
 export interface Push {
-  send(personIds: string[], notification: Notification): Promise<void>;
+  send(personIds: string[], payload: PushPayload): Promise<void>;
   /** Waits (for a bounded time) for notifications still being delivered: called once when the server shuts down. */
   drain?(): Promise<void>;
 }
@@ -90,9 +68,8 @@ export interface Push {
 export class LogPush implements Push {
   constructor(private readonly log: (msg: string) => void = console.log) {}
 
-  async send(personIds: string[], n: Notification): Promise<void> {
+  async send(personIds: string[], p: PushPayload): Promise<void> {
     if (personIds.length === 0) return;
-    const type = isLegacyNotification(n) ? n.type ?? n.data.type ?? 'legacy' : n.type;
-    this.log(`push (${type}) to ${personIds.join(',')}: ${n.body.slice(0, 80)}`);
+    this.log(`push (${p.type}) to ${personIds.join(',')}: ${p.body.slice(0, 80)}`);
   }
 }

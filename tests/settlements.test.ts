@@ -33,7 +33,7 @@ describe('recording a payment', () => {
     expect(r.status).toBe(201);
     expect(r.body.settlement).toEqual({ settlement_id: expect.stringMatching(/^st_/), from_person_id: 'p_priya', to_person_id: 'p_rahul', amount_minor: 15000, currency: 'INR', method: 'upi', note: 'part of dinner', status: 'pending_confirmation', created_at: expect.any(String) });
     expect([owed(r.body.transfers, 'p_priya', 'p_rahul'), owed(r.body.transfers, 'p_arjun', 'p_rahul'), typeof r.body.seq]).toEqual([5000, 20000, 'number']);
-    expect(h.push.sent).toEqual([{ to: ['p_rahul'], n: { type: 'settlement', body: 'Priya says they paid you ₹150. Got it?', data: { trip_id: 't_goa' } } }]);
+    expect(h.push.sent).toEqual([{ to: ['p_rahul'], n: { type: 'settlement', trip_id: 't_goa', title: 'Goa 🌴', body: 'Priya says they paid you ₹150. Got it?', deep_link: '/trips/t_goa/expenses', tag: `t_goa:settlement:${first}` } }]);
     expect(h.live.events.slice(mark).map((e) => e.event)).toEqual([{ kind: 'trip', seq: r.body.seq, kinds: ['settlement', 'expense'] }]);
     // The same maths for Go: provisional counting, and no event for this change number.
     expect(owed(await goTransfers(), 'p_priya', 'p_rahul')).toBe(5000);

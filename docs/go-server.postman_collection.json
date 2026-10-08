@@ -2367,6 +2367,245 @@
                 }
               },
               "response": []
+            },
+            {
+              "name": "Priya signs a profile photo",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const env = (k) => pm.environment.get(k);",
+                      "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "if (pm.response.code < 300) pm.environment.set('photoUploadId', j.upload_id);",
+                      "if (pm.response.code < 300) pm.environment.set('photoUploadUrl', j.upload_url);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}",
+                    "description": "One key per press (§1.4); send the same one when you retry: the first answer is replayed."
+                  }
+                ],
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token2}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/uploads",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "uploads"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"purpose\": \"profile_photo\",\n  \"kind\": \"photo\",\n  \"mime\": \"image/png\",\n  \"size_bytes\": 3\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "PUT the photo bytes",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.request.url = pm.environment.get('photoUploadUrl'); // the whole address, as the server gave it"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const env = (k) => pm.environment.get(k);",
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "image/png"
+                  },
+                  {
+                    "key": "x-upsert",
+                    "value": "false"
+                  }
+                ],
+                "auth": {
+                  "type": "noauth"
+                },
+                "url": {
+                  "raw": "{{photoUploadUrl}}",
+                  "host": [
+                    "{{photoUploadUrl}}"
+                  ],
+                  "path": []
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "PNG",
+                  "options": {
+                    "raw": {
+                      "language": "text"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Priya makes it her profile photo (PATCH /me photo_upload_id)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const env = (k) => pm.environment.get(k);",
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test(\"Me with the stored photo link and seq\", () => pm.expect(j.person_id === env('personId2') && /^https?:\\/\\//.test(j.photo_url) && typeof j.seq === 'number', JSON.stringify(j).slice(0, 400)).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}",
+                    "description": "One key per press (§1.4); send the same one when you retry: the first answer is replayed."
+                  }
+                ],
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token2}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "me"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"photo_upload_id\": \"{{photoUploadId}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "The same upload again: 422 photo_upload_id (taken once)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const env = (k) => pm.environment.get(k);",
+                      "pm.test('status is 422', () => pm.response.to.have.status(422));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test(\"invalid, field photo_upload_id\", () => pm.expect(j.error.code === 'invalid' && j.error.field === 'photo_upload_id', JSON.stringify(j).slice(0, 400)).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}",
+                    "description": "One key per press (§1.4); send the same one when you retry: the first answer is replayed."
+                  }
+                ],
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token2}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "me"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"photo_upload_id\": \"{{photoUploadId}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
             }
           ]
         },
@@ -4888,7 +5127,7 @@
               "response": []
             },
             {
-              "name": "Aarav nudges Priya",
+              "name": "Aarav nudges Priya: 204",
               "event": [
                 {
                   "listen": "test",
@@ -4896,9 +5135,8 @@
                     "type": "text/javascript",
                     "exec": [
                       "const env = (k) => pm.environment.get(k);",
-                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
-                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
-                      "pm.test(\"reminded, next allowed in a day\", () => pm.expect(j.reminded === true && typeof j.nudge_allowed_at === 'string', JSON.stringify(j).slice(0, 400)).to.be.ok);"
+                      "pm.test('status is 204', () => pm.response.to.have.status(204));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
                     ]
                   }
                 }
@@ -4936,7 +5174,8 @@
                       "language": "json"
                     }
                   }
-                }
+                },
+                "description": "Accepted, not delivered: the reminder is a push to Priya (type nudge), best-effort."
               },
               "response": []
             },
@@ -5397,7 +5636,7 @@
                       "const env = (k) => pm.environment.get(k);",
                       "pm.test('status is 201', () => pm.response.to.have.status(201));",
                       "let j = {}; try { j = pm.response.json(); } catch (e) {}",
-                      "pm.test(\"booking_id and seq\", () => pm.expect(/^b_/.test(j.booking_id) && j.seq > 0, JSON.stringify(j).slice(0, 400)).to.be.ok);",
+                      "pm.test(\"the Booking as Aarav sees it (confirmed, his passenger row, documents []) plus seq\", () => pm.expect(/^b_/.test(j.booking_id) && j.status === 'confirmed' && j.currency === 'INR' && j.added_by_person_id === env('personId') && j.passengers.length === 1 && Array.isArray(j.documents) && j.seq > 0, JSON.stringify(j).slice(0, 400)).to.be.ok);",
                       "if (pm.response.code < 300) pm.environment.set('bookingId', j.booking_id);"
                     ]
                   }
@@ -5890,7 +6129,7 @@
               "response": []
             },
             {
-              "name": "The vote: yes/no, closes in 24 h",
+              "name": "The vote: yes/no, closes in 24 h, names the booking",
               "event": [
                 {
                   "listen": "test",
@@ -5900,7 +6139,7 @@
                       "const env = (k) => pm.environment.get(k);",
                       "pm.test('status is 200', () => pm.response.to.have.status(200));",
                       "let j = {}; try { j = pm.response.json(); } catch (e) {}",
-                      "pm.test(\"yes/no, not anonymous, closes_at set, no result yet\", () => pm.expect(j.kind === 'yesno' && j.anonymous === false && typeof j.closes_at === 'string' && j.status === 'open', JSON.stringify(j).slice(0, 400)).to.be.ok);"
+                      "pm.test(\"yes/no, not anonymous, closes_at set, no result yet, cancels_booking_id\", () => pm.expect(j.kind === 'yesno' && j.anonymous === false && typeof j.closes_at === 'string' && j.status === 'open' && j.cancels_booking_id === env('bookingId'), JSON.stringify(j).slice(0, 400)).to.be.ok);"
                     ]
                   }
                 }
@@ -5919,13 +6158,12 @@
                     "decisions",
                     "{{cancelDecisionId}}"
                   ]
-                },
-                "description": "Note: this single-decision read does not carry `cancels_booking_id`; the TripView's decisions (next request) and the needs-you target do."
+                }
               },
               "response": []
             },
             {
-              "name": "In the TripView it carries cancels_booking_id",
+              "name": "In the TripView it carries cancels_booking_id too",
               "event": [
                 {
                   "listen": "test",
@@ -7017,7 +7255,7 @@
                       "const env = (k) => pm.environment.get(k);",
                       "pm.test('status is 200', () => pm.response.to.have.status(200));",
                       "let j = {}; try { j = pm.response.json(); } catch (e) {}",
-                      "pm.test(\"seq\", () => pm.expect(typeof j.seq === 'number', JSON.stringify(j).slice(0, 400)).to.be.ok);"
+                      "pm.test(\"her own Person, go_paused true, plus seq\", () => pm.expect(j.person_id === env('personId2') && j.go_paused === true && j.role === 'member' && typeof j.seq === 'number', JSON.stringify(j).slice(0, 400)).to.be.ok);"
                     ]
                   }
                 }
@@ -7560,6 +7798,109 @@
               "response": []
             },
             {
+              "name": "Pause Go with an unknown field: 422 (strict like every body)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const env = (k) => pm.environment.get(k);",
+                      "pm.test('status is 422', () => pm.response.to.have.status(422));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test(\"invalid, field bogus\", () => pm.expect(j.error.code === 'invalid' && j.error.field === 'bogus', JSON.stringify(j).slice(0, 400)).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}",
+                    "description": "One key per press (§1.4); send the same one when you retry: the first answer is replayed."
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/trips/{{tripId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "trips",
+                    "{{tripId}}",
+                    "me"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"go_paused\": true,\n  \"bogus\": 1\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "A vault link with an unknown context field: 422",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const env = (k) => pm.environment.get(k);",
+                      "pm.test('status is 422', () => pm.response.to.have.status(422));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
+                      "pm.test(\"invalid, field context.extra\", () => pm.expect(j.error.code === 'invalid' && j.error.field === 'context.extra', JSON.stringify(j).slice(0, 400)).to.be.ok);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}",
+                    "description": "One key per press (§1.4); send the same one when you retry: the first answer is replayed."
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/me/vault-link",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "me",
+                    "vault-link"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"start\": \"add_documents\",\n  \"context\": {\n    \"trip_id\": \"{{tripId}}\",\n    \"purpose\": \"visa\",\n    \"extra\": 1\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
               "name": "Broken JSON: 400",
               "event": [
                 {
@@ -7887,7 +8228,7 @@
           "description": "Priya leaves (§4.4); from then on every route of the trip answers 403 for her, and the TripView has one person.",
           "item": [
             {
-              "name": "Priya leaves the trip",
+              "name": "Priya leaves the trip: 204",
               "event": [
                 {
                   "listen": "test",
@@ -7895,9 +8236,8 @@
                     "type": "text/javascript",
                     "exec": [
                       "const env = (k) => pm.environment.get(k);",
-                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
-                      "let j = {}; try { j = pm.response.json(); } catch (e) {}",
-                      "pm.test(\"seq\", () => pm.expect(typeof j.seq === 'number', JSON.stringify(j).slice(0, 400)).to.be.ok);"
+                      "pm.test('status is 204', () => pm.response.to.have.status(204));",
+                      "let j = {}; try { j = pm.response.json(); } catch (e) {}"
                     ]
                   }
                 }
@@ -8212,7 +8552,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"person_id\": \"p_aarav\",\n  \"name\": \"Aarav Shah\",\n  \"email\": \"aarav@gmail.com\",\n  \"photo_url\": \"https://lh3.googleusercontent.com/a/photo\",\n  \"auth_provider\": \"google\",\n  \"from_city\": \"Bengaluru\",\n  \"has_upi\": true,\n  \"upi_id_masked\": \"aar••••@okhdfc\",\n  \"notifications_enabled\": true,\n  \"counts\": {\n    \"active_trips\": 1,\n    \"past_trips\": 2,\n    \"pending_invites\": 1\n  },\n  \"created_at\": \"2026-10-01T09:00:00.000Z\",\n  \"seq\": null\n}"
+              "body": "{\n  \"person_id\": \"p_aarav\",\n  \"name\": \"Aarav Shah\",\n  \"email\": \"aarav@gmail.com\",\n  \"photo_url\": \"https://lh3.googleusercontent.com/a/photo\",\n  \"auth_provider\": \"google\",\n  \"from_city\": \"Bengaluru\",\n  \"has_upi\": true,\n  \"upi_id_masked\": \"aar••••@okhdfc\",\n  \"notifications_enabled\": true,\n  \"counts\": {\n    \"active_trips\": 1,\n    \"past_trips\": 2,\n    \"pending_invites\": 1\n  },\n  \"created_at\": \"2026-10-01T09:00:00.000Z\"\n}"
             }
           ]
         },
@@ -8242,14 +8582,14 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Aarav S\",\n  \"from_city\": \"Bengaluru\",\n  \"notifications_enabled\": true\n}",
+              "raw": "{\n  \"name\": \"Aarav S\",\n  \"photo_upload_id\": \"up_01JC\",\n  \"from_city\": \"Bengaluru\",\n  \"notifications_enabled\": true\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "Change your name, photo link (https), default \"travelling from\" or the notifications switch. Strict body, at least one field. A name or photo change tells every active trip (person.updated).\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+            "description": "Change your name, photo (photo_upload_id: a profile_photo upload of yours, taken once; or photo_url, an https link; not both), default \"travelling from\" or the notifications switch. Strict body, at least one field. A name or photo change tells every active trip (person.updated). Answers Me plus seq.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
           },
           "response": [
             {
@@ -8278,14 +8618,14 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"name\": \"Aarav S\",\n  \"from_city\": \"Bengaluru\",\n  \"notifications_enabled\": true\n}",
+                  "raw": "{\n  \"name\": \"Aarav S\",\n  \"photo_upload_id\": \"up_01JC\",\n  \"from_city\": \"Bengaluru\",\n  \"notifications_enabled\": true\n}",
                   "options": {
                     "raw": {
                       "language": "json"
                     }
                   }
                 },
-                "description": "Change your name, photo link (https), default \"travelling from\" or the notifications switch. Strict body, at least one field. A name or photo change tells every active trip (person.updated).\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "Change your name, photo (photo_upload_id: a profile_photo upload of yours, taken once; or photo_url, an https link; not both), default \"travelling from\" or the notifications switch. Strict body, at least one field. A name or photo change tells every active trip (person.updated). Answers Me plus seq.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
               "status": "OK",
               "code": 200,
@@ -8297,7 +8637,54 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"person_id\": \"p_aarav\",\n  \"name\": \"Aarav S\",\n  \"email\": \"aarav@gmail.com\",\n  \"photo_url\": \"https://lh3.googleusercontent.com/a/photo\",\n  \"auth_provider\": \"google\",\n  \"from_city\": \"Bengaluru\",\n  \"has_upi\": true,\n  \"upi_id_masked\": \"aar••••@okhdfc\",\n  \"notifications_enabled\": true,\n  \"counts\": {\n    \"active_trips\": 1,\n    \"past_trips\": 2,\n    \"pending_invites\": 1\n  },\n  \"created_at\": \"2026-10-01T09:00:00.000Z\",\n  \"seq\": 12\n}"
+              "body": "{\n  \"person_id\": \"p_aarav\",\n  \"name\": \"Aarav S\",\n  \"email\": \"aarav@gmail.com\",\n  \"photo_url\": \"https://<ref>.supabase.co/storage/v1/object/sign/go-files/profile_photo/p_aarav/up_01JC.jpg?token=…\",\n  \"auth_provider\": \"google\",\n  \"from_city\": \"Bengaluru\",\n  \"has_upi\": true,\n  \"upi_id_masked\": \"aar••••@okhdfc\",\n  \"notifications_enabled\": true,\n  \"counts\": {\n    \"active_trips\": 1,\n    \"past_trips\": 2,\n    \"pending_invites\": 1\n  },\n  \"created_at\": \"2026-10-01T09:00:00.000Z\",\n  \"seq\": 12\n}"
+            },
+            {
+              "name": "invalid",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}",
+                    "description": "One key per press (§1.4); send the same one when you retry: the first answer is replayed."
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "me"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Aarav S\",\n  \"photo_upload_id\": \"up_01JC\",\n  \"from_city\": \"Bengaluru\",\n  \"notifications_enabled\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Change your name, photo (photo_upload_id: a profile_photo upload of yours, taken once; or photo_url, an https link; not both), default \"travelling from\" or the notifications switch. Strict body, at least one field. A name or photo change tells every active trip (person.updated). Answers Me plus seq.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"error\": {\n    \"code\": \"invalid\",\n    \"message\": \"photo_upload_id: up_01JC is already used\",\n    \"field\": \"photo_upload_id\",\n    \"retry_after_seconds\": null,\n    \"request_id\": \"a1b2c3d4e5f6\"\n  }\n}"
             }
           ]
         },
@@ -8335,7 +8722,7 @@
                 }
               }
             },
-            "description": "Payment methods → UPI. Validated (name@bank); the id never comes back, only has_upi and a masked form. Go hears has_upi when it flips.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+            "description": "Payment methods → UPI. Validated (name@bank); the id never comes back, only has_upi and a masked form. Go hears has_upi when it flips. Answers Me plus seq.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
           },
           "response": [
             {
@@ -8372,7 +8759,7 @@
                     }
                   }
                 },
-                "description": "Payment methods → UPI. Validated (name@bank); the id never comes back, only has_upi and a masked form. Go hears has_upi when it flips.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "Payment methods → UPI. Validated (name@bank); the id never comes back, only has_upi and a masked form. Go hears has_upi when it flips. Answers Me plus seq.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
               "status": "OK",
               "code": 200,
@@ -8384,10 +8771,10 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"person_id\": \"p_aarav\",\n  \"name\": \"Aarav Shah\",\n  \"email\": \"aarav@gmail.com\",\n  \"photo_url\": \"https://lh3.googleusercontent.com/a/photo\",\n  \"auth_provider\": \"google\",\n  \"from_city\": \"Bengaluru\",\n  \"has_upi\": true,\n  \"upi_id_masked\": \"aar••••@okhdfc\",\n  \"notifications_enabled\": true,\n  \"counts\": {\n    \"active_trips\": 1,\n    \"past_trips\": 2,\n    \"pending_invites\": 1\n  },\n  \"created_at\": \"2026-10-01T09:00:00.000Z\",\n  \"seq\": null\n}"
+              "body": "{\n  \"person_id\": \"p_aarav\",\n  \"name\": \"Aarav Shah\",\n  \"email\": \"aarav@gmail.com\",\n  \"photo_url\": \"https://lh3.googleusercontent.com/a/photo\",\n  \"auth_provider\": \"google\",\n  \"from_city\": \"Bengaluru\",\n  \"has_upi\": true,\n  \"upi_id_masked\": \"aar••••@okhdfc\",\n  \"notifications_enabled\": true,\n  \"counts\": {\n    \"active_trips\": 1,\n    \"past_trips\": 2,\n    \"pending_invites\": 1\n  },\n  \"created_at\": \"2026-10-01T09:00:00.000Z\",\n  \"seq\": 13\n}"
             },
             {
-              "name": "Not a UPI id",
+              "name": "invalid",
               "originalRequest": {
                 "method": "PUT",
                 "header": [
@@ -8420,7 +8807,7 @@
                     }
                   }
                 },
-                "description": "Payment methods → UPI. Validated (name@bank); the id never comes back, only has_upi and a masked form. Go hears has_upi when it flips.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "Payment methods → UPI. Validated (name@bank); the id never comes back, only has_upi and a masked form. Go hears has_upi when it flips. Answers Me plus seq.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
               "status": "Unprocessable Entity",
               "code": 422,
@@ -8457,7 +8844,7 @@
                 "upi"
               ]
             },
-            "description": "Removes it. Safe to repeat.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+            "description": "Removes it. Safe to repeat. Answers Me plus seq (null when there was none).\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
           },
           "response": [
             {
@@ -8481,7 +8868,7 @@
                     "upi"
                   ]
                 },
-                "description": "Removes it. Safe to repeat.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "Removes it. Safe to repeat. Answers Me plus seq (null when there was none).\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
               "status": "OK",
               "code": 200,
@@ -8493,7 +8880,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"person_id\": \"p_aarav\",\n  \"name\": \"Aarav Shah\",\n  \"email\": \"aarav@gmail.com\",\n  \"photo_url\": \"https://lh3.googleusercontent.com/a/photo\",\n  \"auth_provider\": \"google\",\n  \"from_city\": \"Bengaluru\",\n  \"has_upi\": false,\n  \"upi_id_masked\": null,\n  \"notifications_enabled\": true,\n  \"counts\": {\n    \"active_trips\": 1,\n    \"past_trips\": 2,\n    \"pending_invites\": 1\n  },\n  \"created_at\": \"2026-10-01T09:00:00.000Z\",\n  \"seq\": null\n}"
+              "body": "{\n  \"person_id\": \"p_aarav\",\n  \"name\": \"Aarav Shah\",\n  \"email\": \"aarav@gmail.com\",\n  \"photo_url\": \"https://lh3.googleusercontent.com/a/photo\",\n  \"auth_provider\": \"google\",\n  \"from_city\": \"Bengaluru\",\n  \"has_upi\": false,\n  \"upi_id_masked\": null,\n  \"notifications_enabled\": true,\n  \"counts\": {\n    \"active_trips\": 1,\n    \"past_trips\": 2,\n    \"pending_invites\": 1\n  },\n  \"created_at\": \"2026-10-01T09:00:00.000Z\",\n  \"seq\": 14\n}"
             }
           ]
         },
@@ -8676,7 +9063,7 @@
                 }
               }
             },
-            "description": "A short-lived link to the person's vault page in Go, for the browser sheet: { start?: home | add_card | add_login | add_documents, context?: { trip_id, purpose: \"visa\" } }. add_documents is the visa form (passport data never touches the server), behind features.visa: 422 start when it is off. start and context go to Go's vault_link as they are. Never cached, never put in a push.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+            "description": "A short-lived link to the person's vault page in Go, for the browser sheet: { start?: home | add_card | add_login | add_documents, context?: { trip_id, purpose: \"visa\" } } (strict). add_documents is the visa form (passport data never touches the server), behind features.visa: 422 start when it is off. start and context go to Go's vault_link as they are. 6 a minute per person (429). Never cached, never put in a push.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
           },
           "response": [
             {
@@ -8713,7 +9100,7 @@
                     }
                   }
                 },
-                "description": "A short-lived link to the person's vault page in Go, for the browser sheet: { start?: home | add_card | add_login | add_documents, context?: { trip_id, purpose: \"visa\" } }. add_documents is the visa form (passport data never touches the server), behind features.visa: 422 start when it is off. start and context go to Go's vault_link as they are. Never cached, never put in a push.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "A short-lived link to the person's vault page in Go, for the browser sheet: { start?: home | add_card | add_login | add_documents, context?: { trip_id, purpose: \"visa\" } } (strict). add_documents is the visa form (passport data never touches the server), behind features.visa: 422 start when it is off. start and context go to Go's vault_link as they are. 6 a minute per person (429). Never cached, never put in a push.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
               "status": "OK",
               "code": 200,
@@ -8728,7 +9115,7 @@
               "body": "{\n  \"url\": \"https://brain.go.example/vault/documents?link=lk_4Rt8Zp2Lq\",\n  \"expires_at\": \"2026-10-05T09:06:30Z\"\n}"
             },
             {
-              "name": "Visa off",
+              "name": "invalid",
               "originalRequest": {
                 "method": "POST",
                 "header": [
@@ -8761,7 +9148,7 @@
                     }
                   }
                 },
-                "description": "A short-lived link to the person's vault page in Go, for the browser sheet: { start?: home | add_card | add_login | add_documents, context?: { trip_id, purpose: \"visa\" } }. add_documents is the visa form (passport data never touches the server), behind features.visa: 422 start when it is off. start and context go to Go's vault_link as they are. Never cached, never put in a push.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "A short-lived link to the person's vault page in Go, for the browser sheet: { start?: home | add_card | add_login | add_documents, context?: { trip_id, purpose: \"visa\" } } (strict). add_documents is the visa form (passport data never touches the server), behind features.visa: 422 start when it is off. start and context go to Go's vault_link as they are. 6 a minute per person (429). Never cached, never put in a push.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
               "status": "Unprocessable Entity",
               "code": 422,
@@ -8774,6 +9161,54 @@
               ],
               "cookie": [],
               "body": "{\n  \"error\": {\n    \"code\": \"invalid\",\n    \"message\": \"add_documents is not on yet (features.visa)\",\n    \"field\": \"start\",\n    \"retry_after_seconds\": null,\n    \"request_id\": \"a1b2c3d4e5f6\"\n  }\n}"
+            },
+            {
+              "name": "rate_limited",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}",
+                    "description": "One key per press (§1.4); send the same one when you retry: the first answer is replayed."
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/me/vault-link",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "me",
+                    "vault-link"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"start\": \"add_documents\",\n  \"context\": {\n    \"trip_id\": \"t_goa\",\n    \"purpose\": \"visa\"\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "A short-lived link to the person's vault page in Go, for the browser sheet: { start?: home | add_card | add_login | add_documents, context?: { trip_id, purpose: \"visa\" } } (strict). add_documents is the visa form (passport data never touches the server), behind features.visa: 422 start when it is off. start and context go to Go's vault_link as they are. 6 a minute per person (429). Never cached, never put in a push.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+              },
+              "status": "Too Many Requests",
+              "code": 429,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"error\": {\n    \"code\": \"rate_limited\",\n    \"message\": \"at most 6 vault links a minute: slow down\",\n    \"field\": null,\n    \"retry_after_seconds\": 42,\n    \"request_id\": \"a1b2c3d4e5f6\"\n  }\n}"
             }
           ]
         },
@@ -9488,7 +9923,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"trip_id\": \"t_goa\",\n  \"seq\": 1,\n  \"title\": \"Goa 🌴\",\n  \"status\": \"planning\",\n  \"created_at\": \"2026-10-08T10:00:00.000Z\",\n  \"organizer_person_id\": \"p_aarav\",\n  \"invite_url\": \"https://go.example/j/k3Jd8Qw2Lp9a\",\n  \"vibe\": [],\n  \"budget\": {\n    \"answered\": 0,\n    \"of\": 1\n  },\n  \"people\": [\n    {\n      \"person_id\": \"p_aarav\",\n      \"name\": \"Aarav Shah\",\n      \"role\": \"organizer\",\n      \"joined_at\": \"2026-10-08T10:00:00.000Z\",\n      \"from_city\": \"Bengaluru\",\n      \"know\": [\n        \"Vibe: beach\"\n      ],\n      \"has_upi\": true,\n      \"go_paused\": false\n    }\n  ],\n  \"decisions\": [],\n  \"bookings\": [],\n  \"expenses\": [],\n  \"money\": {\n    \"currency\": \"INR\",\n    \"spent_minor\": 0,\n    \"by_category\": [],\n    \"transfers\": []\n  },\n  \"itinerary\": [],\n  \"record\": [],\n  \"stage\": \"new\",\n  \"me\": {\n    \"person\": {\n      \"person_id\": \"p_aarav\",\n      \"name\": \"Aarav Shah\",\n      \"role\": \"organizer\",\n      \"joined_at\": \"2026-10-08T10:00:00.000Z\",\n      \"from_city\": \"Bengaluru\",\n      \"know\": [\n        \"Vibe: beach\"\n      ],\n      \"has_upi\": true,\n      \"go_paused\": false\n    },\n    \"budget\": null,\n    \"last_read_seq\": 0,\n    \"unread_count\": 0\n  },\n  \"chat\": {\n    \"unread_count\": 0,\n    \"participants_preview\": []\n  },\n  \"needs_you_count\": 0,\n  \"can\": {\n    \"invite\": true,\n    \"manage_trip\": true\n  }\n}"
+              "body": "{\n  \"trip_id\": \"t_goa\",\n  \"seq\": 2,\n  \"title\": \"Goa 🌴\",\n  \"status\": \"planning\",\n  \"created_at\": \"2026-10-08T10:00:00.000Z\",\n  \"organizer_person_id\": \"p_aarav\",\n  \"invite_url\": \"https://go.example/j/k3Jd8Qw2Lp9a\",\n  \"vibe\": [],\n  \"budget\": {\n    \"answered\": 0,\n    \"of\": 1\n  },\n  \"people\": [\n    {\n      \"person_id\": \"p_aarav\",\n      \"name\": \"Aarav Shah\",\n      \"role\": \"organizer\",\n      \"joined_at\": \"2026-10-08T10:00:00.000Z\",\n      \"from_city\": \"Bengaluru\",\n      \"know\": [\n        \"Vibe: beach\"\n      ],\n      \"has_upi\": true,\n      \"go_paused\": false\n    }\n  ],\n  \"decisions\": [],\n  \"bookings\": [],\n  \"expenses\": [],\n  \"money\": {\n    \"currency\": \"INR\",\n    \"spent_minor\": 0,\n    \"by_category\": [],\n    \"transfers\": []\n  },\n  \"itinerary\": [],\n  \"record\": [],\n  \"stage\": \"new\",\n  \"me\": {\n    \"person\": {\n      \"person_id\": \"p_aarav\",\n      \"name\": \"Aarav Shah\",\n      \"role\": \"organizer\",\n      \"joined_at\": \"2026-10-08T10:00:00.000Z\",\n      \"from_city\": \"Bengaluru\",\n      \"know\": [\n        \"Vibe: beach\"\n      ],\n      \"has_upi\": true,\n      \"go_paused\": false\n    },\n    \"budget\": null,\n    \"last_read_seq\": 0,\n    \"unread_count\": 0\n  },\n  \"chat\": {\n    \"unread_count\": 0,\n    \"participants_preview\": []\n  },\n  \"needs_you_count\": 0,\n  \"can\": {\n    \"invite\": true,\n    \"manage_trip\": true\n  }\n}"
             }
           ]
         },
@@ -9549,7 +9984,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"trip_id\": \"t_goa\",\n  \"seq\": 1,\n  \"title\": \"Goa 🌴\",\n  \"status\": \"planning\",\n  \"created_at\": \"2026-10-08T10:00:00.000Z\",\n  \"organizer_person_id\": \"p_aarav\",\n  \"invite_url\": \"https://go.example/j/k3Jd8Qw2Lp9a\",\n  \"vibe\": [],\n  \"budget\": {\n    \"answered\": 0,\n    \"of\": 1\n  },\n  \"people\": [\n    {\n      \"person_id\": \"p_aarav\",\n      \"name\": \"Aarav Shah\",\n      \"role\": \"organizer\",\n      \"joined_at\": \"2026-10-08T10:00:00.000Z\",\n      \"from_city\": \"Bengaluru\",\n      \"know\": [\n        \"Vibe: beach\"\n      ],\n      \"has_upi\": true,\n      \"go_paused\": false\n    }\n  ],\n  \"decisions\": [],\n  \"bookings\": [],\n  \"expenses\": [],\n  \"money\": {\n    \"currency\": \"INR\",\n    \"spent_minor\": 0,\n    \"by_category\": [],\n    \"transfers\": []\n  },\n  \"itinerary\": [],\n  \"record\": [],\n  \"stage\": \"new\",\n  \"me\": {\n    \"person\": {\n      \"person_id\": \"p_aarav\",\n      \"name\": \"Aarav Shah\",\n      \"role\": \"organizer\",\n      \"joined_at\": \"2026-10-08T10:00:00.000Z\",\n      \"from_city\": \"Bengaluru\",\n      \"know\": [\n        \"Vibe: beach\"\n      ],\n      \"has_upi\": true,\n      \"go_paused\": false\n    },\n    \"budget\": null,\n    \"last_read_seq\": 0,\n    \"unread_count\": 0\n  },\n  \"chat\": {\n    \"unread_count\": 0,\n    \"participants_preview\": []\n  },\n  \"needs_you_count\": 0,\n  \"can\": {\n    \"invite\": true,\n    \"manage_trip\": true\n  }\n}"
+              "body": "{\n  \"trip_id\": \"t_goa\",\n  \"seq\": 2,\n  \"title\": \"Goa 🌴\",\n  \"status\": \"planning\",\n  \"created_at\": \"2026-10-08T10:00:00.000Z\",\n  \"organizer_person_id\": \"p_aarav\",\n  \"invite_url\": \"https://go.example/j/k3Jd8Qw2Lp9a\",\n  \"vibe\": [],\n  \"budget\": {\n    \"answered\": 0,\n    \"of\": 1\n  },\n  \"people\": [\n    {\n      \"person_id\": \"p_aarav\",\n      \"name\": \"Aarav Shah\",\n      \"role\": \"organizer\",\n      \"joined_at\": \"2026-10-08T10:00:00.000Z\",\n      \"from_city\": \"Bengaluru\",\n      \"know\": [\n        \"Vibe: beach\"\n      ],\n      \"has_upi\": true,\n      \"go_paused\": false\n    }\n  ],\n  \"decisions\": [],\n  \"bookings\": [],\n  \"expenses\": [],\n  \"money\": {\n    \"currency\": \"INR\",\n    \"spent_minor\": 0,\n    \"by_category\": [],\n    \"transfers\": []\n  },\n  \"itinerary\": [],\n  \"record\": [],\n  \"stage\": \"new\",\n  \"me\": {\n    \"person\": {\n      \"person_id\": \"p_aarav\",\n      \"name\": \"Aarav Shah\",\n      \"role\": \"organizer\",\n      \"joined_at\": \"2026-10-08T10:00:00.000Z\",\n      \"from_city\": \"Bengaluru\",\n      \"know\": [\n        \"Vibe: beach\"\n      ],\n      \"has_upi\": true,\n      \"go_paused\": false\n    },\n    \"budget\": null,\n    \"last_read_seq\": 0,\n    \"unread_count\": 0\n  },\n  \"chat\": {\n    \"unread_count\": 0,\n    \"participants_preview\": []\n  },\n  \"needs_you_count\": 0,\n  \"can\": {\n    \"invite\": true,\n    \"manage_trip\": true\n  }\n}"
             },
             {
               "name": "Nothing moved",
@@ -10193,11 +10628,11 @@
                 }
               }
             },
-            "description": "{ go_paused: true|false }: while paused your messages reach Go with no words (the room still sees them in full). Answers { seq }.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+            "description": "{ go_paused: true|false } (strict): while paused your messages reach Go with no words (the room still sees them in full). Answers your own Person (whole) plus seq.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
           },
           "response": [
             {
-              "name": "Paused",
+              "name": "Person",
               "originalRequest": {
                 "method": "PATCH",
                 "header": [
@@ -10231,7 +10666,7 @@
                     }
                   }
                 },
-                "description": "{ go_paused: true|false }: while paused your messages reach Go with no words (the room still sees them in full). Answers { seq }.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "{ go_paused: true|false } (strict): while paused your messages reach Go with no words (the room still sees them in full). Answers your own Person (whole) plus seq.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
               "status": "OK",
               "code": 200,
@@ -10243,7 +10678,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"seq\": 11\n}"
+              "body": "{\n  \"person_id\": \"p_aarav\",\n  \"name\": \"Aarav Shah\",\n  \"role\": \"organizer\",\n  \"joined_at\": \"2026-10-08T10:00:00.000Z\",\n  \"from_city\": \"Bengaluru\",\n  \"know\": [\n    \"Vibe: beach\"\n  ],\n  \"has_upi\": true,\n  \"go_paused\": true,\n  \"seq\": 11\n}"
             }
           ]
         },
@@ -10282,7 +10717,7 @@
                 }
               }
             },
-            "description": "Leaves the trip; a vote waiting only for you closes. Answers { seq }; from then on every route of this trip answers 403.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+            "description": "Leaves the trip; a vote waiting only for you closes. 204; from then on every route of this trip answers 403.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
           },
           "response": [
             {
@@ -10320,19 +10755,14 @@
                     }
                   }
                 },
-                "description": "Leaves the trip; a vote waiting only for you closes. Answers { seq }; from then on every route of this trip answers 403.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "Leaves the trip; a vote waiting only for you closes. 204; from then on every route of this trip answers 403.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
-              "status": "OK",
-              "code": 200,
+              "status": "No Content",
+              "code": 204,
               "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
+              "header": [],
               "cookie": [],
-              "body": "{\n  \"seq\": 12\n}"
+              "body": ""
             }
           ]
         },
@@ -10458,7 +10888,7 @@
                 }
               }
             },
-            "description": "Before attaching a photo, a PDF or a voice note, or changing the profile photo: { purpose: chat_attachment | profile_photo, kind: photo | file | audio, mime, name?, size_bytes, width?, height?, duration_s? }. MIME allow-list image/jpeg|png|webp|heic, application/pdf, audio/mp4|mpeg|webm|ogg; at most 25 MB (422 otherwise). PUT the bytes to upload_url with the headers, then use upload_id. Unused uploads expire after 24 hours.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+            "description": "Before attaching a photo, a PDF or a voice note, or changing the profile photo: { purpose: chat_attachment | profile_photo, kind: photo | file | audio, mime, name?, size_bytes, width?, height?, duration_s? }. MIME allow-list image/jpeg|png|webp|heic, application/pdf, audio/mp4|mpeg|webm|ogg; at most 25 MB (422 otherwise). PUT the bytes to upload_url with the headers, then use upload_id (in a message, or as PATCH /me photo_upload_id). Unused uploads expire after 24 hours. 20 a minute per person (429).\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
           },
           "response": [
             {
@@ -10494,7 +10924,7 @@
                     }
                   }
                 },
-                "description": "Before attaching a photo, a PDF or a voice note, or changing the profile photo: { purpose: chat_attachment | profile_photo, kind: photo | file | audio, mime, name?, size_bytes, width?, height?, duration_s? }. MIME allow-list image/jpeg|png|webp|heic, application/pdf, audio/mp4|mpeg|webm|ogg; at most 25 MB (422 otherwise). PUT the bytes to upload_url with the headers, then use upload_id. Unused uploads expire after 24 hours.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "Before attaching a photo, a PDF or a voice note, or changing the profile photo: { purpose: chat_attachment | profile_photo, kind: photo | file | audio, mime, name?, size_bytes, width?, height?, duration_s? }. MIME allow-list image/jpeg|png|webp|heic, application/pdf, audio/mp4|mpeg|webm|ogg; at most 25 MB (422 otherwise). PUT the bytes to upload_url with the headers, then use upload_id (in a message, or as PATCH /me photo_upload_id). Unused uploads expire after 24 hours. 20 a minute per person (429).\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
               "status": "Created",
               "code": 201,
@@ -10541,7 +10971,7 @@
                     }
                   }
                 },
-                "description": "Before attaching a photo, a PDF or a voice note, or changing the profile photo: { purpose: chat_attachment | profile_photo, kind: photo | file | audio, mime, name?, size_bytes, width?, height?, duration_s? }. MIME allow-list image/jpeg|png|webp|heic, application/pdf, audio/mp4|mpeg|webm|ogg; at most 25 MB (422 otherwise). PUT the bytes to upload_url with the headers, then use upload_id. Unused uploads expire after 24 hours.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "Before attaching a photo, a PDF or a voice note, or changing the profile photo: { purpose: chat_attachment | profile_photo, kind: photo | file | audio, mime, name?, size_bytes, width?, height?, duration_s? }. MIME allow-list image/jpeg|png|webp|heic, application/pdf, audio/mp4|mpeg|webm|ogg; at most 25 MB (422 otherwise). PUT the bytes to upload_url with the headers, then use upload_id (in a message, or as PATCH /me photo_upload_id). Unused uploads expire after 24 hours. 20 a minute per person (429).\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
               "status": "Unprocessable Entity",
               "code": 422,
@@ -10554,6 +10984,53 @@
               ],
               "cookie": [],
               "body": "{\n  \"error\": {\n    \"code\": \"invalid\",\n    \"message\": \"mime: image/gif is not allowed for a photo\",\n    \"field\": \"mime\",\n    \"retry_after_seconds\": null,\n    \"request_id\": \"req_01JA7Q3V8Z\"\n  }\n}"
+            },
+            {
+              "name": "rate_limited",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}",
+                    "description": "One key per press (§1.4); send the same one when you retry: the first answer is replayed."
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/uploads",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "uploads"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"purpose\": \"chat_attachment\",\n  \"kind\": \"photo\",\n  \"mime\": \"image/jpeg\",\n  \"name\": \"seats.jpg\",\n  \"size_bytes\": 482113,\n  \"width\": 1280,\n  \"height\": 960,\n  \"duration_s\": null\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Before attaching a photo, a PDF or a voice note, or changing the profile photo: { purpose: chat_attachment | profile_photo, kind: photo | file | audio, mime, name?, size_bytes, width?, height?, duration_s? }. MIME allow-list image/jpeg|png|webp|heic, application/pdf, audio/mp4|mpeg|webm|ogg; at most 25 MB (422 otherwise). PUT the bytes to upload_url with the headers, then use upload_id (in a message, or as PATCH /me photo_upload_id). Unused uploads expire after 24 hours. 20 a minute per person (429).\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+              },
+              "status": "Too Many Requests",
+              "code": 429,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"error\": {\n    \"code\": \"rate_limited\",\n    \"message\": \"at most 20 uploads a minute: slow down\",\n    \"field\": null,\n    \"retry_after_seconds\": 42,\n    \"request_id\": \"req_01JA7Q3V8Z\"\n  }\n}"
             }
           ]
         }
@@ -10835,7 +11312,7 @@
                 }
               }
             },
-            "description": "Edit your own message { text }. Answers the Message (edited_at set). 403 not yours, 409 deleted.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+            "description": "Edit your own message { text } (1-4000, strict). Answers the Message (edited_at set). 403 not yours, 409 deleted.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
           },
           "response": [
             {
@@ -10874,7 +11351,7 @@
                     }
                   }
                 },
-                "description": "Edit your own message { text }. Answers the Message (edited_at set). 403 not yours, 409 deleted.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "Edit your own message { text } (1-4000, strict). Answers the Message (edited_at set). 403 not yours, 409 deleted.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
               "status": "OK",
               "code": 200,
@@ -10992,7 +11469,7 @@
                 }
               }
             },
-            "description": "{ emoji | null }: your one reaction on a message. A new emoji replaces the old one (Go hears reaction.removed, then reaction.added); null takes it back. Answers the Message.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+            "description": "{ emoji | null }: your one reaction on a message. A new emoji replaces the old one (Go hears reaction.removed, then reaction.added); null takes it back. Answers the Message. 20 a minute per person per trip (429).\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
           },
           "response": [
             {
@@ -11032,7 +11509,7 @@
                     }
                   }
                 },
-                "description": "{ emoji | null }: your one reaction on a message. A new emoji replaces the old one (Go hears reaction.removed, then reaction.added); null takes it back. Answers the Message.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "{ emoji | null }: your one reaction on a message. A new emoji replaces the old one (Go hears reaction.removed, then reaction.added); null takes it back. Answers the Message. 20 a minute per person per trip (429).\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
               "status": "OK",
               "code": 200,
@@ -11045,6 +11522,57 @@
               ],
               "cookie": [],
               "body": "{\n  \"message_id\": \"m_01JA7R\",\n  \"seq\": 42,\n  \"updated_seq\": 45,\n  \"author\": {\n    \"kind\": \"person\",\n    \"person_id\": \"p_priya\"\n  },\n  \"text\": \"in, but only after 6pm fri\",\n  \"attachments\": [\n    {\n      \"kind\": \"photo\",\n      \"url\": \"https://…/storage/v1/object/sign/go-files/…?token=…\",\n      \"width\": 1280,\n      \"height\": 960,\n      \"caption\": \"Seats\",\n      \"upload_id\": \"up_01JA\"\n    }\n  ],\n  \"mentions_go\": false,\n  \"mentions\": [],\n  \"reactions\": [\n    {\n      \"emoji\": \"🔥\",\n      \"person_id\": \"p_rahul\"\n    }\n  ],\n  \"withheld\": false,\n  \"deleted\": false,\n  \"sent_at\": \"2026-10-08T07:05:00Z\"\n}"
+            },
+            {
+              "name": "rate_limited",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}",
+                    "description": "One key per press (§1.4); send the same one when you retry: the first answer is replayed."
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/trips/{{tripId}}/messages/{{messageId}}/reaction",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "trips",
+                    "{{tripId}}",
+                    "messages",
+                    "{{messageId}}",
+                    "reaction"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"emoji\": \"🔥\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "{ emoji | null }: your one reaction on a message. A new emoji replaces the old one (Go hears reaction.removed, then reaction.added); null takes it back. Answers the Message. 20 a minute per person per trip (429).\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+              },
+              "status": "Too Many Requests",
+              "code": 429,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"error\": {\n    \"code\": \"rate_limited\",\n    \"message\": \"at most 20 reactions a minute: slow down\",\n    \"field\": null,\n    \"retry_after_seconds\": 42,\n    \"request_id\": \"req_01JA7Q3V8Z\"\n  }\n}"
             }
           ]
         },
@@ -11166,7 +11694,7 @@
                 }
               }
             },
-            "description": "{ action_id, option_id?, press_id, payload? }: a tap on a Go card (options, working, call, pay, notice, checklist). press_id becomes Go's tap_id (a double tap is one tap); payload { trip: oneway | round } goes through to Go. Answers Go's CardActionResult: done | open { url, expires_at } | refused { toast }. `listen` on a live call card is one of these: Go answers open with its listen-in page. When Go does not answer: 200 refused \"Go didn't answer. Try again.\" Record cards (vote, mandate, expense) are the Server's own: 422.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+            "description": "{ action_id, option_id?, press_id, payload? }: a tap on a Go card (options, working, call, pay, notice, checklist). press_id becomes Go's tap_id (a double tap is one tap); payload { trip: oneway | round } goes through to Go. Answers Go's CardActionResult: done | open { url, expires_at } | refused { toast }. `listen` on a live call card is one of these: Go answers open with its listen-in page. When Go does not answer: 200 refused \"Go didn't answer. Try again.\" Record cards (vote, mandate, expense) are the Server's own: 422. 10 taps a minute per person per trip (429); a repeat of the same press_id is not counted.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
           },
           "response": [
             {
@@ -11206,7 +11734,7 @@
                     }
                   }
                 },
-                "description": "{ action_id, option_id?, press_id, payload? }: a tap on a Go card (options, working, call, pay, notice, checklist). press_id becomes Go's tap_id (a double tap is one tap); payload { trip: oneway | round } goes through to Go. Answers Go's CardActionResult: done | open { url, expires_at } | refused { toast }. `listen` on a live call card is one of these: Go answers open with its listen-in page. When Go does not answer: 200 refused \"Go didn't answer. Try again.\" Record cards (vote, mandate, expense) are the Server's own: 422.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "{ action_id, option_id?, press_id, payload? }: a tap on a Go card (options, working, call, pay, notice, checklist). press_id becomes Go's tap_id (a double tap is one tap); payload { trip: oneway | round } goes through to Go. Answers Go's CardActionResult: done | open { url, expires_at } | refused { toast }. `listen` on a live call card is one of these: Go answers open with its listen-in page. When Go does not answer: 200 refused \"Go didn't answer. Try again.\" Record cards (vote, mandate, expense) are the Server's own: 422. 10 taps a minute per person per trip (429); a repeat of the same press_id is not counted.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
               "status": "OK",
               "code": 200,
@@ -11257,7 +11785,7 @@
                     }
                   }
                 },
-                "description": "{ action_id, option_id?, press_id, payload? }: a tap on a Go card (options, working, call, pay, notice, checklist). press_id becomes Go's tap_id (a double tap is one tap); payload { trip: oneway | round } goes through to Go. Answers Go's CardActionResult: done | open { url, expires_at } | refused { toast }. `listen` on a live call card is one of these: Go answers open with its listen-in page. When Go does not answer: 200 refused \"Go didn't answer. Try again.\" Record cards (vote, mandate, expense) are the Server's own: 422.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "{ action_id, option_id?, press_id, payload? }: a tap on a Go card (options, working, call, pay, notice, checklist). press_id becomes Go's tap_id (a double tap is one tap); payload { trip: oneway | round } goes through to Go. Answers Go's CardActionResult: done | open { url, expires_at } | refused { toast }. `listen` on a live call card is one of these: Go answers open with its listen-in page. When Go does not answer: 200 refused \"Go didn't answer. Try again.\" Record cards (vote, mandate, expense) are the Server's own: 422. 10 taps a minute per person per trip (429); a repeat of the same press_id is not counted.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
               "status": "OK",
               "code": 200,
@@ -11308,7 +11836,7 @@
                     }
                   }
                 },
-                "description": "{ action_id, option_id?, press_id, payload? }: a tap on a Go card (options, working, call, pay, notice, checklist). press_id becomes Go's tap_id (a double tap is one tap); payload { trip: oneway | round } goes through to Go. Answers Go's CardActionResult: done | open { url, expires_at } | refused { toast }. `listen` on a live call card is one of these: Go answers open with its listen-in page. When Go does not answer: 200 refused \"Go didn't answer. Try again.\" Record cards (vote, mandate, expense) are the Server's own: 422.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "{ action_id, option_id?, press_id, payload? }: a tap on a Go card (options, working, call, pay, notice, checklist). press_id becomes Go's tap_id (a double tap is one tap); payload { trip: oneway | round } goes through to Go. Answers Go's CardActionResult: done | open { url, expires_at } | refused { toast }. `listen` on a live call card is one of these: Go answers open with its listen-in page. When Go does not answer: 200 refused \"Go didn't answer. Try again.\" Record cards (vote, mandate, expense) are the Server's own: 422. 10 taps a minute per person per trip (429); a repeat of the same press_id is not counted.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
               "status": "OK",
               "code": 200,
@@ -11321,6 +11849,57 @@
               ],
               "cookie": [],
               "body": "{\n  \"result\": \"refused\",\n  \"toast\": \"Go didn't answer. Try again.\"\n}"
+            },
+            {
+              "name": "rate_limited",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}",
+                    "description": "One key per press (§1.4); send the same one when you retry: the first answer is replayed."
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/trips/{{tripId}}/cards/{{cardId}}/actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "trips",
+                    "{{tripId}}",
+                    "cards",
+                    "{{cardId}}",
+                    "actions"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"action_id\": \"pick\",\n  \"option_id\": \"opt_flight_1\",\n  \"press_id\": \"9a1c3c2e-7b1e-4f0d-9d3c-1a2b3c4d5e6f\",\n  \"payload\": {\n    \"trip\": \"round\"\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "{ action_id, option_id?, press_id, payload? }: a tap on a Go card (options, working, call, pay, notice, checklist). press_id becomes Go's tap_id (a double tap is one tap); payload { trip: oneway | round } goes through to Go. Answers Go's CardActionResult: done | open { url, expires_at } | refused { toast }. `listen` on a live call card is one of these: Go answers open with its listen-in page. When Go does not answer: 200 refused \"Go didn't answer. Try again.\" Record cards (vote, mandate, expense) are the Server's own: 422. 10 taps a minute per person per trip (429); a repeat of the same press_id is not counted.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+              },
+              "status": "Too Many Requests",
+              "code": 429,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"error\": {\n    \"code\": \"rate_limited\",\n    \"message\": \"at most 10 card taps a minute: slow down\",\n    \"field\": null,\n    \"retry_after_seconds\": 42,\n    \"request_id\": \"req_01JA7Q3V8Z\"\n  }\n}"
             }
           ]
         }
@@ -11346,7 +11925,7 @@
                 "{{decisionId}}"
               ]
             },
-            "description": "The Decision plus my_vote ({ option_index } | { flexible: true } | null), to redraw a vote card. flexible_count when anyone is flexible.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Money** (§1.3): whole paise, `*_minor` plus `currency`; never a float.\n- **Consistency** (§1.6): `seq` is the trip change number the answer matches; `Cache-Control: private, no-store`.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+            "description": "The Decision plus my_vote ({ option_index } | { flexible: true } | null), to redraw a vote card. flexible_count when anyone is flexible; cancels_booking_id on a vote about cancelling a booking (as in TripView.decisions and the needs-you target).\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Money** (§1.3): whole paise, `*_minor` plus `currency`; never a float.\n- **Consistency** (§1.6): `seq` is the trip change number the answer matches; `Cache-Control: private, no-store`.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
           },
           "response": [
             {
@@ -11366,7 +11945,7 @@
                     "{{decisionId}}"
                   ]
                 },
-                "description": "The Decision plus my_vote ({ option_index } | { flexible: true } | null), to redraw a vote card. flexible_count when anyone is flexible.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Money** (§1.3): whole paise, `*_minor` plus `currency`; never a float.\n- **Consistency** (§1.6): `seq` is the trip change number the answer matches; `Cache-Control: private, no-store`.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "The Decision plus my_vote ({ option_index } | { flexible: true } | null), to redraw a vote card. flexible_count when anyone is flexible; cancels_booking_id on a vote about cancelling a booking (as in TripView.decisions and the needs-you target).\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Money** (§1.3): whole paise, `*_minor` plus `currency`; never a float.\n- **Consistency** (§1.6): `seq` is the trip change number the answer matches; `Cache-Control: private, no-store`.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
               "status": "OK",
               "code": 200,
@@ -11379,6 +11958,37 @@
               ],
               "cookie": [],
               "body": "{\n  \"decision_id\": \"d_01JA\",\n  \"question\": \"Where do we stay?\",\n  \"kind\": \"choice\",\n  \"anonymous\": false,\n  \"status\": \"open\",\n  \"opened_by_person_id\": \"p_priya\",\n  \"options\": [\n    {\n      \"label\": \"Villa Sol\",\n      \"price_minor\": 5420000,\n      \"currency\": \"INR\"\n    },\n    {\n      \"label\": \"Casa Azul\"\n    }\n  ],\n  \"voted\": 2,\n  \"of\": 5,\n  \"tally\": [\n    2,\n    0\n  ],\n  \"votes\": [\n    {\n      \"person_id\": \"p_priya\",\n      \"option_index\": 0\n    },\n    {\n      \"person_id\": \"p_rahul\",\n      \"option_index\": 0\n    }\n  ],\n  \"opened_at\": \"2026-10-08T07:00:00Z\",\n  \"my_vote\": {\n    \"option_index\": 0\n  }\n}"
+            },
+            {
+              "name": "a cancellation vote",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/trips/{{tripId}}/decisions/{{decisionId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "trips",
+                    "{{tripId}}",
+                    "decisions",
+                    "{{decisionId}}"
+                  ]
+                },
+                "description": "The Decision plus my_vote ({ option_index } | { flexible: true } | null), to redraw a vote card. flexible_count when anyone is flexible; cancels_booking_id on a vote about cancelling a booking (as in TripView.decisions and the needs-you target).\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Money** (§1.3): whole paise, `*_minor` plus `currency`; never a float.\n- **Consistency** (§1.6): `seq` is the trip change number the answer matches; `Cache-Control: private, no-store`.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"decision_id\": \"d_01JB\",\n  \"question\": \"Cancel this booking?\",\n  \"kind\": \"yesno\",\n  \"anonymous\": false,\n  \"status\": \"open\",\n  \"opened_by_person_id\": \"p_priya\",\n  \"options\": [\n    {\n      \"label\": \"Yes, cancel\"\n    },\n    {\n      \"label\": \"No, keep it\"\n    }\n  ],\n  \"voted\": 2,\n  \"of\": 5,\n  \"tally\": [\n    2,\n    0\n  ],\n  \"votes\": [\n    {\n      \"person_id\": \"p_priya\",\n      \"option_index\": 0\n    },\n    {\n      \"person_id\": \"p_rahul\",\n      \"option_index\": 0\n    }\n  ],\n  \"opened_at\": \"2026-10-08T07:00:00Z\",\n  \"my_vote\": {\n    \"option_index\": 0\n  },\n  \"closes_at\": \"2026-10-09T07:00:00Z\",\n  \"cancels_booking_id\": \"b_01JA\"\n}"
             }
           ]
         },
@@ -11508,7 +12118,7 @@
                 }
               }
             },
-            "description": "{ option_index } casts or moves your vote; { flexible: true } says \"any of these work\" (counts in voted, not in the tally; only when features.vote_flexible, else 409). Until the vote closes (409 after). It closes by itself when everyone has voted. Answers the Decision with my_vote.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Money** (§1.3): whole paise, `*_minor` plus `currency`; never a float.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+            "description": "{ option_index } casts or moves your vote; { flexible: true } says \"any of these work\" (counts in voted, not in the tally; only when features.vote_flexible, else 409). Until the vote closes (409 after). It closes by itself when everyone has voted. Answers the Decision with my_vote. 20 votes a minute per person (429), taking one back included.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Money** (§1.3): whole paise, `*_minor` plus `currency`; never a float.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
           },
           "response": [
             {
@@ -11548,7 +12158,7 @@
                     }
                   }
                 },
-                "description": "{ option_index } casts or moves your vote; { flexible: true } says \"any of these work\" (counts in voted, not in the tally; only when features.vote_flexible, else 409). Until the vote closes (409 after). It closes by itself when everyone has voted. Answers the Decision with my_vote.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Money** (§1.3): whole paise, `*_minor` plus `currency`; never a float.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "{ option_index } casts or moves your vote; { flexible: true } says \"any of these work\" (counts in voted, not in the tally; only when features.vote_flexible, else 409). Until the vote closes (409 after). It closes by itself when everyone has voted. Answers the Decision with my_vote. 20 votes a minute per person (429), taking one back included.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Money** (§1.3): whole paise, `*_minor` plus `currency`; never a float.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
               "status": "OK",
               "code": 200,
@@ -11599,7 +12209,7 @@
                     }
                   }
                 },
-                "description": "{ option_index } casts or moves your vote; { flexible: true } says \"any of these work\" (counts in voted, not in the tally; only when features.vote_flexible, else 409). Until the vote closes (409 after). It closes by itself when everyone has voted. Answers the Decision with my_vote.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Money** (§1.3): whole paise, `*_minor` plus `currency`; never a float.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "{ option_index } casts or moves your vote; { flexible: true } says \"any of these work\" (counts in voted, not in the tally; only when features.vote_flexible, else 409). Until the vote closes (409 after). It closes by itself when everyone has voted. Answers the Decision with my_vote. 20 votes a minute per person (429), taking one back included.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Money** (§1.3): whole paise, `*_minor` plus `currency`; never a float.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
               "status": "Conflict",
               "code": 409,
@@ -11612,6 +12222,57 @@
               ],
               "cookie": [],
               "body": "{\n  \"error\": {\n    \"code\": \"conflict\",\n    \"message\": \"decision d_01JA is closed\",\n    \"field\": null,\n    \"retry_after_seconds\": null,\n    \"request_id\": \"req_01JA7Q3V8Z\"\n  }\n}"
+            },
+            {
+              "name": "rate_limited",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}",
+                    "description": "One key per press (§1.4); send the same one when you retry: the first answer is replayed."
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/trips/{{tripId}}/decisions/{{decisionId}}/vote",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "trips",
+                    "{{tripId}}",
+                    "decisions",
+                    "{{decisionId}}",
+                    "vote"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"option_index\": 0\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "{ option_index } casts or moves your vote; { flexible: true } says \"any of these work\" (counts in voted, not in the tally; only when features.vote_flexible, else 409). Until the vote closes (409 after). It closes by itself when everyone has voted. Answers the Decision with my_vote. 20 votes a minute per person (429), taking one back included.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Money** (§1.3): whole paise, `*_minor` plus `currency`; never a float.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+              },
+              "status": "Too Many Requests",
+              "code": 429,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"error\": {\n    \"code\": \"rate_limited\",\n    \"message\": \"at most 20 votes a minute: slow down\",\n    \"field\": null,\n    \"retry_after_seconds\": 42,\n    \"request_id\": \"req_01JA7Q3V8Z\"\n  }\n}"
             }
           ]
         },
@@ -13862,7 +14523,7 @@
                 }
               }
             },
-            "description": "{ from_person_id }: remind someone who owes you (409 when they do not). One per person per trip every 24 hours: 429 with retry_after_seconds and Retry-After after that. Answers { reminded: true, nudge_allowed_at }.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+            "description": "{ from_person_id }: remind someone who owes you (409 when they do not). One per person per trip every 24 hours: 429 with retry_after_seconds and Retry-After after that. 204: the reminder was accepted (not that it arrived).\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
           },
           "response": [
             {
@@ -13901,19 +14562,14 @@
                     }
                   }
                 },
-                "description": "{ from_person_id }: remind someone who owes you (409 when they do not). One per person per trip every 24 hours: 429 with retry_after_seconds and Retry-After after that. Answers { reminded: true, nudge_allowed_at }.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "{ from_person_id }: remind someone who owes you (409 when they do not). One per person per trip every 24 hours: 429 with retry_after_seconds and Retry-After after that. 204: the reminder was accepted (not that it arrived).\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
-              "status": "OK",
-              "code": 200,
+              "status": "No Content",
+              "code": 204,
               "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
+              "header": [],
               "cookie": [],
-              "body": "{\n  \"reminded\": true,\n  \"nudge_allowed_at\": \"2026-11-08T09:00:00.000Z\"\n}"
+              "body": ""
             },
             {
               "name": "Too soon",
@@ -13951,7 +14607,7 @@
                     }
                   }
                 },
-                "description": "{ from_person_id }: remind someone who owes you (409 when they do not). One per person per trip every 24 hours: 429 with retry_after_seconds and Retry-After after that. Answers { reminded: true, nudge_allowed_at }.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "{ from_person_id }: remind someone who owes you (409 when they do not). One per person per trip every 24 hours: 429 with retry_after_seconds and Retry-After after that. 204: the reminder was accepted (not that it arrived).\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
               "status": "Too Many Requests",
               "code": 429,
@@ -14290,7 +14946,7 @@
                 }
               }
             },
-            "description": "A member records a booking made outside Go: kind, title, vendor, ref, amount_minor, payer_person_id, for_person_ids, and optionally refundable_until, starts_at, ends_at, journey, return_journey, details [{ label, value }], passengers [{ person_id (one of for_person_ids), seat?, pnr? }], place, image_url, decision_id (a closed vote it fulfils). Stored confirmed in the trip's currency, no expense. Go hears booking.changed added by you, then the booked record line. Strict body; send an Idempotency-Key so a retry is safe.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Money** (§1.3): whole paise, `*_minor` plus `currency`; never a float.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+            "description": "A member records a booking made outside Go: kind, title, vendor, ref, amount_minor, payer_person_id, for_person_ids, and optionally refundable_until, starts_at, ends_at, journey, return_journey, details [{ label, value }], passengers [{ person_id (one of for_person_ids), seat?, pnr? }], place, image_url, decision_id (a closed vote it fulfils). Stored confirmed in the trip's currency, no expense; answers 201 Booking as you see it (the covered-people rule applies; documents [] for now) plus seq. Go hears booking.changed added by you, then the booked record line. Strict body; send an Idempotency-Key so a retry is safe.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Money** (§1.3): whole paise, `*_minor` plus `currency`; never a float.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
           },
           "response": [
             {
@@ -14328,7 +14984,7 @@
                     }
                   }
                 },
-                "description": "A member records a booking made outside Go: kind, title, vendor, ref, amount_minor, payer_person_id, for_person_ids, and optionally refundable_until, starts_at, ends_at, journey, return_journey, details [{ label, value }], passengers [{ person_id (one of for_person_ids), seat?, pnr? }], place, image_url, decision_id (a closed vote it fulfils). Stored confirmed in the trip's currency, no expense. Go hears booking.changed added by you, then the booked record line. Strict body; send an Idempotency-Key so a retry is safe.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Money** (§1.3): whole paise, `*_minor` plus `currency`; never a float.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "A member records a booking made outside Go: kind, title, vendor, ref, amount_minor, payer_person_id, for_person_ids, and optionally refundable_until, starts_at, ends_at, journey, return_journey, details [{ label, value }], passengers [{ person_id (one of for_person_ids), seat?, pnr? }], place, image_url, decision_id (a closed vote it fulfils). Stored confirmed in the trip's currency, no expense; answers 201 Booking as you see it (the covered-people rule applies; documents [] for now) plus seq. Go hears booking.changed added by you, then the booked record line. Strict body; send an Idempotency-Key so a retry is safe.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Money** (§1.3): whole paise, `*_minor` plus `currency`; never a float.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
               "status": "Created",
               "code": 201,
@@ -14340,7 +14996,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"booking_id\": \"b_01JA\",\n  \"seq\": 62\n}"
+              "body": "{\n  \"booking_id\": \"b_01JA\",\n  \"kind\": \"flight\",\n  \"status\": \"confirmed\",\n  \"title\": \"BLR → GOX · 6E 5313\",\n  \"vendor\": \"ixigo\",\n  \"ref\": \"K7QX2M\",\n  \"amount_minor\": 1184000,\n  \"currency\": \"INR\",\n  \"payer_person_id\": \"p_rahul\",\n  \"for_person_ids\": [\n    \"p_rahul\",\n    \"p_arjun\"\n  ],\n  \"starts_at\": \"2026-11-06T14:10:00Z\",\n  \"ends_at\": \"2026-11-06T16:25:00Z\",\n  \"journey\": {\n    \"mode\": \"flight\",\n    \"origin\": {\n      \"name\": \"Bengaluru\",\n      \"code\": \"BLR\"\n    },\n    \"destination\": {\n      \"name\": \"Mopa\",\n      \"code\": \"GOX\"\n    },\n    \"depart_at\": \"2026-11-06T19:40:00+05:30\",\n    \"arrive_at\": \"2026-11-06T21:55:00+05:30\",\n    \"carrier_name\": \"IndiGo\",\n    \"carrier_code\": \"6E\",\n    \"number\": \"5313\"\n  },\n  \"details\": [\n    {\n      \"label\": \"PNR\",\n      \"value\": \"K7QX2M\"\n    },\n    {\n      \"label\": \"Baggage\",\n      \"value\": \"15 kg\"\n    }\n  ],\n  \"created_at\": \"2026-10-08T10:00:00Z\",\n  \"passengers\": [\n    {\n      \"person_id\": \"p_rahul\",\n      \"seat\": \"14A\",\n      \"pnr\": \"K7QX2M\"\n    }\n  ],\n  \"documents\": [],\n  \"added_by_person_id\": \"p_rahul\",\n  \"seq\": 62\n}"
             },
             {
               "name": "invalid",
@@ -14377,7 +15033,7 @@
                     }
                   }
                 },
-                "description": "A member records a booking made outside Go: kind, title, vendor, ref, amount_minor, payer_person_id, for_person_ids, and optionally refundable_until, starts_at, ends_at, journey, return_journey, details [{ label, value }], passengers [{ person_id (one of for_person_ids), seat?, pnr? }], place, image_url, decision_id (a closed vote it fulfils). Stored confirmed in the trip's currency, no expense. Go hears booking.changed added by you, then the booked record line. Strict body; send an Idempotency-Key so a retry is safe.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Money** (§1.3): whole paise, `*_minor` plus `currency`; never a float.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "A member records a booking made outside Go: kind, title, vendor, ref, amount_minor, payer_person_id, for_person_ids, and optionally refundable_until, starts_at, ends_at, journey, return_journey, details [{ label, value }], passengers [{ person_id (one of for_person_ids), seat?, pnr? }], place, image_url, decision_id (a closed vote it fulfils). Stored confirmed in the trip's currency, no expense; answers 201 Booking as you see it (the covered-people rule applies; documents [] for now) plus seq. Go hears booking.changed added by you, then the booked record line. Strict body; send an Idempotency-Key so a retry is safe.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Membership** (§1.2, rev 3): only for someone in the trip now; a non-member and a trip that does not exist both answer 403 `forbidden`.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Money** (§1.3): whole paise, `*_minor` plus `currency`; never a float.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
               "status": "Unprocessable Entity",
               "code": 422,
@@ -16076,7 +16732,7 @@
                 }
               }
             },
-            "description": "{ carry_over: true|false }: remember me in future trips (off by default). Answers Go's own acknowledgement.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+            "description": "{ carry_over: true|false } (strict): remember me in future trips (off by default). Answers Go's own acknowledgement.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
           },
           "response": [
             {
@@ -16113,7 +16769,7 @@
                     }
                   }
                 },
-                "description": "{ carry_over: true|false }: remember me in future trips (off by default). Answers Go's own acknowledgement.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
+                "description": "{ carry_over: true|false } (strict): remember me in future trips (off by default). Answers Go's own acknowledgement.\n\n- **Sign-in** (§1.2): `Authorization: Bearer <Supabase access token>` ({{token}}); 401 `unauthorized` means refresh the session once, then sign in again.\n- **Once** (§1.4): send `Idempotency-Key` (one per press, kept 24 h); a repeat replays the first answer, the same key with a different body is 422 `idempotency_key_reused`.\n- **Strict body** (§1.5): an unknown field or a value of the wrong type is 422 `invalid` with `field` set.\n- **Errors** (§1.5): `{ \"error\": { \"code\", \"message\", \"field\", \"retry_after_seconds\", \"request_id\" } }`, `X-Request-Id` on every answer."
               },
               "status": "OK",
               "code": 200,

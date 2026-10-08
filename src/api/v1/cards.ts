@@ -5,9 +5,13 @@ import type { Ctx } from '../../context.js';
 import { cardTap, TAP_UNANSWERED } from '../../domain/ask-go.js';
 import { CARDS_MAX, listCards, shareCallRecording } from '../../domain/cards.js';
 import { conflict } from '../../domain/errors.js';
+import { RateLimiter } from '../rate-limit.js';
 import { checkCardAction } from '../bodies.js';
 import { SECTIONS, type RouteMeta } from './meta.js';
 import { inTrip, type V1Deps } from './shared.js';
+
+/** App contract Appendix A: 10 card taps a minute per person per trip; a repeat of the same press_id is free. */
+export const CARD_TAPS_PER_MINUTE = 10;
 
 const CALL = { card_id: 'c_call_1', kind: 'call', fallback_text: 'Go is calling Villa Sol', call_id: 'call_1', business: 'Villa Sol', goal: 'Ask about late check-in', state: 'talking', started_at: '2026-10-08T09:00:00Z', last_line: { who: 'them', text: 'Yes, 11 pm is fine.' }, actions: [{ action_id: 'stop', label: 'Stop', style: 'secondary' }, { action_id: 'listen', label: 'Listen in', style: 'secondary' }] };
 const ENDED = { ...CALL, state: 'ended', ended_at: '2026-10-08T09:03:12Z', outcome: 'Late check-in until 11 pm confirmed', recording_url: 'https://brain.go.example/recordings/call_1.m4a?sig=…', duration_s: 192, actions: [] };
@@ -16,13 +20,14 @@ const refused = (status: number, code: string, msg: string) => ({ name: code, st
 export const routes: RouteMeta[] = [
   {
     method: 'POST', path: '/app/v1/trips/:trip/cards/:card_id/actions', section: SECTIONS.cards, title: 'Press a card button',
-    summary: '{ action_id, option_id?, press_id, payload? }: a tap on a Go card (options, working, call, pay, notice, checklist). press_id becomes Go\'s tap_id (a double tap is one tap); payload { trip: oneway | round } goes through to Go. Answers Go\'s CardActionResult: done | open { url, expires_at } | refused { toast }. `listen` on a live call card is one of these: Go answers open with its listen-in page. When Go does not answer: 200 refused "Go didn\'t answer. Try again." Record cards (vote, mandate, expense) are the Server\'s own: 422.',
+    summary: `{ action_id, option_id?, press_id, payload? }: a tap on a Go card (options, working, call, pay, notice, checklist). press_id becomes Go's tap_id (a double tap is one tap); payload { trip: oneway | round } goes through to Go. Answers Go's CardActionResult: done | open { url, expires_at } | refused { toast }. \`listen\` on a live call card is one of these: Go answers open with its listen-in page. When Go does not answer: 200 refused "Go didn't answer. Try again." Record cards (vote, mandate, expense) are the Server's own: 422. ${CARD_TAPS_PER_MINUTE} taps a minute per person per trip (429); a repeat of the same press_id is not counted.`,
     example: {
       body: { action_id: 'pick', option_id: 'opt_flight_1', press_id: '9a1c3c2e-7b1e-4f0d-9d3c-1a2b3c4d5e6f', payload: { trip: 'round' } },
       responses: [
         { name: 'done', status: 200, body: { result: 'done', toast: 'Noted. Go will reply in the room.' } },
         { name: 'open a page', status: 200, body: { result: 'open', url: 'https://brain.go.example/vault/approve?link=lk_4Rt8Zp2Lq', expires_at: '2026-10-05T09:06:30Z' } },
         { name: 'Go did not answer', status: 200, body: TAP_UNANSWERED },
+        { name: 'rate_limited', status: 429, body: { error: { code: 'rate_limited', message: `at most ${CARD_TAPS_PER_MINUTE} card taps a minute: slow down`, field: null, retry_after_seconds: 42, request_id: 'req_01JA7Q3V8Z' } } },
       ],
     },
   },
@@ -47,8 +52,10 @@ export const routes: RouteMeta[] = [
 const text = (max: number) => ({ type: 'string', minLength: 1, maxLength: max, pattern: '^[a-z_,]+$' }) as const;
 
 export function register(app: FastifyInstance, ctx: Ctx, deps: V1Deps): void {
+  const taps = new RateLimiter(() => ctx.limits?.cardTapsPerMinute ?? CARD_TAPS_PER_MINUTE, 60_000, { what: 'card taps' });
   app.post('/app/v1/trips/:trip/cards/:card_id/actions', inTrip(ctx, (req, trip, me) => {
     const input = checkCardAction(req.body);
+    taps.takeOnce(`${me}:${trip}`, input.press_id); // the same press again (a double tap, a retry) is one tap for Go, and free here
     return cardTap(ctx, deps.go, trip, me, { card_id: req.params.card_id!, ...input });
   }));
   app.get('/app/v1/trips/:trip/cards', {

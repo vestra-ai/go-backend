@@ -6,7 +6,7 @@ import { GoSocket } from '../../src/go/go-socket.js';
 import type { Live, LiveEvent } from '../../src/live/live.js';
 import type { LiveHub, LiveHubOptions } from '../../src/live/ws.js';
 import { MemoryStorage } from '../../src/storage/memory-storage.js';
-import type { Notification, Push } from '../../src/push/push.js';
+import type { Push, PushPayload } from '../../src/push/push.js';
 import { goRequestHandlers } from '../../src/requests/index.js';
 import { OutboxSender } from '../../src/outbox/sender.js';
 import { buildApp } from '../../src/api/app.js';
@@ -33,12 +33,12 @@ export class RecordingLive implements Live {
   }
 }
 
-/** A recorded push: the new payload, or the legacy `{ body, data }` shape a call site that has not moved still sends (loosely typed, so a test can read either). */
-export type SentPush = { to: string[]; n: Notification & Record<string, any> };
+/** A recorded push: the §8 payload as the sender received it. */
+export type SentPush = { to: string[]; n: PushPayload };
 
 export class RecordingPush implements Push {
   sent: SentPush[] = [];
-  async send(to: string[], n: Notification) {
+  async send(to: string[], n: PushPayload) {
     this.sent.push({ to, n });
   }
 }

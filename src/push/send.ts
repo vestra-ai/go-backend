@@ -1,7 +1,6 @@
 // The one way the domain sends a push: it honours `Me.notifications_enabled` (the single switch, app contract §8), looks
 // up the trip's title for the payload and hands the finished payload to the sender. A person with the switch off, or a
-// deleted account, gets nothing from here; the Web Push sender checks the switch again at delivery for callers that
-// still use the legacy shape.
+// deleted account, gets nothing from here; the Web Push sender checks the switch again at delivery time.
 import type { Ctx } from '../context.js';
 import { pushPayload, type PushType } from './push.js';
 
@@ -9,7 +8,7 @@ export interface SendPushInput {
   type: PushType;
   body: string;
   message_id?: string;
-  /** The thing the push is about when there is no message (a vote, a payee, a joiner): part of the tag. */
+  /** The thing the push is about when there is no message (a vote, a payee, an expense, a settlement, a nudger, a joiner, a booking): part of the tag. */
   id?: string;
 }
 
