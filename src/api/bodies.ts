@@ -354,8 +354,64 @@ const liveTicket = {
   properties: { device_id: id },
 } as const;
 
+// ---- §4.9 money. Amounts are whole minor units above zero; the category and the lengths are the contract's Expense.
+const amount = { type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER } as const;
+const people = { type: 'array', minItems: 1, maxItems: 30, items: id } as const;
+
+// A person adds an expense by hand ("Add a payment"); the payer is the caller when not named.
+const addExpense = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['amount_minor', 'note', 'category', 'split_person_ids'],
+  properties: {
+    paid_by_person_id: id,
+    amount_minor: amount,
+    note: { type: 'string', minLength: 1, maxLength: 120 },
+    category: { type: 'string', enum: ['stay', 'food', 'getting_around', 'activities', 'other'] },
+    split_person_ids: people,
+    booking_id: id,
+  },
+} as const;
+
+// "Fix split" (PATCH …/expenses/:id).
+const patchExpense = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['split_person_ids'],
+  properties: { split_person_ids: people, note: { type: 'string', minLength: 1, maxLength: 120 } },
+} as const;
+
+// "I didn't get this" / "this isn't right" (POST …/expenses/:id/dispute): the reason is optional, 200 characters (the contract's ExpenseConfirmation).
+const disputeExpense = {
+  type: 'object',
+  additionalProperties: false,
+  properties: { reason: { type: 'string', minLength: 1, maxLength: 200 } },
+} as const;
+
+// "Record a payment" (POST …/settlements). The method is the app contract's Settlement.method; the note the contract's 120.
+const recordSettlement = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['to_person_id', 'amount_minor', 'currency', 'method'],
+  properties: {
+    to_person_id: id,
+    amount_minor: amount,
+    currency: { type: 'string', maxLength: 3, pattern: '^[A-Z]{3}$' },
+    method: { type: 'string', enum: ['upi', 'cash', 'bank_transfer', 'other'] },
+    note: { type: 'string', minLength: 1, maxLength: 120 },
+  },
+} as const;
+
+// The settle_up card's UPI button (POST …/transfers/pay-link).
+const payLink = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['to_person_id', 'amount_minor'],
+  properties: { to_person_id: id, amount_minor: amount },
+} as const;
+
 /** Every route's body definition, by name. */
-export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, putUpi, deleteMe, patchTripMe, acceptInvite, putBudget, patchTrip, nudge, addDevice, createTrip, readTrip, postMessage, putReaction, cardAction, castVote, upload, liveTicket } as const;
+export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, putUpi, deleteMe, patchTripMe, acceptInvite, putBudget, patchTrip, nudge, addDevice, createTrip, readTrip, postMessage, putReaction, cardAction, castVote, upload, liveTicket, addExpense, patchExpense, disputeExpense, recordSettlement, payLink } as const;
 
 /** Nodes the walk in tests/bodies.test.ts does not enter: they are checked against the contract's own definitions elsewhere. */
 export const PASSTHROUGH: readonly string[] = ['patchTrip.itinerary[]', 'postMessage.attachments[]'];
@@ -465,6 +521,37 @@ export interface NudgeBody {
   from_person_id: string;
 }
 
+export interface AddExpenseBody {
+  paid_by_person_id?: string;
+  amount_minor: number;
+  note: string;
+  category: 'stay' | 'food' | 'getting_around' | 'activities' | 'other';
+  split_person_ids: string[];
+  booking_id?: string;
+}
+
+export interface PatchExpenseBody {
+  split_person_ids: string[];
+  note?: string;
+}
+
+export interface DisputeExpenseBody {
+  reason?: string;
+}
+
+export interface RecordSettlementBody {
+  to_person_id: string;
+  amount_minor: number;
+  currency: string;
+  method: 'upi' | 'cash' | 'bank_transfer' | 'other';
+  note?: string;
+}
+
+export interface PayLinkBody {
+  to_person_id: string;
+  amount_minor: number;
+}
+
 export interface AddDeviceBody {
   platform: 'web_push';
   web_push: { endpoint: string; keys: { p256dh: string; auth: string } };
@@ -537,3 +624,8 @@ export const checkCardAction = bodyChecker<CardActionBody>(bodies.cardAction);
 export const checkCastVote = bodyChecker<CastVoteBody>(bodies.castVote);
 export const checkUpload = bodyChecker<UploadBody>(bodies.upload);
 export const checkLiveTicket = bodyChecker<LiveTicketBody>(bodies.liveTicket);
+export const checkAddExpense = bodyChecker<AddExpenseBody>(bodies.addExpense);
+export const checkPatchExpense = bodyChecker<PatchExpenseBody>(bodies.patchExpense);
+export const checkDisputeExpense = bodyChecker<DisputeExpenseBody>(bodies.disputeExpense);
+export const checkRecordSettlement = bodyChecker<RecordSettlementBody>(bodies.recordSettlement);
+export const checkPayLink = bodyChecker<PayLinkBody>(bodies.payLink);

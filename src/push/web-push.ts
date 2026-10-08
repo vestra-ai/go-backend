@@ -61,9 +61,9 @@ export function isValidSubscriptionKeys(keys: { p256dh: string; auth: string }):
   return bytes(keys.p256dh) === 65 && bytes(keys.auth) === 16;
 }
 
-/** What the browser receives: the text (cut to 300 characters) and where a tap should go. No links of any kind. */
+/** What the browser receives: the type when the push has one, the text (cut to 300 characters) and where a tap should go. No links of any kind. */
 export function payloadOf(n: Notification): string {
-  return JSON.stringify({ body: Array.from(n.body).slice(0, 300).join(''), data: n.data }); // by characters, so a pair is never cut in half
+  return JSON.stringify({ ...(n.type ? { type: n.type } : {}), body: Array.from(n.body).slice(0, 300).join(''), data: n.data }); // by characters, so a pair is never cut in half
 }
 
 const SEND_BATCH = 10;

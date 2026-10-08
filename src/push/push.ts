@@ -1,4 +1,9 @@
+/** The app contract's §8 push types. Set on the pushes built since phase 3; the older ones (owe, nudge, mention, card, vote_closing) get theirs in phase 4.7. */
+export type PushType = 'mention' | 'card' | 'vote_closing' | 'owe' | 'settlement' | 'nudge' | 'joined' | 'expense' | 'checkin';
+
 export interface Notification {
+  /** What the push is about (§8): the app routes a tap by it. */
+  type?: PushType;
   /** Go's text, a card's fallback_text, or the question of a vote about to close. */
   body: string;
   /** So a tap opens the room at that message. */

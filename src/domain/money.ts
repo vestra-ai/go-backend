@@ -1,30 +1,68 @@
 import type { Category, Money } from './types.js';
 
+export type ExpenseStatus = 'pending' | 'approved' | 'disputed';
+
 export interface MoneyExpense {
   paid_by_person_id: string;
   amount_minor: number;
   category: string;
   split_person_ids: string[];
+  /** Missing means approved (rows from before approval existed, and callers that do not track it). */
+  status?: ExpenseStatus;
+}
+
+/** A payment between two people outside Go (§4.9). Only its standing matters to the maths. */
+export interface MoneySettlement {
+  from_person_id: string;
+  to_person_id: string;
+  amount_minor: number;
+  status: 'pending_confirmation' | 'confirmed' | 'disputed';
 }
 
 const CATEGORY_ORDER: Category[] = ['stay', 'food', 'getting_around', 'activities', 'other'];
 
 /**
- * Each person's balance in minor units: what they paid minus their share. Positive: owed money.
- * An amount that does not divide evenly gives the extra paise, one each, to the first people in
- * `order`, so the result is the same every time and always adds up to the amount.
+ * The rules (docs/APP-CONTRACT-CHANGES.md §4.9): a `pending` or `approved` expense counts in the totals and the transfers;
+ * a `disputed` one is listed and marked but counts in neither until the payer fixes the split or removes it. A settlement
+ * counts as soon as it is recorded (provisionally, while the payee has not answered) and stays counted once confirmed;
+ * a disputed settlement puts the amount back.
  */
-export function balances(expenses: MoneyExpense[], order: string[]): Map<string, number> {
+export const expenseCounts = (e: Pick<MoneyExpense, 'status'>): boolean => e.status !== 'disputed';
+export const settlementCounts = (s: Pick<MoneySettlement, 'status'>): boolean => s.status !== 'disputed';
+
+/**
+ * Each person's share of one expense, in minor units: an equal split, where an amount that does not divide evenly gives
+ * the extra paise, one each, to the first people in `order`, so the result is the same every time and always adds up.
+ */
+export function sharesOf(e: Pick<MoneyExpense, 'amount_minor' | 'split_person_ids'>, order: string[]): Map<string, number> {
   const rank = new Map(order.map((id, i) => [id, i]));
+  const people = [...new Set(e.split_person_ids)].sort((a, b) => (rank.get(a) ?? 1e9) - (rank.get(b) ?? 1e9) || a.localeCompare(b));
+  const out = new Map<string, number>();
+  if (people.length === 0) return out;
+  const base = Math.floor(e.amount_minor / people.length);
+  const extra = e.amount_minor - base * people.length;
+  people.forEach((id, i) => out.set(id, base + (i < extra ? 1 : 0)));
+  return out;
+}
+
+/**
+ * Each person's balance in minor units: what they paid (expenses, and money they sent to settle up) minus their shares
+ * (and money they received). Positive: owed money. Disputed expenses and disputed settlements are left out.
+ */
+export function balances(expenses: MoneyExpense[], order: string[], settlements: MoneySettlement[] = []): Map<string, number> {
   const net = new Map<string, number>();
   const add = (id: string, n: number) => net.set(id, (net.get(id) ?? 0) + n);
   for (const e of expenses) {
-    const people = [...new Set(e.split_person_ids)].sort((a, b) => (rank.get(a) ?? 1e9) - (rank.get(b) ?? 1e9) || a.localeCompare(b));
-    if (people.length === 0) continue;
-    const base = Math.floor(e.amount_minor / people.length);
-    const extra = e.amount_minor - base * people.length;
+    if (!expenseCounts(e)) continue;
+    const shares = sharesOf(e, order);
+    if (shares.size === 0) continue;
     add(e.paid_by_person_id, e.amount_minor);
-    people.forEach((id, i) => add(id, -(base + (i < extra ? 1 : 0))));
+    for (const [id, share] of shares) add(id, -share);
+  }
+  for (const s of settlements) {
+    if (!settlementCounts(s)) continue;
+    add(s.from_person_id, s.amount_minor);
+    add(s.to_person_id, -s.amount_minor);
   }
   return net;
 }
@@ -58,20 +96,25 @@ export function transfers(net: Map<string, number>, order: string[], currency: s
   return out;
 }
 
-/** The trip's money as the Server works it out. Go reads it and never works it out itself. */
-export function moneyOf(expenses: MoneyExpense[], order: string[], currency: string, planMinor: number | null): Money {
+/** Spending by category in the contract's order, for the expenses that count. */
+export function byCategory<E extends MoneyExpense>(expenses: E[], amountOf: (e: E) => number = (e) => e.amount_minor): Money['by_category'] {
   const byCat = new Map<string, number>();
-  let spent = 0;
   for (const e of expenses) {
-    spent += e.amount_minor;
-    byCat.set(e.category, (byCat.get(e.category) ?? 0) + e.amount_minor);
+    if (!expenseCounts(e)) continue;
+    const amount = amountOf(e);
+    if (amount > 0) byCat.set(e.category, (byCat.get(e.category) ?? 0) + amount);
   }
-  const by_category = CATEGORY_ORDER.filter((c) => (byCat.get(c) ?? 0) > 0).map((c) => ({ category: c, amount_minor: byCat.get(c)! }));
+  return CATEGORY_ORDER.filter((c) => (byCat.get(c) ?? 0) > 0).map((c) => ({ category: c, amount_minor: byCat.get(c)! }));
+}
+
+/** The trip's money as the Server works it out. Go reads it and never works it out itself. */
+export function moneyOf(expenses: MoneyExpense[], order: string[], currency: string, planMinor: number | null, settlements: MoneySettlement[] = []): Money {
+  const spent = expenses.filter(expenseCounts).reduce((sum, e) => sum + e.amount_minor, 0);
   return {
     currency,
     ...(planMinor !== null ? { plan_minor: planMinor } : {}),
     spent_minor: spent,
-    by_category,
-    transfers: transfers(balances(expenses, order), order, currency),
+    by_category: byCategory(expenses),
+    transfers: transfers(balances(expenses, order, settlements), order, currency),
   } as Money;
 }

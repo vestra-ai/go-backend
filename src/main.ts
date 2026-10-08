@@ -39,6 +39,7 @@ const ctx: Ctx = {
   storage,
   publicBaseUrl,
   spendPrivateKey: config.goSpendPrivateKey,
+  features: config.features,
 };
 
 // 1. The socket to Go, with a fresh signature on every connect. Any instance can answer any of Go's requests.

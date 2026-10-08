@@ -55,9 +55,10 @@ it('the whole feature in one walk from the web app\'s origin: every change takes
   await call('p_arjun', 'PUT', `${trip}/me/join-answers`, { from_city: 'Delhi', know: ['Window seat'] });
   await call('p_kabir', 'PUT', `${trip}/me/budget`, { min_minor: 1234567, max_minor: 2345678 });
   await call('p_meher', 'PATCH', trip, { title: 'Goa, again', status: 'booked' });
-  // money: an expense, whom Priya owes (with Rahul's UPI id), and a reminder
+  // money: an expense (pending: the four others are asked to approve, and already count), whom Priya owes, a pay link to Rahul, and a reminder
   await call('p_rahul', 'POST', `${trip}/expenses`, { paid_by_person_id: 'p_rahul', amount_minor: 100000, note: 'Dinner', category: 'food', split_person_ids: EVERYONE });
-  const settle = await call('p_priya', 'GET', `${trip}/settle-up`);
+  const money = await call('p_priya', 'GET', `${trip}/money`);
+  const link = await call('p_priya', 'POST', `${trip}/transfers/pay-link`, { to_person_id: 'p_rahul', amount_minor: 20000 });
   await call('p_rahul', 'POST', `${trip}/transfers/nudge`, { from_person_id: 'p_priya' });
   await h.flush();
   await sender.drain();
@@ -84,10 +85,10 @@ it('the whole feature in one walk from the web app\'s origin: every change takes
   expect([events.every((e) => check('Event', e).ok), check('TripSnapshot', snap).ok, snap.seq === events.at(-1).seq]).toEqual([true, true, true]);
   // Go reads only the lowest band (with one answer, the band is that answer: by design), and no event carries an amount or a person for it.
   expect([/rahul@upi|priya@okbank|\+91p_|@mail\.test/.test(seen), /1234567|2345678/.test(JSON.stringify(events)), snap.budget]).toEqual([false, false, { lowest: { min_minor: 1234567, max_minor: 2345678, currency: 'INR' }, answered: 1, of: 5 }]);
-  expect(settle.body.you_pay).toEqual([{ to_person_id: 'p_rahul', amount_minor: 20000, currency: 'INR', upi_id: 'rahul@upi' }]);
-  expect(pushes.map(([who, p]) => [who, p.body]).sort()).toEqual([
-    ['p_arjun', 'You owe Rahul K ₹200 for Dinner'], ['p_kabir', 'You owe Rahul K ₹200 for Dinner'], ['p_meher', 'You owe Rahul K ₹200 for Dinner'],
-    ['p_priya', 'Rahul K reminded you: you owe ₹200'], ['p_priya', 'You owe Rahul K ₹200 for Dinner'],
-  ]); // the four who owe, and the reminder; nothing for votes, bookings, edits or the cancellation
-  expect(pushes.every(([, p]) => JSON.stringify(Object.keys(p)) === '["body","data"]' && p.data.trip_id === 't_goa' && !/https?:/.test(JSON.stringify(p)))).toBe(true);
+  expect([money.body.me.i_owe, money.body.me.spent_minor, link.body.upi_uri]).toEqual([[{ from_person_id: 'p_priya', to_person_id: 'p_rahul', amount_minor: 20000, currency: 'INR' }], 20000, 'upi://pay?pa=rahul%40upi&pn=Rahul%20K&am=200.00&cu=INR&tn=Goa%2C%20again%20%C2%B7%20settle%20up']);
+  expect(pushes.map(([who, p]) => [who, p.type ?? null, p.body]).sort()).toEqual([
+    ['p_arjun', 'expense', 'Rahul K added Dinner · your share ₹200. Approve?'], ['p_kabir', 'expense', 'Rahul K added Dinner · your share ₹200. Approve?'], ['p_meher', 'expense', 'Rahul K added Dinner · your share ₹200. Approve?'],
+    ['p_priya', null, 'Rahul K reminded you: you owe ₹200'], ['p_priya', 'expense', 'Rahul K added Dinner · your share ₹200. Approve?'],
+  ]); // the four asked to approve, and the reminder; nothing for votes, bookings, edits or the cancellation
+  expect(pushes.every(([, p]) => JSON.stringify(Object.keys(p).filter((k) => k !== 'type')) === '["body","data"]' && p.data.trip_id === 't_goa' && !/https?:|upi:/.test(JSON.stringify(p)))).toBe(true);
 });
