@@ -1,3 +1,4 @@
+import { WebSocket } from 'ws';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { check } from '../src/contract/index.js';
 import { tapIdFor } from '../src/domain/ask-go.js';
@@ -75,30 +76,32 @@ describe('creating and joining a trip', () => {
     expect((await api({ id: rahul.id, token: await h.fakeAuth!.mint({ name: 'Rahul', email: 'rahul@x.test' }, { expiresIn: -120 }) }, 'GET', `/app/v1/trips/${trip}`)).status).toBe(401);
     const stranger = await person('Stranger');
     expect((await api(stranger, 'GET', `/app/v1/trips/${trip}`)).status).toBe(403);
-    expect((await api(stranger, 'POST', `/app/v1/trips/${trip}/messages`, { client_id: 'c1', text: 'hi' })).status).toBe(403);
+    expect((await api(stranger, 'POST', `/app/v1/trips/${trip}/messages`, { client_message_id: 'c1', text: 'hi' })).status).toBe(403);
   });
 });
 
 describe('messages', () => {
-  it('stores a message and tells Go: mentions_go when it names Go, once per client id', async () => {
-    const a = await api(rahul, 'POST', `/app/v1/trips/${trip}/messages`, { client_id: 'c1', text: '@Go can you find flights?' });
-    expect(a.status).toBe(200);
-    expect((await api(rahul, 'POST', `/app/v1/trips/${trip}/messages`, { text: 'no press key' })).status).toBe(422); // client_id or an Idempotency-Key
-    const again = await api(rahul, 'POST', `/app/v1/trips/${trip}/messages`, { client_id: 'c1', text: '@Go can you find flights?' });
-    expect(again.body).toEqual(a.body); // a retry does not post twice
+  it('stores a message and tells Go: mentions_go when it names Go, once per client_message_id, answering the stored Message', async () => {
+    const a = await api(rahul, 'POST', `/app/v1/trips/${trip}/messages`, { client_message_id: 'c1', text: '@Go can you find flights?' });
+    expect(a.status).toBe(201);
+    expect(check('Message', a.body)).toMatchObject({ ok: true });
+    expect(a.body).toMatchObject({ author: { kind: 'person', person_id: rahul.id }, text: '@Go can you find flights?', mentions_go: true, withheld: false, reactions: [] });
+    expect((await api(rahul, 'POST', `/app/v1/trips/${trip}/messages`, { text: 'no press key' })).status).toBe(422); // client_message_id is required
+    const again = await api(rahul, 'POST', `/app/v1/trips/${trip}/messages`, { client_message_id: 'c1', text: '@Go can you find flights?' });
+    expect([again.status, again.body]).toEqual([201, a.body]); // a retry does not post twice
     await h.flush();
     const e = events('message.created').filter((x) => x.data.message.message_id === a.body.message_id);
     expect(e).toHaveLength(1);
     expect(e[0]!.data.message).toMatchObject({ mentions_go: true, withheld: false, text: '@Go can you find flights?', author: { kind: 'person', person_id: rahul.id } });
     expect(check('Event', e[0]!)).toMatchObject({ ok: true });
-    const plain = await api(priya, 'POST', `/app/v1/trips/${trip}/messages`, { client_id: 'c2', text: "let's go to the beach" });
+    const plain = await api(priya, 'POST', `/app/v1/trips/${trip}/messages`, { client_message_id: 'c2', text: "let's go to the beach" });
     await h.flush();
     expect(events('message.created').find((x) => x.data.message.message_id === plain.body.message_id)!.data.message.mentions_go).toBe(false);
   });
 
   it('a reply to one of Go\'s messages is for Go, even without its name', async () => {
     const go = await goCall('post_message', { text: 'Here are 3 flights', card: { card_id: 'c_fl', kind: 'notice', fallback_text: 'flights', title: 'Flights', body: 'x', tone: 'info' } }, trip);
-    const reply = await api(priya, 'POST', `/app/v1/trips/${trip}/messages`, { client_id: 'c3', text: 'the second one', reply_to: go.message_id });
+    const reply = await api(priya, 'POST', `/app/v1/trips/${trip}/messages`, { client_message_id: 'c3', text: 'the second one', reply_to: go.message_id });
     await h.flush();
     expect(events('message.created').find((x) => x.data.message.message_id === reply.body.message_id)!.data.message.mentions_go).toBe(true);
   });
@@ -108,7 +111,7 @@ describe('messages', () => {
     expect(p.status).toBe(200);
     await h.flush();
     expect(events('person.updated').at(-1)!.data).toMatchObject({ changed: ['go_paused'], person: { person_id: priya.id, go_paused: true } });
-    const m = await api(priya, 'POST', `/app/v1/trips/${trip}/messages`, { client_id: 'c4', text: 'a secret plan @Go' });
+    const m = await api(priya, 'POST', `/app/v1/trips/${trip}/messages`, { client_message_id: 'c4', text: 'a secret plan @Go' });
     await h.flush();
     const e = events('message.created').find((x) => x.data.message.message_id === m.body.message_id)!;
     expect(e.data.message).toMatchObject({ withheld: true, attachments: [], mentions_go: false });
@@ -125,10 +128,12 @@ describe('messages', () => {
   });
 
   it('edits and deletes only your own message, and Go hears about both', async () => {
-    const m = await api(kabir, 'POST', `/app/v1/trips/${trip}/messages`, { client_id: 'c5', text: 'orginal' });
+    const m = await api(kabir, 'POST', `/app/v1/trips/${trip}/messages`, { client_message_id: 'c5', text: 'orginal' });
     expect((await api(priya, 'PATCH', `/app/v1/trips/${trip}/messages/${m.body.message_id}`, { text: 'hacked' })).status).toBe(403);
-    expect((await api(kabir, 'PATCH', `/app/v1/trips/${trip}/messages/${m.body.message_id}`, { text: 'original' })).status).toBe(200);
-    expect((await api(kabir, 'DELETE', `/app/v1/trips/${trip}/messages/${m.body.message_id}`)).status).toBe(200);
+    const edited = await api(kabir, 'PATCH', `/app/v1/trips/${trip}/messages/${m.body.message_id}`, { text: 'original' });
+    expect([edited.status, edited.body.text, typeof edited.body.edited_at, edited.body.updated_seq > m.body.seq]).toEqual([200, 'original', 'string', true]); // the Message, as it is now
+    const deleted = await api(kabir, 'DELETE', `/app/v1/trips/${trip}/messages/${m.body.message_id}`);
+    expect([deleted.status, deleted.body.deleted, deleted.body.text, deleted.body.attachments]).toEqual([200, true, undefined, []]);
     await h.flush();
     expect(events('message.edited').at(-1)!.data.message).toMatchObject({ text: 'original' });
     expect(events('message.deleted').at(-1)!.data).toEqual({ message_id: m.body.message_id });
@@ -138,7 +143,7 @@ describe('messages', () => {
   });
 
   it('words written while Go is paused do not reach Go, even in an edit of an older message', async () => {
-    const m = await api(kabir, 'POST', `/app/v1/trips/${trip}/messages`, { client_id: 'c_edit', text: 'old words' });
+    const m = await api(kabir, 'POST', `/app/v1/trips/${trip}/messages`, { client_message_id: 'c_edit', text: 'old words' });
     await api(kabir, 'PATCH', `/app/v1/trips/${trip}/me`, { go_paused: true });
     await api(kabir, 'PATCH', `/app/v1/trips/${trip}/messages/${m.body.message_id}`, { text: 'new private words' });
     await h.flush();
@@ -151,13 +156,22 @@ describe('messages', () => {
     await api(kabir, 'PATCH', `/app/v1/trips/${trip}/me`, { go_paused: false });
   });
 
-  it('reactions by people carry their id, and are taken back', async () => {
-    const m = await api(rahul, 'POST', `/app/v1/trips/${trip}/messages`, { client_id: 'c6', text: 'North Goa?' });
-    await api(priya, 'POST', `/app/v1/trips/${trip}/messages/${m.body.message_id}/reactions`, { emoji: '👍' });
-    await api(priya, 'DELETE', `/app/v1/trips/${trip}/messages/${m.body.message_id}/reactions/${encodeURIComponent('👍')}`);
+  it('one reaction per person: it carries their id, a new emoji replaces it (removed, then added, for Go), null takes it back', async () => {
+    const m = await api(rahul, 'POST', `/app/v1/trips/${trip}/messages`, { client_message_id: 'c6', text: 'North Goa?' });
+    const react = (who: Who, emoji: string | null) => api(who, 'PUT', `/app/v1/trips/${trip}/messages/${m.body.message_id}/reaction`, { emoji });
+    const first = await react(priya, '👍');
+    expect([first.status, first.body.reactions]).toEqual([200, [{ emoji: '👍', person_id: priya.id }]]);
+    const same = await react(priya, '👍');
+    expect(same.body.updated_seq).toBe(first.body.updated_seq); // nothing changed
+    const moved = await react(priya, '🔥');
+    expect([moved.body.reactions, moved.body.updated_seq]).toEqual([[{ emoji: '🔥', person_id: priya.id }], first.body.updated_seq + 2]); // two changes: removed, added
+    const gone = await react(priya, null);
+    expect(gone.body.reactions).toEqual([]);
     await h.flush();
-    expect(events('reaction.added').at(-1)!.data).toEqual({ message_id: m.body.message_id, reaction: { emoji: '👍', person_id: priya.id } });
-    expect(events('reaction.removed').at(-1)!.data.reaction.person_id).toBe(priya.id);
+    const mine = h.go.events.filter((e) => (e.type === 'reaction.added' || e.type === 'reaction.removed') && e.data.message_id === m.body.message_id);
+    expect(mine.map((e) => [e.type, e.data.reaction])).toEqual([
+      ['reaction.added', { emoji: '👍', person_id: priya.id }], ['reaction.removed', { emoji: '👍', person_id: priya.id }], ['reaction.added', { emoji: '🔥', person_id: priya.id }], ['reaction.removed', { emoji: '🔥', person_id: priya.id }],
+    ]);
   });
 });
 
@@ -220,13 +234,20 @@ describe('votes, mandate and the "needs you" strip', () => {
   });
 
   it('a person undoes a record line, and Go hears it', async () => {
-    const m = await api(rahul, 'POST', `/app/v1/trips/${trip}/messages`, { client_id: 'c7', text: 'north goa' });
+    const m = await api(rahul, 'POST', `/app/v1/trips/${trip}/messages`, { client_message_id: 'c7', text: 'north goa' });
     const l = await goCall('add_record_line', { kind: 'open', text: 'Scuba on Saturday?', proof: [{ message_id: m.body.message_id }], person_ids: [priya.id] }, trip);
     expect((await api(priya, 'GET', `/app/v1/trips/${trip}/needs-you`)).body).toContainEqual({ kind: 'record', line_id: l.line_id, text: 'Scuba on Saturday?' });
-    await api(kabir, 'POST', `/app/v1/trips/${trip}/record/${l.line_id}/undo`);
+    const undone = await api(kabir, 'POST', `/app/v1/trips/${trip}/record/${l.line_id}/undo`);
+    expect(undone.body).toMatchObject({ line_id: l.line_id, status: 'undone' }); // the RecordLine
     await h.flush();
     expect(events('record.changed').at(-1)!.data).toMatchObject({ change: 'undone', by: { kind: 'person', person_id: kabir.id }, line: { line_id: l.line_id, status: 'undone' } });
     expect((await api(priya, 'GET', `/app/v1/trips/${trip}/needs-you`)).body.find((x: any) => x.kind === 'record')).toBeUndefined();
+    const redone = await api(priya, 'POST', `/app/v1/trips/${trip}/record/${l.line_id}/redo`);
+    expect(redone.body).toMatchObject({ line_id: l.line_id, status: 'active' });
+    await h.flush();
+    expect(events('record.changed').at(-1)!.data).toMatchObject({ change: 'updated', by: { kind: 'person', person_id: priya.id }, line: { line_id: l.line_id, status: 'active' } });
+    expect((await api(priya, 'POST', `/app/v1/trips/${trip}/record/${l.line_id}/redo`)).status).toBe(409);
+    expect((await api(priya, 'GET', `/app/v1/trips/${trip}/record`)).body.lines.find((x: any) => x.line_id === l.line_id).status).toBe('active');
   });
 
   it('a Go card that names you is in your strip until Go removes you with replace_card', async () => {
@@ -285,8 +306,9 @@ describe('asking Go', () => {
     expect(r.body).toEqual({ result: 'done', toast: 'Noted. Go will reply in the room.' });
     const priyaTap = tapIdFor(priya.id, 'tap_press_1');
     expect(h.go.requests.at(-1)).toEqual({ method: 'card_tap', params: { tap_id: priyaTap, trip_id: trip, card_id: 'c_opts', action_id: 'pick', person_id: priya.id, option_id: 'o1' } });
-    await tap(priya, { card_id: 'c_opts', action_id: 'pick', option_id: 'o1', tap_id: 'tap_press_1' }); // the older name for press_id is still accepted
-    expect(h.go.requests.at(-1)!.params.tap_id).toBe(priyaTap); // the same press keeps its id
+    await tap(priya, { card_id: 'c_opts', action_id: 'pick', option_id: 'o1', press_id: 'tap_press_1', payload: { trip: 'round' } });
+    expect(h.go.requests.at(-1)!.params).toMatchObject({ tap_id: priyaTap, payload: { trip: 'round' } }); // the same press keeps its id; the payload goes through (GO-CHANGES 1.2)
+    expect((await tap(priya, { card_id: 'c_opts', action_id: 'pick', tap_id: 'tap_press_1' })).status).toBe(422); // the older name is gone
     // Someone else replaying Priya's press id is a different tap: they can never get Priya's answer from Go.
     await tap(rahul, { card_id: 'c_opts', action_id: 'pick', option_id: 'o1', press_id: 'tap_press_1' });
     expect(h.go.requests.at(-1)!.params.tap_id).not.toBe(priyaTap);
@@ -301,16 +323,15 @@ describe('asking Go', () => {
     expect((await tap(await person('Stranger2'), { card_id: 'c_opts', action_id: 'x' })).status).toBe(403);
   });
 
-  it('tells the person when Go does not answer, is busy, or refuses', async () => {
+  it('when Go is busy, down or answers badly the person sees a refusal toast and taps again (app contract §4.7); Go\'s own refusal passes through', async () => {
     const before = h.go.requests.length;
+    const unanswered = { status: 200, body: { result: 'refused', toast: "Go didn't answer. Try again." } };
     h.go.answers.card_tap = () => ({ error: { code: 429, message: 'slow', data: { code: 'rate_limited', retry_after_seconds: 5 } } });
-    const busy = await h.app.inject({ method: 'POST', url: `/app/v1/trips/${trip}/cards/c_opts/actions`, payload: { action_id: 'pick' }, headers: { authorization: `Bearer ${priya.token}` } });
-    expect(busy.statusCode).toBe(429);
-    expect(busy.headers['retry-after']).toBe('5');
+    expect(await tap(priya, { card_id: 'c_opts', action_id: 'pick' })).toEqual(unanswered);
     h.go.answers.card_tap = () => ({ error: { code: 503, message: 'deploy', data: { code: 'unavailable' } } });
-    expect((await tap(priya, { card_id: 'c_opts', action_id: 'pick' })).status).toBe(503);
+    expect(await tap(priya, { card_id: 'c_opts', action_id: 'pick' })).toEqual(unanswered);
     h.go.answers.card_tap = () => ({ result: { result: 'banana' } }); // not a valid answer
-    expect((await tap(priya, { card_id: 'c_opts', action_id: 'pick' })).status).toBe(502);
+    expect(await tap(priya, { card_id: 'c_opts', action_id: 'pick' })).toEqual(unanswered);
     // not sent again on its own: one request each
     expect(h.go.requests.length - before).toBe(3);
     h.go.answers.card_tap = () => ({ result: { result: 'refused', toast: 'Only Rahul can approve' } });
@@ -320,10 +341,11 @@ describe('asking Go', () => {
   it('asks Go for a catch-up only when the person was away 3 hours or has 15 unread', async () => {
     await api(priya, 'POST', `/app/v1/trips/${trip}/read`, { up_to_seq: 3 });
     expect((await rows(h.pool, 'select last_read_seq from trip_people where trip_id = $1 and person_id = $2', [trip, priya.id]))[0].last_read_seq).toBe(3);
-    expect((await api(priya, 'GET', `/app/v1/trips/${trip}/catch-up`)).body).toEqual({ needed: false });
+    expect((await api(priya, 'GET', `/app/v1/trips/${trip}/catch-up`)).status).toBe(204);
     await h.pool.query("update trip_people set last_seen_at = now() - interval '4 hours' where person_id = $1", [priya.id]);
     const r = await api(priya, 'GET', `/app/v1/trips/${trip}/catch-up`);
-    expect(r.body).toMatchObject({ needed: true, summary: expect.any(String), items: [{ kind: 'decided' }] });
+    expect([r.status, r.body]).toEqual([200, expect.objectContaining({ summary: expect.any(String), items: [{ kind: 'decided', text: expect.any(String) }] })]);
+    expect(check('CatchUp', r.body)).toMatchObject({ ok: true });
     expect(h.go.requests.at(-1)!.method).toBe('catch_up');
     expect(h.go.requests.at(-1)!.params).toMatchObject({ trip_id: trip, person_id: priya.id });
     expect(check('CatchUpRequest', h.go.requests.at(-1)!.params)).toMatchObject({ ok: true });
@@ -403,22 +425,30 @@ describe('the live connection', () => {
     expect(seen).toEqual(expect.arrayContaining(['typing', 'message']));
   });
 
-  it('streams events to a member over server-sent events and refuses a non-member', async () => {
-    await h.app.listen({ port: 0, host: '127.0.0.1' });
-    const port = (h.app.server.address() as any).port;
-    const res = await fetch(`http://127.0.0.1:${port}/app/v1/trips/${trip}/live`, { headers: { authorization: `Bearer ${rahul.token}` } });
-    expect(res.headers.get('content-type')).toBe('text/event-stream');
-    const reader = res.body!.getReader();
-    const read = async () => new TextDecoder().decode((await reader.read()).value);
-    expect(await read()).toContain('event: hello');
+  it('carries messages to a member over the WebSocket and refuses a non-member\'s subscription (the socket itself is in tests/live-ws.test.ts)', async () => {
+    const base = await h.listen();
+    const open = async (who: Who) => {
+      const ticket = (await api(who, 'POST', '/app/v1/live/ticket', {})).body.ticket;
+      const ws = new WebSocket(`${base.replace('http', 'ws')}/app/v1/live?ticket=${ticket}`);
+      const frames: any[] = [];
+      ws.on('message', (d) => frames.push(JSON.parse(d.toString())));
+      await new Promise((r) => ws.once('open', r));
+      const until = async (pick: (f: any) => boolean) => {
+        for (let i = 0; i < 100 && !frames.some(pick); i++) await new Promise((r) => setTimeout(r, 20));
+        return frames.find(pick);
+      };
+      return { ws, frames, until };
+    };
+    const me = await open(rahul);
+    expect(await me.until((f) => f.type === 'hello')).toMatchObject({ person_id: rahul.id, heartbeat_seconds: 25 });
+    me.ws.send(JSON.stringify({ type: 'subscribe', trips: [{ trip_id: trip, since_seq: 1_000_000 }] }));
+    await new Promise((r) => setTimeout(r, 100));
     await goCall('post_message', { text: 'live!' }, trip);
-    let got = '';
-    for (let i = 0; i < 5 && !got.includes('live!'); i++) got += await read();
-    expect(got).toContain('event: message');
-    expect(got).toContain('"text":"live!"');
-    await reader.cancel();
-    const stranger = await person('Stranger3');
-    const denied = await fetch(`http://127.0.0.1:${port}/app/v1/trips/${trip}/live`, { headers: { authorization: `Bearer ${stranger.token}` } });
-    expect(denied.status).toBe(403);
+    expect(await me.until((f) => f.type === 'message' && f.message.text === 'live!')).toMatchObject({ trip_id: trip, message: { author: { kind: 'go' } } });
+    me.ws.close();
+    const stranger = await open(await person('Stranger3'));
+    stranger.ws.send(JSON.stringify({ type: 'subscribe', trips: [{ trip_id: trip, since_seq: 0 }] }));
+    expect(await stranger.until((f) => f.type === 'error')).toEqual({ type: 'error', trip_id: trip, code: 'forbidden' });
+    stranger.ws.close();
   });
 });

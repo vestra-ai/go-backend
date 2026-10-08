@@ -62,30 +62,43 @@ const GO_CARD_KINDS = new Set(['options', 'working', 'call', 'pay', 'notice']);
  */
 export const tapIdFor = (personId: string, appTapId: string) => `tap_${createHash('sha256').update(`${personId}:${appTapId}`).digest('hex').slice(0, 32)}`;
 
+/** What the app shows when Go does not answer a tap (app contract §4.7: a refusal, not an HTTP error). */
+export const TAP_UNANSWERED = { result: 'refused', toast: "Go didn't answer. Try again." } as const;
+
 /**
- * Someone tapped a button on one of Go's cards. The tap id comes from the app (so a double tap that
- * gets through is still one tap), or is made here. Go acts on each tap_id once.
- * Buttons on record cards (votes, "Yes, book it", settle up) never reach Go: the Server handles them.
+ * Someone tapped a button on one of Go's cards. The press id comes from the app (so a double tap that gets through is
+ * still one tap), or is made here. Go acts on each tap_id once. `payload` (GO-CHANGES 1.2: `{ trip: oneway | round }`)
+ * goes through as it is. Buttons on record cards (votes, "Yes, book it", settle up) never reach Go: the Server handles
+ * them. When Go cannot be asked, does not answer in time or answers badly, the person sees a refusal toast and taps
+ * again; the failure is logged here.
  */
 export async function cardTap(
   ctx: Ctx,
   go: GoClient,
   tripId: string,
   personId: string,
-  input: { card_id: string; action_id: string; option_id?: string; tap_id?: string },
+  input: { card_id: string; action_id: string; option_id?: string; press_id?: string; payload?: Record<string, unknown> },
+  log: (msg: string, err?: unknown) => void = (m, e) => console.error(`[card_tap] ${m}`, e ?? ''),
 ) {
   await requireMember(ctx.pool, tripId, personId);
   const m = (await ctx.pool.query(`select card->>'kind' as kind from messages where trip_id = $1 and card_id = $2 and author_kind = 'go'`, [tripId, input.card_id])).rows[0];
   if (!m) throw notFound(`card ${input.card_id} is not one of Go's cards in this trip`);
-  if (!GO_CARD_KINDS.has(m.kind)) throw invalid(`${m.kind} cards are handled by the Server, not Go`);
-  return askGo(go, 'card_tap', {
-    tap_id: input.tap_id ? tapIdFor(personId, input.tap_id) : newId('tap'),
-    trip_id: tripId,
-    card_id: input.card_id,
-    action_id: input.action_id,
-    person_id: personId,
-    ...(input.option_id ? { option_id: input.option_id } : {}),
-  });
+  if (!GO_CARD_KINDS.has(m.kind)) throw invalid(`${m.kind} cards are handled by the Server, not Go`, 'card_id');
+  try {
+    return await askGo(go, 'card_tap', {
+      tap_id: input.press_id ? tapIdFor(personId, input.press_id) : newId('tap'),
+      trip_id: tripId,
+      card_id: input.card_id,
+      action_id: input.action_id,
+      person_id: personId,
+      ...(input.option_id ? { option_id: input.option_id } : {}),
+      ...(input.payload ? { payload: input.payload } : {}),
+    });
+  } catch (err) {
+    if (!(err instanceof GoUnavailable)) throw err; // a 422 about the params is the app's own mistake
+    log(`${tripId} ${input.card_id} ${input.action_id} by ${personId}: ${err.status} ${err.message}`);
+    return TAP_UNANSWERED;
+  }
 }
 
 export const AWAY_HOURS = 3;
@@ -94,6 +107,8 @@ export const UNREAD_MESSAGES = 15;
 /**
  * Catch-up for someone who comes back to the room after 3 hours or more, or with 15 or more unread
  * messages: a few lines of what they missed, shown above the room for them only, never posted.
+ * Answers null (the route's 204) when they were not away long enough, and when Go did not answer in its 3 seconds:
+ * the room itself never waits for a catch-up (app contract §4.6).
  */
 export async function catchUp(ctx: Ctx, go: GoClient, tripId: string, personId: string, force = false) {
   const member = await requireMember(ctx.pool, tripId, personId);
@@ -103,9 +118,13 @@ export async function catchUp(ctx: Ctx, go: GoClient, tripId: string, personId: 
     `select count(*)::int as n from messages where trip_id = $1 and sent_at > $2 and deleted = false and (author_person_id is distinct from $3)`,
     [tripId, since, personId],
   )).rows[0].n as number;
-  if (!force && away < AWAY_HOURS && unread < UNREAD_MESSAGES) return { needed: false as const };
-  const answer = await askGo(go, 'catch_up', { trip_id: tripId, person_id: personId, since: since.toISOString() });
-  return { needed: true as const, ...answer };
+  if (!force && away < AWAY_HOURS && unread < UNREAD_MESSAGES) return null;
+  try {
+    return await askGo(go, 'catch_up', { trip_id: tripId, person_id: personId, since: since.toISOString() });
+  } catch (err) {
+    if (err instanceof GoUnavailable && err.status === 504) return null;
+    throw err;
+  }
 }
 
 // ---------------------------------------------------------------- the You screen

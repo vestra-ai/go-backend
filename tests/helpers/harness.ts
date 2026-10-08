@@ -1,8 +1,11 @@
 import { readFileSync } from 'node:fs';
+import type { AddressInfo } from 'node:net';
 import type pg from 'pg';
 import type { Ctx } from '../../src/context.js';
 import { GoSocket } from '../../src/go/go-socket.js';
 import type { Live, LiveEvent } from '../../src/live/live.js';
+import type { LiveHub, LiveHubOptions } from '../../src/live/ws.js';
+import { MemoryStorage } from '../../src/storage/memory-storage.js';
 import type { Notification, Push } from '../../src/push/push.js';
 import { goRequestHandlers } from '../../src/requests/index.js';
 import { OutboxSender } from '../../src/outbox/sender.js';
@@ -53,6 +56,8 @@ export interface HarnessOptions {
   auth?: 'supabase' | 'dev';
   /** Your own authenticator (the Supabase sign-in tests build one with a legacy secret). */
   makeAuth?: (pool: pg.Pool) => Authenticator;
+  /** The live socket hub's settings (a short heartbeat for the pong-timeout test). */
+  live?: LiveHubOptions;
 }
 
 /** A person's name from a test id: `p_rahul` → `Rahul`. */
@@ -63,7 +68,8 @@ export async function startHarness(opts: HarnessOptions = {}) {
   const { pool, close } = await freshDb();
   const live = new RecordingLive();
   const push = new RecordingPush();
-  const ctx: Ctx = { pool, live, push: opts.makePush ? opts.makePush(pool) : push, publicBaseUrl: 'https://go.example', spendPrivateKey: spend.private_key_pem };
+  const storage = new MemoryStorage('https://go.example'); // its signed URLs point at the server under test (app.inject takes the path)
+  const ctx: Ctx = { pool, live, push: opts.makePush ? opts.makePush(pool) : push, storage, publicBaseUrl: 'https://go.example', spendPrivateKey: spend.private_key_pem };
   const go = new MockGo();
   const base = await go.listen();
   const socket = new GoSocket({
@@ -80,7 +86,8 @@ export async function startHarness(opts: HarnessOptions = {}) {
   const fakeAuth = mode === 'supabase' && !opts.makeAuth ? new FakeSupabaseAuth() : null;
   if (fakeAuth) await fakeAuth.start();
   const auth: Authenticator = opts.makeAuth ? opts.makeAuth(pool) : fakeAuth ? new SupabaseAuth({ supabaseUrl: fakeAuth.url, pool }) : new DevAuth(sessionSecret);
-  const app = buildApp({ ctx, go: socket, sessionSecret, auth, origins: opts.origins, pushPublicKey: opts.pushPublicKey, features: opts.features });
+  let hub!: LiveHub;
+  const app = buildApp({ ctx, go: socket, sessionSecret, auth, origins: opts.origins, pushPublicKey: opts.pushPublicKey, features: opts.features, live: opts.live, onLiveHub: (h) => (hub = h) });
   await app.ready();
   const sender = new OutboxSender({ pool, send: (e) => socket.request('send_event', e, { timeoutMs: 2500 }), ready: () => socket.connected });
   /** Sends every pending event to Go now, in order. */
@@ -122,8 +129,13 @@ export async function startHarness(opts: HarnessOptions = {}) {
     if (upi_id) await app.inject({ method: 'PATCH', url: v1('/me'), payload: { upi_id }, headers: { authorization: `Bearer ${t}` } });
     return { id, token: t, name };
   };
+  /** The server listening on a real port (for WebSocket tests): its base URL. Idempotent. */
+  const listen = async (): Promise<string> => {
+    if (!app.server.listening) await app.listen({ port: 0, host: '127.0.0.1' });
+    return `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
+  };
   return {
-    pool, ctx, go, socket, live, push, sender, flush, app, sessionSecret, fakeAuth, token, signIn,
+    pool, ctx, go, socket, live, push, storage, hub, sender, flush, app, sessionSecret, fakeAuth, token, signIn, listen,
     async stop() {
       sender.stop();
       socket.stop();

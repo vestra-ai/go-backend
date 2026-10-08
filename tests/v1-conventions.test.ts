@@ -14,7 +14,7 @@ beforeAll(async () => {
 afterAll(() => h.stop());
 
 const rahul = () => t.as('p_rahul');
-const message = (text: string, headers: Record<string, string> = {}, who = rahul()) => t.api(who, 'POST', v1('/trips/t_goa/messages'), { text }, headers);
+const message = (text: string, headers: Record<string, string> = {}, who = rahul()) => t.api(who, 'POST', v1('/trips/t_goa/messages'), { client_message_id: `cm-${text}`, text }, headers);
 
 describe('the error shape', () => {
   it('every refusal is { error: { code, message, field, retry_after_seconds, request_id } }, with X-Request-Id on every response', async () => {
@@ -46,9 +46,9 @@ describe('Idempotency-Key', () => {
   it('a repeat with the same key and body replays the first answer (status, body, Idempotent-Replayed: true) and writes nothing more', async () => {
     const first = await message('hello once', { 'idempotency-key': 'k-1' });
     const again = await message('hello once', { 'idempotency-key': 'k-1' });
-    expect([first.status, first.headers['idempotent-replayed'], again.status, again.headers['idempotent-replayed'], again.body]).toEqual([200, undefined, 200, 'true', first.body]);
+    expect([first.status, first.headers['idempotent-replayed'], again.status, again.headers['idempotent-replayed'], again.body]).toEqual([201, undefined, 201, 'true', first.body]);
     expect((await rows(h.pool, `select count(*)::int as n from messages where text = 'hello once'`))[0].n).toBe(1);
-    expect((await rows(h.pool, `select method, path, status from idempotency_keys where key = 'k-1'`))[0]).toEqual({ method: 'POST', path: v1('/trips/t_goa/messages'), status: 200 });
+    expect((await rows(h.pool, `select method, path, status from idempotency_keys where key = 'k-1'`))[0]).toEqual({ method: 'POST', path: v1('/trips/t_goa/messages'), status: 201 });
   });
 
   it('the same key with a different body is 422 idempotency_key_reused; keys are per person, method and path', async () => {
@@ -56,8 +56,8 @@ describe('Idempotency-Key', () => {
     const reused = await message('body b', { 'idempotency-key': 'k-2' });
     expect([reused.status, reused.body.error.code, reused.body.error.field, reused.body.error.message]).toEqual([422, 'invalid', 'Idempotency-Key', expect.stringMatching(/^idempotency_key_reused/)]);
     const other = await message('body a', { 'idempotency-key': 'k-2' }, t.as('p_priya')); // Priya's own key space
-    const elsewhere = await t.api(rahul(), 'POST', v1('/trips/t_goa/typing'), { on: true }, { 'idempotency-key': 'k-2' }); // another path
-    expect([other.status, other.headers['idempotent-replayed'], elsewhere.status]).toEqual([200, undefined, 200]);
+    const elsewhere = await t.api(rahul(), 'POST', v1('/trips/t_goa/read'), {}, { 'idempotency-key': 'k-2' }); // another path
+    expect([other.status, other.headers['idempotent-replayed'], elsewhere.status]).toEqual([201, undefined, 200]);
   });
 
   it('an error answer is replayed too; a key that is too long is refused; a key on a GET is ignored', async () => {
@@ -82,7 +82,7 @@ describe('Idempotency-Key', () => {
     await h.pool.query(`update idempotency_keys set created_at = now() - interval '25 hours' where key = 'k-1'`);
     expect(await sweepIdempotencyKeys(h.pool)).toBe(1);
     const fresh = await message('hello once', { 'idempotency-key': 'k-1' }); // a new press after the window
-    expect([fresh.status, fresh.headers['idempotent-replayed']]).toEqual([200, undefined]);
+    expect([fresh.status, fresh.headers['idempotent-replayed']]).toEqual([201, undefined]);
   });
 });
 

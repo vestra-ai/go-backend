@@ -23,7 +23,7 @@ export const openVote = (ctx: Ctx) => async (p: any, raw: Record<string, unknown
     )).rows[0]!;
     // The vote is not in the room yet: Go posts the message with the vote card next.
     const seq = await change(db, p.trip_id, 'decision.opened', { decision: decisionOf(row, []), by: { kind: 'go' } });
-    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq }));
+    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: ['decision'] }));
     return { decision_id: row.decision_id, seq };
   });
 
@@ -54,6 +54,6 @@ export const setMandate = (ctx: Ctx) => async (p: any) =>
     };
     await db.query('update decisions set mandate = $2 where decision_id = $1', [p.decision_id, JSON.stringify(mandate)]);
     const seq = await change(db, p.trip_id, 'mandate.set', { decision_id: p.decision_id, mandate });
-    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq }));
+    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: ['mandate'] }));
     return { seq };
   });

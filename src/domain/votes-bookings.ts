@@ -12,8 +12,11 @@ import { assertPeopleInTrip } from '../requests/guards.js';
 import { conflict, invalid, notFound } from './errors.js';
 import { bookingOf, compact, decisionOf, recordLineOf } from './mappers.js';
 import type { BookingRow, RecordLineRow } from './mappers.js';
+import { loadMessageForApp } from './room.js';
+import { bookedText, postSystemMessage, voteCardFor } from './system-messages.js';
+import type { Message } from './types.js';
 import { lockBooking, openDecision } from './voting.js';
-import { requireMember } from './actions.js';
+import { decisionForPerson, requireMember, type DecisionForPerson } from './actions.js';
 
 /**
  * A checked date-time as an instant. The contract's format admits timezone offsets Postgres refuses, leap seconds
@@ -27,9 +30,12 @@ export function instant(value: string, field: string): Date {
   return at;
 }
 
-/** A member opens a vote. Go hears `decision.opened` by that person; the server posts no card (Go does). */
-export async function openPersonVote(ctx: Ctx, tripId: string, personId: string, input: OpenVoteBody) {
-  return onceIfKeyed(ctx.pool, tripId, input.client_id && `app:vote:${personId}:${input.client_id}`, async (db, after) => {
+/**
+ * A member opens a vote (the composer's "Poll"). Go hears `decision.opened` by that person; Go posts no card for a
+ * vote it did not open, so the server posts a system message carrying the `vote` card (decision D8) and answers both.
+ */
+export async function openPersonVote(ctx: Ctx, tripId: string, personId: string, input: OpenVoteBody): Promise<{ decision: DecisionForPerson; message: Message }> {
+  const made = await onceIfKeyed(ctx.pool, tripId, input.client_id && `app:vote:${personId}:${input.client_id}`, async (db, after) => {
     await requireMember(db, tripId, personId);
     const closesAt = input.closes_at ? instant(input.closes_at, 'closes_at') : null;
     if (closesAt && closesAt.getTime() <= Date.now()) throw invalid('closes_at must be in the future');
@@ -40,9 +46,15 @@ export async function openPersonVote(ctx: Ctx, tripId: string, personId: string,
       question: input.question, kind: input.kind, anonymous: input.anonymous, options, closesAt: closesAt?.toISOString() ?? null, openedBy: personId,
     });
     const seq = await change(db, tripId, 'decision.opened', { decision: decisionOf(row, []), by: { kind: 'person', person_id: personId } });
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
-    return { decision_id: row.decision_id, seq };
+    const message = await postSystemMessage(ctx, db, after, tripId, input.question, voteCardFor(row.decision_id, input.question));
+    after(() => ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['decision'] }));
+    return { decision_id: row.decision_id, message_id: message.message_id };
   });
+  const [decision, message] = await Promise.all([
+    ctx.pool.query('select * from decisions where decision_id = $1', [made.decision_id]).then((r) => decisionForPerson(r.rows[0], [], personId)),
+    loadMessageForApp(ctx, ctx.pool, tripId, made.message_id),
+  ]);
+  return { decision, message };
 }
 
 const by = (personId: string) => ({ kind: 'person', person_id: personId });
@@ -92,7 +104,8 @@ export async function addPersonBooking(ctx: Ctx, tripId: string, personId: strin
         )).rows[0]!;
     const lineSeq = await nextSeq(db, tripId);
     await emit(db, tripId, lineSeq, 'record.changed', { line: recordLineOf(line), change: decided ? 'updated' : 'added', by: { kind: 'system' } });
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq: lineSeq }));
+    await postSystemMessage(ctx, db, after, tripId, bookedText(input.title)); // the room's pill (D8), after the events
+    after(() => ctx.live.publish(tripId, { kind: 'trip', seq: lineSeq, kinds: ['booking', 'record'] }));
     return { booking_id: booking.booking_id, seq };
   });
 }
@@ -128,7 +141,7 @@ export async function updatePersonBooking(ctx: Ctx, tripId: string, personId: st
       [bookingId, ...changes.map(([, value]) => value)],
     )).rows[0]!;
     const seq = await change(db, tripId, 'booking.changed', { booking: bookingOf(updated), change: 'updated', by: by(personId) });
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
+    after(() => ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['booking'] }));
     return { seq };
   });
 }
@@ -163,7 +176,8 @@ export async function proposeCancelBooking(ctx: Ctx, tripId: string, personId: s
       cancelsBookingId: bookingId,
     });
     const seq = await change(db, tripId, 'decision.opened', { decision: decisionOf(row, []), by: by(personId) });
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
+    await postSystemMessage(ctx, db, after, tripId, row.question, voteCardFor(row.decision_id, row.question)); // the poll's anchor in the room (D8)
+    after(() => ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['decision'] }));
     return { decision_id: row.decision_id, seq };
   });
 }

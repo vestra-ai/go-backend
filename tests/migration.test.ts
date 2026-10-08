@@ -15,7 +15,7 @@ afterAll(async () => {
   if (dir) rmSync(dir, { recursive: true, force: true });
 });
 
-it('migrations 002 to 004 apply on top of a database at 001 with data in it, and keep one open cancellation vote per booking', async () => {
+it('migrations 002 onwards apply on top of a database at 001 with data in it, and keep one open cancellation vote per booking', async () => {
   const base = process.env.TEST_PG_URL!;
   const name = `t_${randomBytes(6).toString('hex')}`;
   const admin = new pg.Client({ connectionString: `${base}/postgres` });
@@ -42,9 +42,12 @@ it('migrations 002 to 004 apply on top of a database at 001 with data in it, and
   await pool.query(`insert into votes (decision_id, person_id, option_index) values ('d_old_open', 'p_a', 0)`);
 
   // [2] The real directory applies only 002, the new shape is there, the old table is gone, and old data stayed.
-  expect(await migrate(pool)).toEqual(['002_people_actions.sql', '003_supabase.sql', '004_v1_conventions.sql']);
+  const applied = await migrate(pool);
+  expect(applied.slice(0, 3)).toEqual(['002_people_actions.sql', '003_supabase.sql', '004_v1_conventions.sql']);
+  expect(applied).toContain('006_v1_room.sql'); // later phases add their own files after 004; each is listed by its own test
+  expect(applied).toEqual([...applied].sort());
   const tables = (await pool.query(`select table_name from information_schema.tables where table_schema = 'public'`)).rows.map((r) => r.table_name);
-  expect(tables).toEqual(expect.arrayContaining(['push_subscriptions', 'nudges', 'idempotency_keys', 'invite_marks', 'live_tickets']));
+  expect(tables).toEqual(expect.arrayContaining(['push_subscriptions', 'nudges', 'idempotency_keys', 'invite_marks', 'live_tickets', 'uploads']));
   expect(tables).not.toContain('push_devices');
   expect((await pool.query(`select booking_id from bookings`)).rows).toEqual([{ booking_id: 'b_1' }]);
   // 004: the Me columns with their defaults, the read marker, and a device id for each existing push registration.
@@ -60,6 +63,10 @@ it('migrations 002 to 004 apply on top of a database at 001 with data in it, and
     { decision_id: 'd_old_open', status: 'open', cancels_booking_id: null },
   ]);
   expect((await pool.query(`select count(*)::int as n from votes`)).rows[0].n).toBe(1);
+  // 006: a flexible vote names no option; a vote for an option is not flexible; system messages and quick replies are allowed.
+  await expect(pool.query(`insert into votes (decision_id, person_id, option_index, flexible) values ('d_old_open', 'p_b', 0, true)`)).rejects.toMatchObject({ code: '23514' });
+  await pool.query(`insert into votes (decision_id, person_id, option_index, flexible) values ('d_old_open', 'p_b', null, true)`);
+  await pool.query(`insert into messages (message_id, trip_id, seq, updated_seq, author_kind, text, quick_replies) values ('m_sys', 't_1', 1, 1, 'system', 'Trip created · A joined', null)`);
 
   // [3] A second open cancellation vote for the same booking is refused; once the first has closed, another is allowed.
   const vote = (id: string, status: string) =>

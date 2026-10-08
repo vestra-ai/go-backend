@@ -104,8 +104,8 @@ try {
   expect(trip.status === 201, 'Priya creates a trip', JSON.stringify(trip.body));
   const joined = await call(kabir.access, 'POST', `/app/v1/invites/${trip.body.invite_url.split('/j/')[1]}/accept`, { from_city: 'Pune' });
   expect(joined.body?.already === false, 'Kabir joins with his own Supabase token');
-  const msg = await call(kabir.access, 'POST', `/app/v1/trips/${trip.body.trip_id}/messages`, { client_id: 'rh-1', text: '@Go hello from the rehearsal' });
-  expect(msg.status === 200, 'Kabir talks to Go');
+  const msg = await call(kabir.access, 'POST', `/app/v1/trips/${trip.body.trip_id}/messages`, { client_message_id: 'rh-1', text: '@Go hello from the rehearsal' });
+  expect(msg.status === 201, 'Kabir talks to Go');
   const t0 = Date.now();
   while (go.replies.length === 0 && Date.now() - t0 < 10_000) await new Promise((r) => setTimeout(r, 100));
   expect(go.replies.length > 0, "the fake Go answered through our server (events out, Go's requests in, on Supabase Postgres)");

@@ -24,7 +24,7 @@ describe('the app can tell a cancellation vote from an ordinary one; Go cannot',
   it('marks the vote with the booking it is about in the app\'s trip read and needs-you strip, and nowhere else', async () => {
     const bid = await f.addBooking('t_goa', { title: 'Villa Sol' });
     const cancel = (await f.propose(bid)).body.decision_id as string;
-    const ordinary = (await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_goa/decisions', { client_id: 'plain', question: 'Where to eat?', kind: 'yesno', anonymous: false, options: [{ label: 'Yes' }, { label: 'No' }] })).body.decision_id as string;
+    const ordinary = (await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_goa/decisions', { client_id: 'plain', question: 'Where to eat?', kind: 'yesno', anonymous: false, options: [{ label: 'Yes' }, { label: 'No' }] })).body.decision.decision_id as string;
     const trip = (await t.api(t.as('p_kabir'), 'GET', '/app/v1/trips/t_goa')).body;
     const marks = Object.fromEntries(trip.decisions.map((d: any) => [d.decision_id, d.cancels_booking_id]));
     const strip = (await t.api(t.as('p_kabir'), 'GET', '/app/v1/trips/t_goa/needs-you')).body.filter((x: any) => x.kind === 'vote');

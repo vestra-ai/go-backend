@@ -1,11 +1,12 @@
 // F9. The real server process (src/main.ts) against a fake Go that behaves as the guide's "Work without the
-// other side" describes, watched from the app's side: HTTP for actions, the live stream (server-sent events) for
+// other side" describes, watched from the app's side: HTTP for actions, the live WebSocket (app contract §3) for
 // what people see. Nothing here reaches into the server's code or database: it is what Saket's app will see.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import pg from 'pg';
 import { afterAll, beforeAll, expect, it } from 'vitest';
+import { WebSocket } from 'ws';
 import { FakeSupabaseAuth } from './helpers/fake-supabase-auth.js';
 import { MockGo } from './helpers/mock-go.js';
 
@@ -69,38 +70,29 @@ const api = async (path: string, init: { method?: string; body?: unknown; token?
   return { status: r.status, body: text ? JSON.parse(text) : null };
 };
 
-/** Opens the live stream and collects its events. */
-async function liveStream(tripId: string, token: string) {
-  const res = await fetch(`${base}/app/v1/trips/${tripId}/live`, { headers: { authorization: `Bearer ${token}` } });
-  expect(res.headers.get('content-type')).toBe('text/event-stream');
-  const reader = res.body!.getReader();
+/** Opens the live WebSocket as the app does (a ticket, then the socket, then subscribe) and collects its frames. */
+async function liveSocket(tripId: string, token: string) {
+  const ticket = await api('/app/v1/live/ticket', { method: 'POST', body: {}, token });
+  expect(ticket.status).toBe(201);
+  const ws = new WebSocket(`${base.replace('http', 'ws')}/app/v1/live?ticket=${ticket.body.ticket}`);
   const events: Array<{ type: string; data: any }> = [];
-  let buffer = '';
-  void (async () => {
-    for (;;) {
-      const { value, done } = await reader.read().catch(() => ({ value: undefined, done: true }));
-      if (done) return;
-      buffer += new TextDecoder().decode(value);
-      let i: number;
-      while ((i = buffer.indexOf('\n\n')) >= 0) {
-        const chunk = buffer.slice(0, i);
-        buffer = buffer.slice(i + 2);
-        const type = /^event: (.*)$/m.exec(chunk)?.[1];
-        const data = /^data: (.*)$/m.exec(chunk)?.[1];
-        if (type && data) events.push({ type, data: JSON.parse(data) });
-      }
-    }
-  })();
+  ws.on('message', (d) => {
+    const frame = JSON.parse(d.toString());
+    events.push({ type: frame.type, data: frame.type === 'message' ? frame.message : frame });
+    if (frame.type === 'ping') ws.send(JSON.stringify({ type: 'pong' }));
+  });
+  await new Promise((r) => ws.once('open', r));
+  ws.send(JSON.stringify({ type: 'subscribe', trips: [{ trip_id: tripId, since_seq: 0 }] }));
   const waitFor = async (pick: (e: { type: string; data: any }) => boolean, ms = 8000) => {
     const end = Date.now() + ms;
     for (;;) {
       const hit = events.find(pick);
       if (hit) return hit;
-      if (Date.now() > end) throw new Error(`no live event matched; got ${JSON.stringify(events.map((e) => e.type))}`);
+      if (Date.now() > end) throw new Error(`no live frame matched; got ${JSON.stringify(events.map((e) => e.type))}`);
       await new Promise((r) => setTimeout(r, 25));
     }
   };
-  return { events, waitFor, close: () => reader.cancel() };
+  return { events, waitFor, close: () => ws.close() };
 }
 
 let rahul: { person_id: string; token: string };
@@ -125,10 +117,11 @@ it('setup: two people make a trip through the real server', async () => {
 });
 
 it('a message that names Go: the app sees "Go is typing...", Go\'s ✅ on the message, then Go\'s reply with a card', async () => {
-  const live = await liveStream(trip, rahul.token);
+  const live = await liveSocket(trip, rahul.token);
   await live.waitFor((e) => e.type === 'hello');
-  const asked = await api(`/app/v1/trips/${trip}/messages`, { method: 'POST', body: { client_id: 'fake_1', text: '@Go find us flights for Friday' }, token: priya.token });
-  expect(asked.status).toBe(200);
+  await live.waitFor((e) => e.type === 'trip_changed'); // the replay since 0: the room so far, then where the trip stands
+  const asked = await api(`/app/v1/trips/${trip}/messages`, { method: 'POST', body: { client_message_id: 'fake_1', text: '@Go find us flights for Friday' }, token: priya.token });
+  expect(asked.status).toBe(201);
   const q = asked.body.message_id;
   await live.waitFor((e) => e.type === 'typing' && e.data.who.kind === 'go' && e.data.on === true);
   await live.waitFor((e) => e.type === 'message' && e.data.message_id === q && e.data.reactions.some((r: any) => r.emoji === '✅' && !r.person_id));
@@ -145,7 +138,7 @@ it('a message that names Go: the app sees "Go is typing...", Go\'s ✅ on the me
 
 it('each answer uses a different one of Go\'s card kinds, and a tap on Go\'s card reaches Go', async () => {
   for (const [i, text] of ['@Go compare villas', '@Go call Villa Sol', '@Go book it', 'Go, any news?'].entries()) {
-    await api(`/app/v1/trips/${trip}/messages`, { method: 'POST', body: { client_id: `fake_more_${i}`, text }, token: priya.token });
+    await api(`/app/v1/trips/${trip}/messages`, { method: 'POST', body: { client_message_id: `fake_more_${i}`, text }, token: priya.token });
   }
   const end = Date.now() + 10000;
   while (go.replies.length < 5 && Date.now() < end) await new Promise((r) => setTimeout(r, 50));
@@ -160,11 +153,14 @@ it('each answer uses a different one of Go\'s card kinds, and a tap on Go\'s car
   expect(go.requests.at(-1)).toMatchObject({ method: 'card_tap', params: { card_id: options.card.card_id, person_id: rahul.person_id } });
 });
 
-it('every event reached Go once, in change-number order, with no gaps', async () => {
+it('every event reached Go once, in change-number order, with no gaps but the server\'s own pills (which have no event)', async () => {
   const end = Date.now() + 5000;
-  const want = async () => (await api(`/app/v1/trips/${trip}`, { token: rahul.token })).body.seq as number;
-  const seq = await want();
-  while (go.events.filter((e) => e.trip_id === trip).length < seq && Date.now() < end) await new Promise((r) => setTimeout(r, 50));
+  const seq = (await api(`/app/v1/trips/${trip}`, { token: rahul.token })).body.seq as number;
+  // The pills ("Trip created · Rahul joined", "Priya joined") took a change number each and were never sent to Go.
+  const room = (await api(`/app/v1/trips/${trip}/messages?after_seq=0`, { token: rahul.token })).body.messages as any[];
+  const pills = room.filter((m) => m.author.kind === 'system').map((m) => m.seq as number);
+  expect(pills).toHaveLength(2);
+  while (go.events.filter((e) => e.trip_id === trip).length < seq - pills.length && Date.now() < end) await new Promise((r) => setTimeout(r, 50));
   const seqs = go.events.filter((e) => e.trip_id === trip).map((e) => e.seq);
-  expect(seqs).toEqual(Array.from({ length: seq }, (_, i) => i + 1));
+  expect(seqs).toEqual(Array.from({ length: seq }, (_, i) => i + 1).filter((n) => !pills.includes(n)));
 });

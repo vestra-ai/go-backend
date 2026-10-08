@@ -6,6 +6,7 @@ import type { Ctx } from '../../context.js';
 import { requireMember } from '../../domain/actions.js';
 import type { GoClient } from '../../domain/ask-go.js';
 import { invalid } from '../../domain/errors.js';
+import type { LiveHub, LiveHubOptions } from '../../live/ws.js';
 import type { Authenticator } from '../auth.js';
 import { IDEMPOTENCY_KEY_HEADER } from '../idempotency.js';
 
@@ -19,6 +20,10 @@ export interface V1Deps {
   /** The server's VAPID public key, or none: then `features.web_push` is off and `vapid_public_key` is null. */
   pushPublicKey?: string;
   features: Features;
+  /** The live socket hub's settings (a shorter heartbeat in tests). */
+  live?: LiveHubOptions;
+  /** Hands the hub to whoever built the app (tests look at its socket count). */
+  onLiveHub?: (hub: LiveHub) => void;
 }
 
 declare module 'fastify' {

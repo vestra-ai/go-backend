@@ -318,11 +318,12 @@ describe('the trip record and trip details', () => {
 });
 
 describe('change numbers over the whole flow', () => {
-  it('every change took the next number and has exactly one event: no gaps, no repeats', async () => {
+  it('every change took the next number and has exactly one event, or is one of the server\'s own pills (no event): no gaps, no repeats', async () => {
     await h.flush();
     const sent = await rows(h.pool, "select seq, status from outbox where trip_id = 't_goa' order by seq");
     expect(sent.every((r) => r.status === 'sent')).toBe(true);
-    const seqs = sent.map((r) => r.seq);
+    const pills = await rows(h.pool, "select seq from messages where trip_id = 't_goa' and author_kind = 'system'");
+    const seqs = [...sent.map((r) => r.seq), ...pills.map((r) => r.seq)].sort((a, b) => a - b);
     for (let i = 1; i < seqs.length; i++) expect(seqs[i]).toBe(seqs[i - 1] + 1);
     // and Go received them in that order
     const received = h.go.events.map((e) => e.seq);

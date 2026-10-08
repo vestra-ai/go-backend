@@ -11,10 +11,12 @@ export function compact<T extends Record<string, unknown>>(o: T): T {
 }
 
 export interface MessageRow {
-  message_id: string; seq: number; updated_seq: number; author_kind: 'person' | 'go'; author_person_id: string | null;
+  message_id: string; trip_id: string; seq: number; updated_seq: number; author_kind: 'person' | 'go' | 'system'; author_person_id: string | null;
   text: string | null; attachments: unknown[]; reply_to: string | null; about_message_id: string | null;
   mentions_go: boolean; mentions: string[]; card: unknown | null; withheld: boolean; deleted: boolean;
   edited_at: Date | null; sent_at: Date;
+  /** Go's chips under its message (GO-CHANGES 1.3), as sent; null when none. */
+  quick_replies: unknown[] | null;
 }
 export interface ReactionRow { message_id: string; person_id: string | null; emoji: string }
 
@@ -22,7 +24,7 @@ export const reactionOf = (r: ReactionRow): Reaction => compact({ emoji: r.emoji
 
 export const actorOf = (row: Pick<MessageRow, 'author_kind' | 'author_person_id'>): Actor =>
   // openapi-typescript names the discriminator values after the schemas, so the literal needs a cast.
-  (row.author_kind === 'go' ? { kind: 'go' } : { kind: 'person', person_id: row.author_person_id! }) as unknown as Actor;
+  (row.author_kind === 'person' ? { kind: 'person', person_id: row.author_person_id! } : { kind: row.author_kind }) as unknown as Actor;
 
 /**
  * A message as Go may see it. A deleted message has no text. A message from someone who paused
@@ -43,6 +45,7 @@ export function messageForGo(row: MessageRow, reactions: ReactionRow[]): Message
     mentions: row.withheld ? [] : row.mentions,
     reactions: reactions.map(reactionOf),
     card: (row.card as Message['card']) ?? undefined,
+    quick_replies: row.quick_replies ?? undefined, // 1.1 overlay: not in the generated 1.0 types yet
     withheld: row.withheld,
     deleted: row.deleted,
     edited_at: iso(row.edited_at),
@@ -80,11 +83,16 @@ export interface DecisionRow {
   /** Only the Server uses this link; it is never in an event or a snapshot. */
   cancels_booking_id: string | null;
 }
-export interface VoteRow { person_id: string; option_index: number }
+/** A vote: for one option, or "I'm flexible" (GO-CHANGES 1.5), which counts toward `voted` and names no option. */
+export interface VoteRow { person_id: string; option_index: number | null; flexible: boolean }
 
-/** An anonymous vote shows totals only: no `votes` list, to anyone, Go included. */
+/** The option a vote names, by index. A flexible vote names none. */
+export const tallyOf = (optionCount: number, votes: VoteRow[]): number[] => Array.from({ length: optionCount }, (_, i) => votes.filter((v) => v.option_index === i).length);
+
+/** An anonymous vote shows totals only: no `votes` list, to anyone, Go included. Flexible voters are in `voted` and `flexible_count`, never in `votes`. */
 export function decisionOf(r: DecisionRow, votes: VoteRow[]): Decision {
-  const tally = (r.options as unknown[]).map((_, i) => votes.filter((v) => v.option_index === i).length);
+  const tally = tallyOf((r.options as unknown[]).length, votes);
+  const flexible = votes.filter((v) => v.flexible).length;
   return compact({
     decision_id: r.decision_id,
     question: r.question,
@@ -97,7 +105,8 @@ export function decisionOf(r: DecisionRow, votes: VoteRow[]): Decision {
     voted: votes.length,
     of: r.of_count,
     tally,
-    votes: r.anonymous ? undefined : votes.map((v) => ({ person_id: v.person_id, option_index: v.option_index })),
+    flexible_count: flexible || undefined,
+    votes: r.anonymous ? undefined : votes.filter((v) => !v.flexible).map((v) => ({ person_id: v.person_id, option_index: v.option_index! })),
     result_index: r.result_index ?? undefined,
     mandate: r.mandate ?? undefined,
     opened_at: iso(r.opened_at)!,
@@ -161,6 +170,7 @@ export function messageForApp(row: MessageRow, reactions: ReactionRow[]): Messag
     mentions: row.mentions,
     reactions: reactions.map(reactionOf),
     card: (row.card as Message['card']) ?? undefined,
+    quick_replies: row.quick_replies ?? undefined, // 1.1 overlay: not in the generated 1.0 types yet
     withheld: false, // `withheld` is only for Go
     deleted: row.deleted,
     edited_at: iso(row.edited_at),

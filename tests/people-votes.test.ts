@@ -22,17 +22,23 @@ const vote = { client_id: 'c1', question: 'Where do we stay?', kind: 'choice', a
 describe('a member opens a vote', () => {
   it('Go hears it by that person, others see it in their strip, it closes when all vote, and no push is sent', async () => {
     const r = await t.api(priya(), 'POST', '/app/v1/trips/t_goa/decisions', vote);
-    expect([r.status, Object.keys(r.body).sort()]).toEqual([201, ['decision_id', 'seq']]);
+    expect([r.status, Object.keys(r.body).sort()]).toEqual([201, ['decision', 'message']]);
+    const did = r.body.decision.decision_id as string;
+    // The poll shows in the room at once: a system message carrying the vote card, with a change number of its own and no event (D8).
+    expect(r.body.message).toMatchObject({ author: { kind: 'system' }, text: 'Where do we stay?', card: { kind: 'vote', decision_id: did, fallback_text: 'Where do we stay?' } });
+    expect(r.body.decision).toMatchObject({ decision_id: did, status: 'open', voted: 0, of: 5, my_vote: null });
     await h.flush();
-    const opened = t.events('decision.opened').find((e) => e.data.decision.decision_id === r.body.decision_id)!;
+    const opened = t.events('decision.opened').find((e) => e.data.decision.decision_id === did)!;
+    expect(r.body.message.seq).toBe(opened.seq + 1);
+    expect(await rows(h.pool, 'select 1 from outbox where trip_id = $1 and seq = $2', ['t_goa', r.body.message.seq])).toEqual([]);
     expect(check('Event', opened)).toMatchObject({ ok: true });
     expect(opened.data).toMatchObject({ by: { kind: 'person', person_id: 'p_priya' }, decision: { opened_by_person_id: 'p_priya', of: 5, voted: 0, status: 'open', options: [{ label: 'Villa Sol', price_minor: 1200000, currency: 'INR' }, { label: 'Beach hut' }] } });
     expect(opened.data.decision.options[1]).not.toHaveProperty('currency');
-    expect((await t.api(t.as('p_kabir'), 'GET', '/app/v1/trips/t_goa/needs-you')).body).toContainEqual({ kind: 'vote', decision_id: r.body.decision_id, text: 'Where do we stay?' });
-    expect(h.live.events).toContainEqual({ tripId: 't_goa', event: { kind: 'trip', seq: r.body.seq } });
-    for (const p of ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir']) await t.api(t.as(p), 'PUT', `/app/v1/trips/t_goa/decisions/${r.body.decision_id}/vote`, { option_index: 0 });
+    expect((await t.api(t.as('p_kabir'), 'GET', '/app/v1/trips/t_goa/needs-you')).body).toContainEqual({ kind: 'vote', decision_id: did, text: 'Where do we stay?' });
+    expect(h.live.events).toContainEqual({ tripId: 't_goa', event: { kind: 'trip', seq: opened.seq, kinds: ['decision'] } });
+    for (const p of ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir']) await t.api(t.as(p), 'PUT', `/app/v1/trips/t_goa/decisions/${did}/vote`, { option_index: 0 });
     await h.flush();
-    expect(t.events('decision.closed').find((e) => e.data.decision.decision_id === r.body.decision_id)!.data).toMatchObject({ reason: 'everyone_voted', decision: { result_index: 0 } });
+    expect(t.events('decision.closed').find((e) => e.data.decision.decision_id === did)!.data).toMatchObject({ reason: 'everyone_voted', decision: { result_index: 0 } });
     expect(h.push.sent).toEqual([]);
   });
 
@@ -65,7 +71,7 @@ describe('a member opens a vote', () => {
     expect(await refused({ options: [{ label: '\ud800' }, { label: 'b' }] })).toEqual([422, 'invalid']);
     expect(await refused({ closes_at: '2016-12-31T23:59:60Z' })).toEqual([422, 'invalid']); // a leap second JavaScript cannot read
     const far = await post({ closes_at: '2099-01-01T10:00:00+20:00' }); // an offset Postgres refuses as written
-    const [stored] = await rows(h.pool, 'select closes_at from decisions where decision_id = $1', [far.body.decision_id]);
+    const [stored] = await rows(h.pool, 'select closes_at from decisions where decision_id = $1', [far.body.decision.decision_id]);
     expect([far.status, stored.closes_at.toISOString()]).toEqual([201, '2098-12-31T14:00:00.000Z']);
   });
 

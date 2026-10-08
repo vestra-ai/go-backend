@@ -9,6 +9,7 @@ import { approvalProblem, issueApproval, spendCheck } from '../domain/spend.js';
 import type { ApprovalRow } from '../domain/spend.js';
 import { loadDecisions } from '../domain/snapshot.js';
 import { pushOwed } from '../domain/actions.js';
+import { bookedText, postSystemMessage } from '../domain/system-messages.js';
 import { assertCurrency, assertPeopleInTrip, requireSomething, tripOf } from './guards.js';
 
 export const addBooking = (ctx: Ctx) => async (p: any, raw: Record<string, unknown>) =>
@@ -57,7 +58,8 @@ export const addBooking = (ctx: Ctx) => async (p: any, raw: Record<string, unkno
         )).rows[0]!;
     const lineSeq = await nextSeq(db, p.trip_id);
     await emit(db, p.trip_id, lineSeq, 'record.changed', { line: recordLineOf(line), change: decided ? 'updated' : 'added', by: { kind: 'system' } });
-    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq: lineSeq }));
+    await postSystemMessage(ctx, db, after, p.trip_id, bookedText(p.title)); // the room's pill (decision D8), after the events, no event of its own
+    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq: lineSeq, kinds: ['booking', 'record'] }));
     return { booking_id: booking.booking_id, seq };
   });
 
@@ -77,7 +79,7 @@ export const updateBooking = (ctx: Ctx) => async (p: any) =>
       change: p.status === 'cancelled' ? 'cancelled' : 'updated',
       by: { kind: 'go' },
     });
-    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq }));
+    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: ['booking'] }));
     return { seq };
   });
 
@@ -97,7 +99,7 @@ export const addExpense = (ctx: Ctx) => async (p: any) =>
       [newId('e'), p.trip_id, p.paid_by_person_id, p.amount_minor, p.currency, p.note, p.category, JSON.stringify(p.split_person_ids), p.booking_id ?? null],
     )).rows[0]!;
     const seq = await change(db, p.trip_id, 'expense.changed', { expense: expenseOf(expense), change: 'added', by: { kind: 'go' } });
-    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq }));
+    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: ['expense'] }));
     after(() => pushOwed(ctx, p.trip_id, expense)); // whoever now owes the payer hears it
     return { expense_id: expense.expense_id, seq };
   });

@@ -207,14 +207,90 @@ const addDevice = {
   },
 } as const;
 
+// A message from a person (app contract §4.6). `client_message_id` is the message's own repeat key. Each attachment is
+// `{ upload_id, caption? }` or a contract Attachment; both are checked in the domain (see PASSTHROUGH). Limits are the
+// contract's Message limits: 4,000 characters, 10 attachments, 30 mentions.
+const postMessage = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['client_message_id'],
+  properties: {
+    client_message_id: id,
+    text: { type: 'string', minLength: 1, maxLength: 4000 },
+    attachments: { type: 'array', maxItems: 10, items: { type: 'object' } },
+    reply_to: id,
+    about_message_id: id,
+    mentions: { type: 'array', maxItems: 30, items: id },
+  },
+} as const;
+
+// Your one reaction on a message: an emoji (the contract's 16-character limit), or null to take it back.
+const putReaction = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['emoji'],
+  properties: { emoji: { type: ['string', 'null'], minLength: 1, maxLength: 16 } },
+} as const;
+
+// A press on a Go card (app contract §4.7). `action_id` and `option_id` are the contract's; `payload` is GO-CHANGES 1.2 (one way or round trip).
+const cardAction = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['action_id'],
+  properties: {
+    action_id: { type: 'string', maxLength: 32, pattern: '^[a-z][a-z_]{0,31}$' },
+    option_id: id,
+    press_id: id,
+    payload: { type: 'object', additionalProperties: false, properties: { trip: { type: 'string', enum: ['oneway', 'round'] } } },
+  },
+} as const;
+
+// A vote: for an option, or "I'm flexible" (one or the other: checked in the route).
+const castVote = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    option_index: { type: 'integer', minimum: 0, maximum: 9 },
+    flexible: { type: 'boolean', enum: [true] },
+  },
+} as const;
+
+// A file the app is about to upload (app contract §4.5). The MIME allow-list and the 25 MB ceiling are checked in the route;
+// the dimensions and the voice note's length may be null (the contract's example sends `"duration_s": null`).
+const upload = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['purpose', 'kind', 'mime', 'size_bytes'],
+  properties: {
+    purpose: { type: 'string', enum: ['chat_attachment', 'profile_photo'] },
+    kind: { type: 'string', enum: ['photo', 'file', 'audio'] },
+    mime: { type: 'string', minLength: 1, maxLength: 100 },
+    name: { type: 'string', minLength: 1, maxLength: 200 },
+    size_bytes: { type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
+    width: { type: ['integer', 'null'], minimum: 1, maximum: 100000 },
+    height: { type: ['integer', 'null'], minimum: 1, maximum: 100000 },
+    duration_s: { type: ['number', 'null'], minimum: 0, maximum: 86400 },
+  },
+} as const;
+
+// A ticket for the live socket (app contract §3): the device id lets a second connect from the same device replace the first.
+const liveTicket = {
+  type: 'object',
+  additionalProperties: false,
+  properties: { device_id: id },
+} as const;
+
 /** Every route's body definition, by name. */
-export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, patchTripMe, putBudget, patchTrip, nudge, addDevice } as const;
+export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, patchTripMe, putBudget, patchTrip, nudge, addDevice, postMessage, putReaction, cardAction, castVote, upload, liveTicket } as const;
 
 /** Nodes the walk in tests/bodies.test.ts does not enter: they are checked against the contract's own definitions elsewhere. */
-export const PASSTHROUGH: readonly string[] = ['patchTrip.itinerary[]'];
+export const PASSTHROUGH: readonly string[] = ['patchTrip.itinerary[]', 'postMessage.attachments[]'];
 
-/** The only places `null` is a valid value ("clear this field"): `<definition>.<dotted path>`. */
-export const CLEARABLE: readonly string[] = ['updateBooking.refundable_until', 'updateBooking.starts_at', 'updateBooking.ends_at', 'patchMe.photo_url', 'patchMe.upi_id', 'patchMe.from_city', 'patchTripMe.from_city', 'patchTripMe.earliest_leave'];
+/** The only places `null` is a valid value ("clear this field", or "not known"): `<definition>.<dotted path>`. */
+export const CLEARABLE: readonly string[] = [
+  'updateBooking.refundable_until', 'updateBooking.starts_at', 'updateBooking.ends_at', 'patchMe.photo_url', 'patchMe.upi_id', 'patchMe.from_city', 'patchTripMe.from_city', 'patchTripMe.earliest_leave',
+  'putReaction.emoji', 'upload.width', 'upload.height', 'upload.duration_s',
+];
 
 export interface OpenVoteBody {
   client_id?: string;
@@ -291,6 +367,46 @@ export interface CancelVoteBody {
   client_id?: string;
 }
 
+export interface PostMessageBody {
+  client_message_id: string;
+  text?: string;
+  attachments?: unknown[];
+  reply_to?: string;
+  about_message_id?: string;
+  mentions?: string[];
+}
+
+export interface PutReactionBody {
+  emoji: string | null;
+}
+
+export interface CardActionBody {
+  action_id: string;
+  option_id?: string;
+  press_id?: string;
+  payload?: { trip?: 'oneway' | 'round' };
+}
+
+export interface CastVoteBody {
+  option_index?: number;
+  flexible?: true;
+}
+
+export interface UploadBody {
+  purpose: 'chat_attachment' | 'profile_photo';
+  kind: 'photo' | 'file' | 'audio';
+  mime: string;
+  name?: string;
+  size_bytes: number;
+  width?: number | null;
+  height?: number | null;
+  duration_s?: number | null;
+}
+
+export interface LiveTicketBody {
+  device_id?: string;
+}
+
 export const checkOpenVote = bodyChecker<OpenVoteBody>(bodies.openVote);
 export const checkAddBooking = bodyChecker<AddBookingBody>(bodies.addBooking);
 export const checkUpdateBooking = bodyChecker<UpdateBookingBody>(bodies.updateBooking);
@@ -301,3 +417,9 @@ export const checkPutBudget = bodyChecker<PutBudgetBody>(bodies.putBudget);
 export const checkPatchTrip = bodyChecker<PatchTripBody>(bodies.patchTrip);
 export const checkNudge = bodyChecker<NudgeBody>(bodies.nudge);
 export const checkAddDevice = bodyChecker<AddDeviceBody>(bodies.addDevice);
+export const checkPostMessage = bodyChecker<PostMessageBody>(bodies.postMessage);
+export const checkPutReaction = bodyChecker<PutReactionBody>(bodies.putReaction);
+export const checkCardAction = bodyChecker<CardActionBody>(bodies.cardAction);
+export const checkCastVote = bodyChecker<CastVoteBody>(bodies.castVote);
+export const checkUpload = bodyChecker<UploadBody>(bodies.upload);
+export const checkLiveTicket = bodyChecker<LiveTicketBody>(bodies.liveTicket);

@@ -43,12 +43,12 @@ it('the whole feature in one walk from the web app\'s origin: every change takes
   }
   // a vote, decided; a booking against it, updated; the group cancels it
   const vote = await call('p_priya', 'POST', `${trip}/decisions`, { client_id: 'v1', question: 'Where do we stay?', kind: 'choice', anonymous: false, options: [{ label: 'Villa Sol', price_minor: 5420000 }, { label: 'Casa Azul' }] });
-  for (const who of EVERYONE) await call(who, 'PUT', `${trip}/decisions/${vote.body.decision_id}/vote`, { option_index: 0 });
-  const booking = await call('p_arjun', 'POST', `${trip}/bookings`, { client_id: 'b1', kind: 'stay', title: 'Villa Sol', vendor: 'ixigo', ref: 'IXG-1', amount_minor: 5420000, payer_person_id: 'p_rahul', for_person_ids: EVERYONE, decision_id: vote.body.decision_id });
+  for (const who of EVERYONE) await call(who, 'PUT', `${trip}/decisions/${vote.body.decision.decision_id}/vote`, { option_index: 0 });
+  const booking = await call('p_arjun', 'POST', `${trip}/bookings`, { client_id: 'b1', kind: 'stay', title: 'Villa Sol', vendor: 'ixigo', ref: 'IXG-1', amount_minor: 5420000, payer_person_id: 'p_rahul', for_person_ids: EVERYONE, decision_id: vote.body.decision.decision_id });
   await call('p_meher', 'PATCH', `${trip}/bookings/${booking.body.booking_id}`, { ref: 'IXG-2' });
   const cancel = await call('p_priya', 'POST', `${trip}/bookings/${booking.body.booking_id}/cancel-vote`, { client_id: 'c1' });
   for (const who of ['p_rahul', 'p_priya', 'p_arjun']) await call(who, 'PUT', `${trip}/decisions/${cancel.body.decision_id}/vote`, { option_index: 0 });
-  await call('p_kabir', 'POST', `${trip}/decisions/${cancel.body.decision_id}/close`);
+  await call('p_rahul', 'POST', `${trip}/decisions/${cancel.body.decision_id}/close`);
   // people change their own details, answers, budget and the trip
   await call('p_rahul', 'PATCH', '/app/v1/me', { name: 'Rahul K' });
   await call('p_priya', 'PATCH', '/app/v1/me', { upi_id: 'priya@okbank' });
@@ -67,7 +67,9 @@ it('the whole feature in one walk from the web app\'s origin: every change takes
   const seen = JSON.stringify([events, snap]);
   const pushes = sent.map((s) => [endpointOf.get(s.endpoint), JSON.parse(s.payload)] as const);
   expect(statuses).toEqual([]); // every call succeeded and carried the origin's headers
-  expect(events.map((e) => e.seq)).toEqual(Array.from({ length: events.length }, (_, i) => i + 2)); // 2, 3, 4... no gap, no repeat
+  // 2, 3, 4... no gap, no repeat, once the server's own pills (poll anchors, "won", "booked": a change number, no event) are counted in
+  const pills = (await rows(h.pool, `select seq from messages where trip_id = 't_goa' and author_kind = 'system' order by seq`)).map((p) => p.seq as number);
+  expect([...events.map((e) => e.seq), ...pills].sort((a, b) => a - b)).toEqual(Array.from({ length: events.length + pills.length }, (_, i) => i + 2));
   expect(h.go.events.filter((e) => e.trip_id === 't_goa').map((e) => e.seq)).toEqual(events.map((e) => e.seq)); // and Go received each one, in order
   const label = (e: any) => e.type + (e.data.change ? `:${e.data.change}` : '') + (e.type === 'trip.updated' ? `:${e.data.by.kind}:${e.data.changed}` : '') + (e.type === 'person.updated' ? `:${e.data.changed}` : '');
   expect(events.map(label)).toEqual([

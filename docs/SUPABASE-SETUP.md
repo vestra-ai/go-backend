@@ -119,6 +119,12 @@ no shared secret set.
    | `SUPABASE_JWT_SECRET` | Only if the project has **no** signing keys (JWT Keys page shows only the legacy secret). Better: turn on signing keys there |
 
    Leave `AUTH_MODE` empty, or set it to `supabase`.
+   
+   **Files (Storage).** Photos, voice notes and ticket PDFs live in a **private** Storage bucket; the server signs
+   one-off upload links and one-hour download links with the project's secret key. Create the bucket in Supabase →
+   Storage → New bucket, name `go-files` (or set `SUPABASE_STORAGE_BUCKET`), private, and set `SUPABASE_SECRET_KEY`
+   (Project Settings → API Keys → secret key) **on Railway only**: a laptop runs with `STORAGE=memory` (the default
+   without the key), which keeps files in memory and serves them itself at `/_dev/storage/...`.
 2. **Set up Google sign-in.**
    1. In Google Cloud, create an OAuth consent screen and a **Web** OAuth client.
    2. Add `https://<ref>.supabase.co/auth/v1/callback` to that client's authorised redirect URIs.

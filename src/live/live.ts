@@ -1,13 +1,23 @@
 import type pg from 'pg';
 
-/** What the app's live connection carries for a trip (guides/app.md, "The live connection"). */
+/** What the app may re-read after a `trip_changed` (app contract §3.1, the optional `kinds` hint). */
+export type ChangeKind = 'trip' | 'people' | 'decision' | 'mandate' | 'record' | 'booking' | 'expense' | 'settlement' | 'itinerary' | 'budget';
+
+/**
+ * What the app's live connection carries (app contract §3). Each instance's socket hub (src/live/ws.ts) turns these
+ * into the frames the app sees: payloads are small pointers, the hub reads the row by id.
+ */
 export type LiveEvent =
-  /** A message was posted or changed (a reaction, a replaced card). The app reads it by id. */
+  /** A message was posted or changed (an edit, a reaction, a delete). The app gets the whole message. */
   | { kind: 'message'; message_id: string; updated_seq: number }
+  /** Go replaced a card in place: a `card` frame, with no change number (decision D9 gives the row one anyway). */
+  | { kind: 'card'; message_id: string }
   /** Something in the trip that is not a message changed. The app reads again when `seq` is higher than it holds. */
-  | { kind: 'trip'; seq: number }
-  /** "Go is typing...". `until` is when it runs out by itself, 10 seconds after Go's notification. */
-  | { kind: 'typing'; who: { kind: 'go' } | { kind: 'person'; person_id: string }; on: boolean; until?: string };
+  | { kind: 'trip'; seq: number; kinds?: ChangeKind[] }
+  /** "Go is typing...", or a person typing. `until` is when it runs out by itself. */
+  | { kind: 'typing'; who: { kind: 'go' } | { kind: 'person'; person_id: string }; on: boolean; until?: string }
+  /** This person's home screen moved (a trip created or joined, someone left): routed by person, whatever the trip. */
+  | { kind: 'home'; person_id: string };
 
 export interface Live {
   publish(tripId: string, event: LiveEvent): Promise<void>;
