@@ -18,6 +18,13 @@ import { MockGo } from '../tests/helpers/mock-go.js';
 const PORT = Number(process.env.PORT ?? 8080);
 const SIM_PORT = Number(process.env.SIM_PORT ?? 8090);
 const PG_PORT = Number(process.env.DEV_PG_PORT ?? 54329);
+
+// Feature flags for this run: `--features checkin,visa,calls` (or `--features=…`) turns those on for the server, exactly as
+// FEATURE_CHECKIN=1 in the environment would (which also still works). Nothing is on by default, as in production.
+const featuresArg = process.argv.findIndex((a) => a === '--features' || a.startsWith('--features='));
+const featureList = featuresArg === -1 ? '' : process.argv[featuresArg]!.includes('=') ? process.argv[featuresArg]!.split('=')[1]! : (process.argv[featuresArg + 1] ?? '');
+const featureEnv = Object.fromEntries(featureList.split(',').map((f) => f.trim()).filter(Boolean).map((f) => [`FEATURE_${f.toUpperCase()}`, '1']));
+const featuresOn = Object.keys({ ...Object.fromEntries(Object.entries(process.env).filter(([k, v]) => k.startsWith('FEATURE_') && v === '1')), ...featureEnv }).map((k) => k.slice('FEATURE_'.length).toLowerCase());
 const spend = JSON.parse(readFileSync(new URL('../contract/test-vectors/spend-approval.json', import.meta.url), 'utf8'));
 
 // 1. A temporary Postgres.
@@ -55,6 +62,7 @@ const server = spawn(process.execPath, ['--import', 'tsx', 'src/main.ts'], {
     PUBLIC_BASE_URL: `http://localhost:${PORT}`,
     APP_SESSION_SECRET: 'dev-stack-session-secret',
     ...(authUrl ? { AUTH_MODE: 'supabase', SUPABASE_URL: authUrl } : { AUTH_MODE: 'dev' }),
+    ...featureEnv,
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -106,10 +114,12 @@ await new Promise<void>((r) => sim.listen(SIM_PORT, r));
 
 console.log(`
   Go Server dev stack is up.
-    App API      http://localhost:${PORT}/app/v1  (the real server; Postman's {{baseUrl}} is http://localhost:${PORT})
-    Act as Go    http://localhost:${SIM_PORT}/sim    (POST /sim/<method>, GET /sim/state; Postman's {{simUrl}})
+    App API      http://localhost:${PORT}/app/v1  (the real server; Postman's {{baseUrl}})
+    Act as Go    http://localhost:${SIM_PORT}/sim    (POST /sim/<method>, GET /sim/state; Postman's {{goUrl}})
     Postgres     postgres://postgres:postgres@localhost:${PG_PORT}/go  (temporary)
+    Features     ${featuresOn.length ? featuresOn.join(', ') : 'none on (add --features checkin,visa,calls)'}
   The fake Go answers every message that names it (@Go): typing, ✅, then a reply with a card.
+  Postman: import docs/go-server.postman_collection.json with docs/go-server.postman_environment.json and run "Run in order" (or: pnpm postman).
 ${authUrl
   ? `  Sign-in      Supabase-style tokens from a fake Supabase Auth: GET ${authUrl}/mint?name=Priya&email=priya@gmail.com
                (send the access_token as Authorization: Bearer …; POST /app/v1/dev/sign-in is off, as in production)

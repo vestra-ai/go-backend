@@ -1,8 +1,25 @@
 # Server plan: align with the app contract (rev 3) and the Go changes (1.1)
 
-**Written 8 Oct 2026, after the decisions in [`ALIGNMENT-REVIEW.md`](ALIGNMENT-REVIEW.md). Work starts when Rahul
-says so.** The two outward documents, [`APP-CONTRACT-CHANGES.md`](APP-CONTRACT-CHANGES.md) and
-[`GO-CHANGES.md`](GO-CHANGES.md), are the specification; this page is the order of work.
+## Status (8 Oct 2026)
+
+| Phase | State | Commits |
+|---|---|---|
+| 0 Foundations | done | `c46d21f` |
+| 1 Sign-in, Me, home, invites, trips, places | done | `728bdfe` |
+| 2 The room, live WebSocket, uploads, cards, decisions | done | `02aa167`, merged `90f9f45` |
+| 3 Money, settlements, expense approval | done | `bc8c87e`, merged `98c1b38` |
+| 4 Bookings, documents, itinerary, needs-you v2, cards query, pushes | done | `c3fceba`, merged `9088a74` |
+| 5 Web check-in, visa, task attention | done | `69ef776` |
+| 6 Documents, Postman, deploy, real-Go pass | **in progress**: 6.1 (documents) done; 6.2 (Postman generation with the journey) in progress; 6.3 Railway variables and bucket, 6.4 the real-Go pass remain | — |
+
+`pnpm test`: 470 tests in 52 files, green. The app-facing contract is now [`API.md`](API.md) (81 routes); the known
+gaps are listed in [`REVIEW.md`](REVIEW.md).
+
+---
+
+**Written 8 Oct 2026, after the decisions in [`ALIGNMENT-REVIEW.md`](ALIGNMENT-REVIEW.md).** The two outward
+documents, [`APP-CONTRACT-CHANGES.md`](APP-CONTRACT-CHANGES.md) and [`GO-CHANGES.md`](GO-CHANGES.md), are the
+specification; this page is the order of work.
 
 ## Ground rules
 

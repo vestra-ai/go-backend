@@ -1,5 +1,113 @@
 # Server review against the Go docs
 
+## October 2026: the `/app/v1` rebuild
+
+**Date:** 8 Oct 2026. After the review below (6 Oct), the app team's contract (rev 2) and the design PDF were reviewed
+against the server ([`ALIGNMENT-REVIEW.md`](ALIGNMENT-REVIEW.md)), the decisions were written up for the app team
+([`APP-CONTRACT-CHANGES.md`](APP-CONTRACT-CHANGES.md)) and for Go's team ([`GO-CHANGES.md`](GO-CHANGES.md)), and the
+app API was rebuilt in six phases ([`ALIGNMENT-PLAN.md`](ALIGNMENT-PLAN.md)). The result is the one contract the app
+builds against, [`API.md`](API.md): 81 routes under `/app/v1`, one WebSocket, and 470 tests in 52 files, all offline
+(embedded Postgres, mock Go, fake Supabase Auth, in-memory storage).
+
+**Phase 0, foundations (`c46d21f`).** Every app route moved to `/app/v1` with the app team's names; the old `/app/...`
+routes were deleted. The API became a shell (`src/api/app.ts`: request id on every answer, CORS with the exact origins
+and the `Idempotency-Key` header, one error shape `{ error: { code, message, field, retry_after_seconds, request_id } }`
+with 400 only for unreadable JSON and 422 for every rule, sign-in before the body) plus one file per contract section in
+`src/api/v1/`, each declaring its routes' metadata for the Postman generator. `Idempotency-Key` became the one repeat
+mechanism for every write (24 h, scoped to person, method, path and key, replay marked `Idempotent-Replayed`), `GET
+/config` (feature flags, push key) and `GET /health` landed, and the 1.1 overlay (`contract/extensions-1.1.json`)
+extended the contract check additively so Go's new fields pass through.
+
+**Phase 1, sign-in, Me, home, invites, trips, places (`728bdfe`).** `Me` with email, provider, masked UPI id, default
+city, the notifications switch and the counts; `PUT/DELETE /me/upi`; `POST/DELETE /me/devices`; account deletion in the
+contract's order (`DELETE /me`). `GET /home` with the server-computed `stage` and `attention`, the invites kept for
+later, past trips with `all_settled`, and `home_changed` on every change that moves the home screen; the curated ideas
+table. Invites as rows: the public, read-only, rate-limited preview with inviter, faces and a personal `state`,
+accept (with `landing`), later, decline, and the organizer's rotation (old codes answer `revoked`). `POST /trips` with
+everything optional, `GET /trips/:trip` as a `TripView` (`stage`, `me`, `chat`, `needs_you_count`, `can`, `?include`,
+ETag), join answers with the Quick start mapping (`vibe` → a `know` entry, `spend_band` → the private budget),
+`DELETE …/me/budget`, `POST …/read` with `last_read_seq`, and the privacy rule that hides other members' `from_city` and
+`earliest_leave`. The city search from a bundled GeoNames extract, no third-party call.
+
+**Phase 2, the room, live, uploads, cards, decisions (`02aa167`, merge `90f9f45`).** The SSE stream was replaced by one
+WebSocket per app instance (`POST /live/ticket`, `GET /live?ticket=`): `hello`, `message`, `card`, `typing` both ways,
+`trip_changed` with `kinds`, `home_changed`, `resync`, `ping`/`pong`, subscribe with replay (the changed messages, then one
+`trip_changed`; `resync` above 200), one socket per person and device, close code 4401. Messages gained history mode
+(`before_seq`) beside changes mode, `client_message_id`, `201 Message` answers, one reaction per person (`PUT
+…/reaction`), and `GET …/catch-up` with 204. `POST /uploads` signs a one-off upload URL into Supabase Storage (size and
+MIME checks, 24 h expiry sweep; an in-memory fake for tests and laptops); attachment links are signed again on every
+read, valid one hour. The server now posts system messages (trip created, joined, left, decided, booked, and the anchor
+carrying the vote card of a person-opened poll), each a change number with no event to Go. `replace_card` moves the
+message's `updated_seq` (no event), closing the old "card updated while offline" gap. Card taps moved to
+`POST …/cards/:card_id/actions` with `press_id` and `payload`, answering `refused` with a toast when Go does not answer.
+Decisions gained `GET …/decisions/:id` with `my_vote`, `POST …/decisions` answering the decision and its message,
+`PUT …/vote` (with `flexible` behind a flag), `DELETE …/vote` behind a flag, close by the organizer or opener, cancel,
+`GET …/record` with `include_undone`, and redo.
+
+**Phase 3, money (`bc8c87e`, merge `98c1b38`).** `GET …/money` (`MoneyView`: the contract's `Money` plus the caller's
+private budget range, their share spent by equal split and by category, `owed_to_me`, `i_owe`), `GET …/transactions`
+(filters, opaque cursor, `total_count`, the approval badge per row), settlements (`POST …/settlements`, confirm,
+dispute) counted provisionally from the moment they are recorded and told to Go only on confirmation
+(`settlement.recorded`), `POST …/transfers/pay-link` (`upi://pay`) and `…/transfers/nudge` (24 h). Expense approval
+(decision D6): `Expense.status` and `confirmations` (one per split member other than the payer), `POST …/expenses` by
+hand, approve, dispute, fix split (resets the changed shares), remove; disputed expenses leave the totals and the
+transfers; `expense` items in the strip and `expense` pushes; Go's `add_expense` starts pending unless it carries an
+`approval_id`.
+
+**Phase 4, bookings, documents, itinerary, trip home, pushes (`c3fceba`, merge `9088a74`).** `GET …/bookings` and
+`…/bookings/:id` with the covered-people rule (`passengers` and `documents` only for the people in `for_person_ids`);
+booking documents copied from Go's `add_booking` links into Storage and opened through a 302 to a 10-minute signed link;
+the 1.1 fields `details`, `return_journey`, `passengers` on `POST …/bookings`. `GET …/itinerary?scope=everyone|me`
+(private items filtered; "Just me" reworded from the person's bookings). The needs-you strip in its v2 shape
+(`NeedsYouItem` with `title`, `subtitle`, `cta_label`, `since`, `target`, and the `settle_up` kind). `GET …/cards?kind=
+&state=` for the Trip home's calls, and `POST …/cards/:id/share` (behind `features.calls`) copying an ended call's
+recording into the room. Pushes in the contract's payload (`type`, `trip_id`, `message_id`, `title`, `body`, `deep_link`,
+`tag`) with the new types `settlement`, `nudge`, `joined`, `expense`, honouring `notifications_enabled`, and the device
+table behind `POST /me/devices`.
+
+**Phase 5, web check-in and visa (`69ef776`).** The three check-in routes behind `features.checkin` (`GET`, `PATCH`,
+`POST …/complete`): the server asks Go `get_checkin` and `submit_checkin` (2 s, `working` allowed, finished by
+`replace_card` or a later read), caches each covered person's state, fills the companion from the booking's passengers,
+refuses a paid seat with `payment_required` (the vault pays first), and raises the `checkin` strip item, the home card's
+`attention.task` and the `checkin` push when a flight's check-in first opens (also when Go posts a notice card with a
+`go://…/checkin/<booking>` link). Visa: `POST /me/vault-link { start: "add_documents", context }` behind `features.visa`,
+`checklist` cards passed through, a pending row of mine as `attention.task`. A test proves two simultaneous `claim` taps
+reach Go with distinct `tap_id`s.
+
+**Known gaps now (October 2026).** From the code, in no particular order:
+
+- The two in-memory rate limiters (invite preview 30/min/IP, city search 5/s/person) are **per instance**; with several
+  instances the real limit is that many times higher. The other limits in rev 2's Appendix A (reactions, card taps,
+  votes, vault link, uploads per minute) are **not enforced**.
+- Uploads: **no EXIF stripping and no virus scanning** (files are only shared inside a trip). Upload URLs are valid two
+  hours (Supabase's own limit).
+- `POST …/transfers/nudge` answers `200 { reminded, nudge_allowed_at }`, not the contract's 204; `POST …/leave` answers
+  `200 { seq }`; `PATCH …/me { go_paused }` answers `{ seq }`, not a `Person`; `POST …/bookings` answers `201 { booking_id,
+  seq }`, not the `Booking`. `API.md` documents what the code does.
+- `PATCH /me` accepts `photo_url` (an https link) but not `photo_upload_id` yet; `resolveUploadUrl` exists for it.
+- Four routes use Fastify's default body check instead of the strict one (unknown fields dropped, types coerced):
+  `PATCH …/messages/:id`, `PATCH /trips/:trip/me`, `PATCH /me/go`, `POST /me/vault-link`.
+- `claim`, the flexible vote, taking a vote back, web check-in, visa documents and call recordings **wait on Go's side**
+  (`GO-CHANGES.md`); each is behind a flag that is off by default (expense approval is on). Go must also confirm it
+  tolerates `author.kind = "system"` in `read_messages` and a `replace_card` that moves `updated_seq`.
+- The city dataset is a **starter set** (311 Indian cities from GeoNames); other countries answer 422.
+- `home_changed` is sent for a trip created, joined or left and for invite marks, **not** when a trip's `attention`
+  alone changes (that is a `trip_changed` to the trip); the app should re-read home on resume.
+- `settlement`, `expense` and `nudge` pushes carry no id in their `tag` (`<trip>:settlement`), so two of the same kind
+  collapse into one notification.
+- The `Idempotency-Key` store is written after the handler: two copies of a request that race past the lookup both
+  run (the domain keys still keep a double press to one write where it matters).
+- Real Web Push delivery and the production Storage bucket have not been exercised against a real browser or the
+  real bucket yet (phase 6.3); the 1.1 flows have not run against the real Go yet (phase 6.4).
+- Transactions rows have no merchant `logo_url`/`emoji`; `Idea.image_url` is empty in the seed.
+
+The sections below are the 6 October review, kept as written; the items it left open are marked where they were
+resolved.
+
+---
+
+## The 6 October 2026 review
+
 **Date:** 6 Oct 2026. **What was checked:** every page of the docs at https://vestrago.vercel.app/llms-full.txt
 (11,705 lines, including the agents guide at `/docs#/guides/agents`), against the code in this repo, the app API
 (`docs/API.md`) and the Postman collection.
@@ -22,11 +130,11 @@
 - **Every flow page in the docs is now an end-to-end test**, and the real server process has been run against a fake Go
   built to the docs' own description of Keshav's fake Go.
 - **The Postman collection now runs end to end:** 79 requests and 148 checks, 0 failures, and it can be run again.
-- **Still open (decisions, not bugs):**
-  - app features the docs mention that have no endpoint yet (profile edits, trip edits, a later budget answer,
-    settle-up, attachments, trip status);
-  - a real push provider and real sign-in;
-  - the first run against the real Go.
+- **Still open on 6 Oct (decisions, not bugs)**, all since resolved (see the October 2026 section above):
+  - app features the docs mention that had no endpoint yet (profile edits, trip edits, a later budget answer,
+    settle-up, attachments, trip status): built in phases 1–4;
+  - a real push provider (Web Push, 6 Oct) and real sign-in (Supabase Auth, 7 Oct);
+  - the first run against the real Go (6 Oct, `REAL-GO-TESTING.md`).
 
 | | Before this review | After |
 |---|---|---|
@@ -145,9 +253,9 @@ UPI changes, and `trip.updated` for `status`, because those app features don't e
 | Trip record | Decided line from votes, booked line from bookings; anyone can undo; undo is idempotent; Go can never undo or write an undo back | ✅ |
 | Money | Spend rule order; token; approval marked used inside the booking; release; vault link; mandate buttons belong to the server, payer only | ✅ |
 | Privacy | No phone, email or UPI id to Go (`has_upi` only); budget as the lowest band only; anonymous votes totals only; paused people `withheld` (edits too); forget me | ✅ |
-| Live stream | Messages, edits, deletes, reactions (Go's too), replaced cards, typing (Go's and people's), "trip changed"; works across instances; now reconnects its LISTEN connection (B12) | ✅ |
-| "Needs you" strip | All 4 sources: open vote, mandate waiting for the payer, a Go card naming you, an open line asking you | ✅ |
-| Pushes | Only the 4 cases; `trip_id` + `message_id` in the data; `replace_card` sends none | ✅ (vote-closing and owe pushes carry no `message_id`: see 4.8) |
+| Live stream | Messages, edits, deletes, reactions (Go's too), replaced cards, typing (Go's and people's), "trip changed"; works across instances; now reconnects its LISTEN connection (B12). (October: the SSE stream became the WebSocket of `API.md` §3, fed by the same LISTEN/NOTIFY) | ✅ |
+| "Needs you" strip | All 4 sources: open vote, mandate waiting for the payer, a Go card naming you, an open line asking you. (October: plus `settle_up`, `expense`, `checkin`) | ✅ |
+| Pushes | Only the 4 cases; `trip_id` + `message_id` in the data; `replace_card` sends none. (October: plus `settlement`, `nudge`, `joined`, `expense`, `checkin`, and the `deep_link`/`tag` payload) | ✅ (vote-closing and owe pushes carry no `message_id`: see 4.8) |
 | "Ask Go about this" | `about_message_id` makes it for Go even without Go's name | ✅ |
 
 ---
@@ -200,45 +308,48 @@ with Keshav's team.
 4. **A failed card tap or catch-up:** the docs' sample shows a quiet toast or nothing. **We return HTTP 504/503/429/502**
    with the standard error, and API.md tells the app to show a toast and re-enable the button.
 5. **A card updated while a phone was offline:** `replace_card` takes no change number (by contract), so
-   `GET …/messages?after_seq=` does not return the updated card. The live stream does. **Proposal:** an app-only
-   "cards changed since" cursor. Needs the app team's agreement.
+   `GET …/messages?after_seq=` does not return the updated card. The live stream does. **Resolved (October, D9):**
+   a `replace_card` now moves the message's `updated_seq` with no event; Go's team is asked to confirm it is harmless.
 6. **"Give up after 24 hours":** the docs don't say from when. **We count from when the event was made.**
 7. **System messages:** the contract allows `author: system`, but nothing asks the server to post one, and the
-   database can't store one yet.
+   database can't store one yet. **Resolved (October, D8):** the server posts them for joins, leaves, decided and
+   booked lines and person-opened polls, with a change number and no event.
 8. **Push data without `message_id`:** the vote-closing and owe pushes carry `trip_id` only (there is no single message
    to open). The docs say "put `trip_id` and `message_id`", which fits the Go-message pushes. Fine unless the app wants
    to open the vote card: we could add the vote card's message id.
-9. **Not defined by the docs:** who may close or cancel a vote (today: any member); whether the organizer may leave
-   (today: yes); whether a person may delete an expense Go recorded for a booking (today: yes). **Decide with the app team.**
+9. **Not defined by the docs:** who may close or cancel a vote; whether the organizer may leave; whether a person may
+   delete an expense Go recorded for a booking. **Decided with the app team (October):** close and cancel are for the
+   organizer or the person who opened the vote; the organizer may leave; an expense may be removed by its payer or the
+   organizer.
 10. **Converting a decided line to booked:** the event uses `change: "updated"`. The docs don't name the value.
 
 ---
 
-## 5. Not built yet: needs a decision or an owner
+## 5. Not built yet on 6 October: all built since
 
-The docs mention these app features. The Server has no endpoint for them yet.
+The docs mentioned these app features; on 6 October the Server had no endpoint for them. Every row is done now
+(`API.md` has the routes); the current gaps are in the October 2026 section at the top.
 
-| Missing | Why it matters | Suggested owner |
-|---|---|---|
-| Edit profile (name, photo, UPI id), sending `person.updated` | Go's "has UPI" and names go stale | Server, with the app's screens |
-| Edit join answers in a trip (city, earliest leave, "know") | Only set when joining | Server |
-| Answer or change the budget question after joining | Only at join | Server |
-| Trip edits by people (title, dates) | Only Go can edit today | Server + app |
-| Settle-up: "Pay by UPI" (needs the payee's UPI id from us) and "Nudge" | The settle-up card has no working buttons | Server + app |
-| Attachment upload and storage | Only URLs pass through today | Decide: Supabase Storage? |
-| Trip status (planning → booked → on trip → over) | Nothing moves it | Decide: who sets it, and when? |
-| Forget me in a trip the person has already left | They can only use "everywhere" | Server (small) |
-| Real push provider (FCM / APNs) | Pushes only go to the log | Decide the provider and owner |
-| Real sign-in | A simple stand-in today | Decide: Supabase Auth? |
-| CORS | Needed only if a web frontend calls the API | Server (small, when needed) |
+| Was missing | Built as |
+|---|---|
+| Edit profile (name, photo, UPI id), sending `person.updated` | `PATCH /me`, `PUT`/`DELETE /me/upi` (§4.1) |
+| Edit join answers in a trip | `PUT /trips/:trip/me/join-answers` (§4.4) |
+| Answer or change the budget question after joining | `PUT`/`DELETE /trips/:trip/me/budget` (§4.4) |
+| Trip edits by people (title, dates) and trip status | `PATCH /trips/:trip` by any member (§4.4) |
+| Settle-up: "Pay by UPI" and "Nudge" | `POST …/transfers/pay-link`, `…/transfers/nudge`, plus settlements (§4.9) |
+| Attachment upload and storage | `POST /uploads` into Supabase Storage (§4.5) |
+| Forget me in a trip the person has already left | `DELETE /me/go?trip_id=` works for a left trip (§4.13) |
+| Real push provider | Web Push with VAPID (§8); a real browser still to be tried |
+| Real sign-in | Supabase Auth (§1.2) |
+| CORS | exact origins, `Idempotency-Key` allowed, no credentials (§1.1) |
 
-## 6. What we are waiting on
+## 6. What we were waiting on
 
-- Go's URL and signing secret (shared by a one-time link).
-- Giving Go's team the public half of our spend key (we generate the pair at setup).
-- Keshav's fake Go or the real Go, for the first live run.
-- A Supabase project (its connection string as `DATABASE_URL`).
-- A push provider choice, and a sign-in choice.
+Received since: Go's URL and signing secret, the real Go for the first run (6 Oct), the Supabase project, the push and
+sign-in choices. Still outstanding:
+
+- Our spend public key installed in Go's vault (`go-spend-public.pem`).
+- Go's team's answers to `GO-CHANGES.md` (contract 1.1), which flip the feature flags.
 - Optional: access to the private contract repo (`vestra-ai/go-brain`). We rebuilt the contract package from the
   public files, with the same names.
 

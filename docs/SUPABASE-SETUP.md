@@ -24,7 +24,7 @@ Think of a hotel:
 3. **Supabase to app.** Supabase gives the app two tokens:
    - an **access token** (the key card): a note signed by Supabase saying "this is user 7f3a…, valid until 15:30",
      lasting about an hour;
-   - a **refresh token**, used to get a new key card before the old one runs out. `supabase_flutter` does this by
+   - a **refresh token**, used to get a new key card before the old one runs out. `supabase-js` does this by
      itself.
 4. **App to our server, on every call.** The app sends `Authorization: Bearer <access token>`. The server:
    - checks Supabase's signature using the project's public keys (fetched once and kept, so there is no call to
@@ -35,8 +35,8 @@ Think of a hotel:
 5. **When the key card runs out**, the server answers 401. The app refreshes the session once and retries.
 
 **Our server never issues tokens and never sees Google's token.** Supabase is the only one that issues tokens; our
-server only checks them, so no passwords or Google secrets are kept here. Our own "dev" tokens (`POST /app/people`)
-exist only for local testing and are refused when `NODE_ENV=production`.
+server only checks them, so no passwords or Google secrets are kept here. Our own "dev" tokens
+(`POST /app/v1/dev/sign-in`) exist only for local testing and are refused when `NODE_ENV=production`.
 
 ## What the server does (`src/api/auth.ts`)
 
@@ -46,8 +46,9 @@ exist only for local testing and are refused when `NODE_ENV=production`.
 | Checked | Signature against `SUPABASE_URL/auth/v1/.well-known/jwks.json` (ES256/RS256/EdDSA); issuer `SUPABASE_URL/auth/v1`; audience `authenticated`; role `authenticated`; not anonymous; expiry, with 30 s of clock leeway |
 | Older projects | With `SUPABASE_JWT_SECRET` set, tokens signed with the legacy shared secret (HS256) are accepted too |
 | Refused (401) | No token, expired (the message says to refresh), another project, another audience, the anon/publishable key, anonymous users, a key the project never published, changed claims, `alg: none`, our dev tokens |
-| First sign-in | Creates the person: name from Google (else the start of the email address), photo if it is an https link, email kept on our side only. Two first calls at the same moment make one person. A later Google name never overwrites what the person set in `PATCH /app/me` |
+| First sign-in | Creates the person: name from Google (else the start of the email address), photo if it is an https link, email kept on our side only, `auth_provider` as Supabase reports it (`google`, or `email` for a test user). Two first calls at the same moment make one person. A later Google name never overwrites what the person set in `PATCH /app/v1/me` |
 | Link | `people.auth_user_id` (migration 003) = the Supabase user id |
+| After `DELETE /app/v1/me` | The account's tokens are refused with 401 on every instance (`people.deleted_at`) |
 
 ## The database on Supabase
 
@@ -65,8 +66,8 @@ exist only for local testing and are refused when `NODE_ENV=production`.
 
   Without it, anyone with the app's publishable key could read our tables through Supabase's Data API. Our server
   connects as the tables' owner, so none of this affects it. Tested in `tests/migration-supabase.test.ts`.
-- **Table creation:** the server creates the tables itself the first time it starts (migrations 001–003, under a
-  lock, so several instances can start together).
+- **Table creation:** the server creates the tables itself the first time it starts (migrations 001–009, under a
+  lock, so several instances can start together) and loads the bundled city dataset once per version of its file.
 
 ## Try it now, locally (no account needed)
 
@@ -75,6 +76,9 @@ pnpm dev:stack             # temporary Postgres + fake Go + the server in AUTH_M
 curl 'http://127.0.0.1:54331/mint?name=Priya&email=priya@gmail.com'              # a Supabase-style access token
 curl localhost:8080/app/v1/me -H "authorization: Bearer <access_token>"           # Priya, created on first sign-in
 ```
+
+The dev stack runs with `STORAGE=memory`; files uploaded through `POST /app/v1/uploads` are served by the server
+itself at `/_dev/storage/...` and lost when it stops.
 
 `pnpm dev:auth` runs the fake Supabase Auth on its own, for any server started with
 `AUTH_MODE=supabase SUPABASE_URL=http://127.0.0.1:54331`. The tests are in `tests/supabase-auth.test.ts` and
@@ -120,20 +124,21 @@ no shared secret set.
 
    Leave `AUTH_MODE` empty, or set it to `supabase`.
    
-   **Files (Storage).** Photos, voice notes and ticket PDFs live in a **private** Storage bucket; the server signs
-   one-off upload links and one-hour download links with the project's secret key. Create the bucket in Supabase →
-   Storage → New bucket, name `go-files` (or set `SUPABASE_STORAGE_BUCKET`), private, and set `SUPABASE_SECRET_KEY`
-   (Project Settings → API Keys → secret key) **on Railway only**: a laptop runs with `STORAGE=memory` (the default
-   without the key), which keeps files in memory and serves them itself at `/_dev/storage/...`.
+   **Files (Storage).** Photos, voice notes, ticket PDFs, the booking documents Go sends and shared call recordings
+   live in a **private** Storage bucket; the server signs one-off upload links (two hours) and download links (one
+   hour for attachments, ten minutes for ticket files) with the project's secret key. Create the bucket in Supabase →
+   Storage → New bucket, name `go-files` (or set `SUPABASE_STORAGE_BUCKET`), **private**, and set `SUPABASE_SECRET_KEY`
+   (Project Settings → API Keys → secret key) **on Railway only**; with it set `STORAGE` defaults to `supabase`. A
+   laptop runs with `STORAGE=memory` (the default without the key), which keeps files in memory and serves them itself
+   at `/_dev/storage/...`. The three variables are `STORAGE`, `SUPABASE_SECRET_KEY`, `SUPABASE_STORAGE_BUCKET`.
 2. **Set up Google sign-in.**
    1. In Google Cloud, create an OAuth consent screen and a **Web** OAuth client.
    2. Add `https://<ref>.supabase.co/auth/v1/callback` to that client's authorised redirect URIs.
    3. In Supabase → Authentication → Providers → Google, turn it on and paste the Web client ID and secret.
-   4. Then, depending on how the app signs in:
-      - **Native sign-in** (`google_sign_in` + `signInWithIdToken`): also create Android and iOS OAuth clients, and
-        list all their client IDs in the Google provider's "Client IDs" field.
-      - **Browser sign-in** (`signInWithOAuth`): add the app's deep link (for example `com.vestra.go://login-callback`)
-        to Authentication → URL Configuration → Redirect URLs.
+   4. The app is a PWA signing in with `supabase-js` `signInWithOAuth({ provider: "google" })`: add the app's
+      address(es) (for example `https://app.go.example/auth/callback`) to Authentication → URL Configuration →
+      Redirect URLs. (A native app later would also need Android and iOS OAuth clients listed in the Google
+      provider's "Client IDs" field.)
 3. **Check.** Run `pnpm check:supabase`. It checks, read-only:
    - the signing keys are published;
    - Google is on;
@@ -145,7 +150,7 @@ no shared secret set.
 4. **Sign in once for real.**
    1. Add `http://localhost:3000` to Supabase's Redirect URLs.
    2. Start the server with `APP_ORIGINS=http://localhost:3000`.
-   3. Run `pnpm dev:login`, open http://localhost:3000, click "Sign in with Google", then "Call GET /app/me".
+   3. Run `pnpm dev:login`, open http://localhost:3000, click "Sign in with Google", then "Call GET /app/v1/me".
 5. **Postman:** paste the access token from step 4 into the `token` variable. Everything works the same way.
 
 ## Testing before Google is on: email test users
@@ -155,19 +160,20 @@ same kind of token as Google. To test now:
 1. In Supabase, go to **Authentication → Users → Add user**, enter an email and password, and tick Auto Confirm.
 2. Put the login in your local `.env` as `SUPABASE_TEST_EMAIL` and `SUPABASE_TEST_PASSWORD` (add `_2` for a
    second user).
-3. Run `pnpm supabase:token`. It prints a real access token; add `--me <server>` to call `GET /app/me` with it.
+3. Run `pnpm supabase:token`. It prints a real access token; add `--me <server>` to call `GET /app/v1/me` with it.
    The `pnpm dev:login` page also has an email sign-in box.
 
 This tests exactly the production path, with no bypass in the code.
 
-## For the app team (Flutter)
+## For the app team (PWA, `supabase-js`)
 
-```dart
+```ts
 // After sign-in, on every call to our server:
-final token = Supabase.instance.client.auth.currentSession?.accessToken;
-headers['Authorization'] = 'Bearer $token';
-// On a 401: await Supabase.instance.client.auth.refreshSession(); then retry once.
+const { data: { session } } = await supabase.auth.getSession();
+headers['Authorization'] = `Bearer ${session?.access_token}`;
+// On a 401: await supabase.auth.refreshSession(); then retry once. Still 401: sign in again.
 ```
 
-The first call after sign-in creates the person. Call `GET /app/me` to show their profile, and `PATCH /app/me` to set
-a UPI id or change the name or photo.
+The first call after sign-in creates the person. Call `GET /app/v1/me` to show their profile, `PATCH /app/v1/me` to
+change the name, photo, default city or the notifications switch, and `PUT /app/v1/me/upi` for the UPI id. The whole
+API is in [`API.md`](API.md).
