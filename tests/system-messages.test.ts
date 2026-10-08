@@ -86,7 +86,7 @@ describe('a person-opened vote, a decided vote, a booking', () => {
   });
 
   it('"Villa Sol booked" after a booking a person adds, and after one Go adds', async () => {
-    const r = await t.api(rahul, 'POST', `/app/v1/trips/${trip}/bookings`, { client_id: 'b1', kind: 'stay', title: 'Villa Sol', vendor: 'ixigo', ref: 'R', amount_minor: 100, payer_person_id: rahul.id, for_person_ids: [rahul.id, priya.id] });
+    const r = await t.api(rahul, 'POST', `/app/v1/trips/${trip}/bookings`, { kind: 'stay', title: 'Villa Sol', vendor: 'ixigo', ref: 'R', amount_minor: 100, payer_person_id: rahul.id, for_person_ids: [rahul.id, priya.id] });
     expect(r.status).toBe(201);
     expect((await pills(trip)).at(-1)!.text).toBe('Villa Sol booked');
     await h.go.call('add_booking', { request_id: 'rq_sm_book', trip_id: trip, kind: 'cab', title: 'Airport cab', vendor: 'Kabir Cabs', ref: 'c1', amount_minor: 100000, currency: 'INR', payer_person_id: rahul.id, for_person_ids: [rahul.id] });
@@ -100,7 +100,7 @@ describe('a person-opened vote, a decided vote, a booking', () => {
 
   it('a cancellation vote a person proposes gets its anchor too', async () => {
     const [b] = await rows(h.pool, 'select booking_id from bookings where trip_id = $1 order by created_at limit 1', [trip]);
-    const r = await t.api(priya, 'POST', `/app/v1/trips/${trip}/bookings/${b.booking_id}/cancel-vote`, { client_id: 'cv1' });
+    const r = await t.api(priya, 'POST', `/app/v1/trips/${trip}/bookings/${b.booking_id}/cancel-vote`, {});
     expect(r.status).toBe(201);
     expect((await pills(trip)).at(-1)).toMatchObject({ text: 'Cancel this booking? Villa Sol', card: { kind: 'vote', decision_id: r.body.decision_id } });
     expect(EVERYONE.length).toBe(5); // the seeded names are not in this trip; just a guard that the import is used as elsewhere

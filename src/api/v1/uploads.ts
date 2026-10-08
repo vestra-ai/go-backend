@@ -12,12 +12,14 @@ import type { V1Deps } from './shared.js';
 /** App contract §4.5. */
 export const MAX_UPLOAD_BYTES = 26_214_400; // 25 MB
 export const UPLOAD_EXPIRES_HOURS = 24;
-const IMAGE = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic']);
-const DOCUMENT = new Set(['application/pdf']);
-const AUDIO = new Set(['audio/mp4', 'audio/mpeg', 'audio/webm', 'audio/ogg']);
+export const IMAGE = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic']);
+export const DOCUMENT = new Set(['application/pdf']);
+export const AUDIO = new Set(['audio/mp4', 'audio/mpeg', 'audio/webm', 'audio/ogg']);
 /** Which MIME types each kind may carry: a photo is an image; a file is a PDF or an image (a ticket as a picture); a voice note is audio. */
 const ALLOWED: Record<UploadBody['kind'], Set<string>> = { photo: IMAGE, file: new Set([...DOCUMENT, ...IMAGE]), audio: AUDIO };
-const EXTENSION: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'application/pdf': 'pdf', 'audio/mp4': 'm4a', 'audio/mpeg': 'mp3', 'audio/webm': 'webm', 'audio/ogg': 'ogg' };
+const EXTENSION: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'application/pdf': 'pdf', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/aac': 'aac', 'audio/mpeg': 'mp3', 'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/wav': 'wav' };
+/** The file extension a stored path gets for a MIME type (`bin` for one the table does not know). */
+export const extensionFor = (mime: string): string => EXTENSION[mime.toLowerCase()] ?? 'bin';
 
 export const routes: RouteMeta[] = [
   {

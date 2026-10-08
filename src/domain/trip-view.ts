@@ -1,11 +1,12 @@
 // §4.4 GET /trips/:trip: the trip as the app may see it (contract §2 TripView). The snapshot Go reads, plus `stage`, the
 // caller's own corner (`me`), the chat button's numbers, the "needs you" count and what the caller may do, all from one
-// repeatable-read transaction so `seq` matches every number. Two app-only touches that Go never receives: a cancellation
-// vote carries `cancels_booking_id`, and other members' `from_city` and `earliest_leave` are left out (D5: "Only you and
-// Go see this").
+// repeatable-read transaction so `seq` matches every number. Three app-only touches that Go never receives: a cancellation
+// vote carries `cancels_booking_id`, other members' `from_city` and `earliest_leave` are left out (D5: "Only you and
+// Go see this"), and a booking's `passengers` and `documents` are there only for the people it covers (§1.7).
 import type pg from 'pg';
 import type { Ctx } from '../context.js';
 import { Forbidden, needsYouIn } from './actions.js';
+import { bookingsForPerson } from './bookings.js';
 import { invalid } from './errors.js';
 import { actorOf, compact } from './mappers.js';
 import { buildSnapshot } from './snapshot.js';
@@ -80,6 +81,7 @@ export async function readTripView(ctx: Ctx, tripId: string, personId: string, i
       [tripId],
     );
     const needs = (await needsYouIn(db, tripId, personId)).length;
+    const bookings = await bookingsForPerson(db, snap.bookings, personId);
     await db.query('commit');
 
     const cancels = new Map(links.rows.map((r) => [r.decision_id as string, r.cancels_booking_id as string]));
@@ -88,6 +90,7 @@ export async function readTripView(ctx: Ctx, tripId: string, personId: string, i
       ...snap,
       people: snap.people.map((p) => personForApp(p, personId)),
       decisions: snap.decisions.map((d) => (cancels.has(d.decision_id) ? ({ ...d, cancels_booking_id: cancels.get(d.decision_id) } as typeof d) : d)),
+      bookings,
       stage: stageOf({ destination: snap.destination, dates: snap.dates, bookings: snap.bookings }),
       me: {
         person: mine,

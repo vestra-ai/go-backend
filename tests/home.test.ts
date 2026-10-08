@@ -70,7 +70,7 @@ describe('a returning person', () => {
     await t.api(asha, 'PUT', v1(`/trips/${deciding}/decisions/${vote.decision_id}/vote`), { option_index: 0 }); // everyone (she alone) voted: it closes
     expect((await home(asha)).body.trips[0].attention).toEqual({ kind: 'collecting' });
     // A confirmed booking with destination and dates: planned, and "all set".
-    await t.api(asha, 'POST', v1(`/trips/${deciding}/bookings`), { client_id: 'b1', kind: 'stay', title: 'Villa Sol', vendor: 'ixigo', ref: 'IXG-1', amount_minor: 5420000, payer_person_id: asha.id, for_person_ids: [asha.id] });
+    await t.api(asha, 'POST', v1(`/trips/${deciding}/bookings`), { kind: 'stay', title: 'Villa Sol', vendor: 'ixigo', ref: 'IXG-1', amount_minor: 5420000, payer_person_id: asha.id, for_person_ids: [asha.id] });
     r = await home(asha);
     expect([r.body.trips[0].stage, r.body.trips[0].attention]).toEqual(['planned', { kind: 'all_set' }]);
     // Something new to do beats "all set".

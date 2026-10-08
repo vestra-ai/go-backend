@@ -45,7 +45,7 @@ it("closes every table to Supabase's API roles, including tables made later", as
   expect(applied).toContain('006_v1_room.sql');
   expect(applied.at(-1)).toMatch(/^data\/cities-in\.json#/);
   for (const role of ['anon', 'authenticated']) {
-    for (const table of ['people', 'trips', 'messages', 'outbox', 'spend_approvals', 'push_subscriptions', 'schema_migrations', 'idempotency_keys', 'invite_marks', 'live_tickets', 'invites', 'places_cities', 'ideas', 'uploads']) {
+    for (const table of ['people', 'trips', 'messages', 'outbox', 'spend_approvals', 'push_subscriptions', 'schema_migrations', 'idempotency_keys', 'invite_marks', 'live_tickets', 'invites', 'places_cities', 'ideas', 'uploads', 'booking_documents']) {
       expect(await canRead(role, table), `${role} on ${table}`).toBe(false);
     }
   }

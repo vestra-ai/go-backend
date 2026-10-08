@@ -4,6 +4,7 @@ import { SocketCallError } from '../go/go-socket.js';
 import { closeDecision } from '../domain/voting.js';
 import { sweepUploads } from '../api/v1/uploads.js';
 import { sweepLiveTickets } from '../live/ws.js';
+import { sendPush } from '../push/send.js';
 import { sweepIdempotency } from './idempotency.js';
 
 /** Closes every open vote whose time has run out (reason `time`). Safe to run on every instance at once. */
@@ -43,7 +44,7 @@ export async function pushClosingSoon(ctx: Ctx): Promise<number> {
     );
     const minutes = Math.max(1, Math.round((new Date(d.closes_at).getTime() - Date.now()) / 60_000));
     const when = minutes >= 60 ? 'in 1 hour' : `in ${minutes} minutes`;
-    await ctx.push.send(waiting.rows.map((r) => r.person_id), { body: `${d.question} closes ${when}`, data: { trip_id: d.trip_id } });
+    await sendPush(ctx, d.trip_id, waiting.rows.map((r) => r.person_id), { type: 'vote_closing', body: `${d.question} closes ${when}`, id: d.decision_id });
   }
   return rows.length;
 }

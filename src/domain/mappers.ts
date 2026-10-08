@@ -114,13 +114,24 @@ export function decisionOf(r: DecisionRow, votes: VoteRow[]): Decision {
   }) as Decision;
 }
 
+/** A leg of a journey as the contract has it (Journey): what the itinerary wording is built from. */
+export interface JourneyLike {
+  mode: string; origin: { name: string; code?: string }; destination: { name: string; code?: string };
+  depart_at: string; arrive_at: string; carrier_name?: string; carrier_code?: string; number?: string;
+}
+/** One covered person's seat and PNR (GO-CHANGES 1.7). */
+export interface Passenger { person_id: string; seat?: string; pnr?: string }
+
 export interface BookingRow {
   booking_id: string; kind: string; status: 'confirmed' | 'cancelled'; title: string; vendor: string; ref: string;
   amount_minor: number; currency: string; payer_person_id: string; for_person_ids: string[]; refundable_until: Date | null;
-  starts_at: Date | null; ends_at: Date | null; journey: unknown | null; place: unknown | null; image_url: string | null;
+  starts_at: Date | null; ends_at: Date | null; journey: JourneyLike | null; place: unknown | null; image_url: string | null;
   decision_id: string | null; approval_id: string | null; added_by_person_id: string | null; created_at: Date;
+  /** GO-CHANGES 1.7 (migration 008): detail rows, the return leg, and who sits where. `passengers` is per-person data (app contract §1.7). */
+  details: unknown[] | null; return_journey: JourneyLike | null; passengers: Passenger[] | null;
 }
 
+/** A booking as Go may see it: everything stored. Documents are not here (they live in booking_documents and are served by link; see src/domain/bookings.ts). */
 export const bookingOf = (r: BookingRow): Booking =>
   compact({
     booking_id: r.booking_id, kind: r.kind, status: r.status, title: r.title, vendor: r.vendor, ref: r.ref,
@@ -129,6 +140,7 @@ export const bookingOf = (r: BookingRow): Booking =>
     journey: r.journey ?? undefined, place: r.place ?? undefined, image_url: r.image_url ?? undefined,
     decision_id: r.decision_id ?? undefined, approval_id: r.approval_id ?? undefined,
     added_by_person_id: r.added_by_person_id ?? undefined, created_at: iso(r.created_at)!,
+    details: r.details ?? undefined, return_journey: r.return_journey ?? undefined, passengers: r.passengers ?? undefined,
   }) as unknown as Booking;
 
 export interface ExpenseRow {

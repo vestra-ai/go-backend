@@ -181,10 +181,10 @@ describe('votes, mandate and the "needs you" strip', () => {
     const o = await goCall('open_vote', { question: 'Where do we stay?', kind: 'choice', anonymous: false, options: [{ label: 'Villa Sol', price_minor: 5420000, currency: 'INR' }, { label: 'Casa Azul' }] }, trip);
     decision = o.decision_id;
     const strip = await api(rahul, 'GET', `/app/v1/trips/${trip}/needs-you`);
-    expect(strip.body).toContainEqual({ kind: 'vote', decision_id: decision, text: 'Where do we stay?' });
+    expect(strip.body.items).toContainEqual(expect.objectContaining({ item_id: `vote:${decision}:${rahul.id}`, kind: 'vote', title: 'Where do we stay?', cta_label: 'Vote', target: { decision_id: decision } }));
     await api(rahul, 'PUT', `/app/v1/trips/${trip}/decisions/${decision}/vote`, { option_index: 0 });
-    expect((await api(rahul, 'GET', `/app/v1/trips/${trip}/needs-you`)).body.find((x: any) => x.kind === 'vote')).toBeUndefined();
-    expect((await api(priya, 'GET', `/app/v1/trips/${trip}/needs-you`)).body.find((x: any) => x.kind === 'vote')).toBeTruthy();
+    expect((await api(rahul, 'GET', `/app/v1/trips/${trip}/needs-you`)).body.items.find((x: any) => x.kind === 'vote')).toBeUndefined();
+    expect((await api(priya, 'GET', `/app/v1/trips/${trip}/needs-you`)).body.items.find((x: any) => x.kind === 'vote')).toBeTruthy();
   });
 
   it('a vote event names who voted for what; the vote closes by itself when everyone has voted', async () => {
@@ -217,7 +217,7 @@ describe('votes, mandate and the "needs you" strip', () => {
 
   it('only the payer can answer the mandate; "Yes, book it" opens the spend check', async () => {
     await goCall('set_mandate', { decision_id: decision, choice_index: 0, cap_minor: 5500000, currency: 'INR', refundable_only: true, payer_person_id: rahul.id }, trip);
-    expect((await api(rahul, 'GET', `/app/v1/trips/${trip}/needs-you`)).body).toContainEqual({ kind: 'mandate', decision_id: decision, text: 'Yes, book it? Villa Sol, up to ₹55,000', question: 'Where do we stay?' });
+    expect((await api(rahul, 'GET', `/app/v1/trips/${trip}/needs-you`)).body.items).toContainEqual({ item_id: `mandate:${decision}`, kind: 'mandate', title: 'Yes, book it? Villa Sol, up to ₹55,000', subtitle: 'Where do we stay?', cta_label: 'Yes, book it', since: expect.any(String), target: { decision_id: decision } });
     expect((await api(priya, 'POST', `/app/v1/trips/${trip}/decisions/${decision}/mandate/confirm`)).status).toBe(403);
     const ask = () => h.go.call('request_spend_approval', {
       request_id: `rq_sp_${Math.random()}`, trip_id: trip, decision_id: decision, amount_minor: 5420000, currency: 'INR', merchant: 'ixigo', purpose: 'Villa', refundable_until: '2099-01-01T00:00:00Z',
@@ -230,18 +230,18 @@ describe('votes, mandate and the "needs you" strip', () => {
     expect(events('mandate.declined').at(-1)!.data).toEqual({ decision_id: decision, person_id: rahul.id });
     expect(events('mandate.confirmed').at(-1)!.data).toEqual({ decision_id: decision, person_id: rahul.id });
     expect((await ask()).result.status).toBe('approved');
-    expect((await api(rahul, 'GET', `/app/v1/trips/${trip}/needs-you`)).body.find((x: any) => x.kind === 'mandate')).toBeUndefined();
+    expect((await api(rahul, 'GET', `/app/v1/trips/${trip}/needs-you`)).body.items.find((x: any) => x.kind === 'mandate')).toBeUndefined();
   });
 
   it('a person undoes a record line, and Go hears it', async () => {
     const m = await api(rahul, 'POST', `/app/v1/trips/${trip}/messages`, { client_message_id: 'c7', text: 'north goa' });
     const l = await goCall('add_record_line', { kind: 'open', text: 'Scuba on Saturday?', proof: [{ message_id: m.body.message_id }], person_ids: [priya.id] }, trip);
-    expect((await api(priya, 'GET', `/app/v1/trips/${trip}/needs-you`)).body).toContainEqual({ kind: 'record', line_id: l.line_id, text: 'Scuba on Saturday?' });
+    expect((await api(priya, 'GET', `/app/v1/trips/${trip}/needs-you`)).body.items).toContainEqual({ item_id: `record_line:${l.line_id}`, kind: 'record_line', title: 'Scuba on Saturday?', since: expect.any(String), target: { line_id: l.line_id } });
     const undone = await api(kabir, 'POST', `/app/v1/trips/${trip}/record/${l.line_id}/undo`);
     expect(undone.body).toMatchObject({ line_id: l.line_id, status: 'undone' }); // the RecordLine
     await h.flush();
     expect(events('record.changed').at(-1)!.data).toMatchObject({ change: 'undone', by: { kind: 'person', person_id: kabir.id }, line: { line_id: l.line_id, status: 'undone' } });
-    expect((await api(priya, 'GET', `/app/v1/trips/${trip}/needs-you`)).body.find((x: any) => x.kind === 'record')).toBeUndefined();
+    expect((await api(priya, 'GET', `/app/v1/trips/${trip}/needs-you`)).body.items.find((x: any) => x.kind === 'record_line')).toBeUndefined();
     const redone = await api(priya, 'POST', `/app/v1/trips/${trip}/record/${l.line_id}/redo`);
     expect(redone.body).toMatchObject({ line_id: l.line_id, status: 'active' });
     await h.flush();
@@ -252,9 +252,9 @@ describe('votes, mandate and the "needs you" strip', () => {
 
   it('a Go card that names you is in your strip until Go removes you with replace_card', async () => {
     await goCall('post_message', { text: 'Rahul, approve?', card: { card_id: 'c_pay', kind: 'notice', fallback_text: 'Rahul, approve', title: 'Approve', body: 'x', tone: 'heads_up', for_person_ids: [rahul.id] } }, trip);
-    expect((await api(rahul, 'GET', `/app/v1/trips/${trip}/needs-you`)).body.find((x: any) => x.kind === 'card')).toMatchObject({ card_id: 'c_pay' });
+    expect((await api(rahul, 'GET', `/app/v1/trips/${trip}/needs-you`)).body.items.find((x: any) => x.kind === 'card')).toMatchObject({ item_id: 'card:c_pay', title: 'Rahul, approve', subtitle: 'Approve', target: { card_id: 'c_pay' } });
     await h.go.call('replace_card', { trip_id: trip, card: { card_id: 'c_pay', kind: 'notice', fallback_text: 'done', title: 'Done', body: 'x', tone: 'heads_up', for_person_ids: [] } });
-    expect((await api(rahul, 'GET', `/app/v1/trips/${trip}/needs-you`)).body.find((x: any) => x.kind === 'card')).toBeUndefined();
+    expect((await api(rahul, 'GET', `/app/v1/trips/${trip}/needs-you`)).body.items.find((x: any) => x.kind === 'card')).toBeUndefined();
   });
 });
 

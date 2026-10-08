@@ -5,8 +5,8 @@
 import { parse as legacyParse } from 'node:url';
 import type pg from 'pg';
 import webpush from 'web-push';
-import { LogPush } from './push.js';
-import type { Notification, Push } from './push.js';
+import { LogPush, isLegacyNotification, upgradeNotification } from './push.js';
+import type { Notification, Push, PushPayload } from './push.js';
 
 export interface Vapid {
   publicKey: string;
@@ -61,9 +61,9 @@ export function isValidSubscriptionKeys(keys: { p256dh: string; auth: string }):
   return bytes(keys.p256dh) === 65 && bytes(keys.auth) === 16;
 }
 
-/** What the browser receives: the text (cut to 300 characters) and where a tap should go. No links of any kind. */
-export function payloadOf(n: Notification): string {
-  return JSON.stringify({ body: Array.from(n.body).slice(0, 300).join(''), data: n.data }); // by characters, so a pair is never cut in half
+/** What the browser receives (app contract §8): the type, the trip, the title, the text (cut to 300 characters), the deep link and the tag. No file or vault links. */
+export function payloadOf(n: PushPayload): string {
+  return JSON.stringify({ ...n, body: Array.from(n.body).slice(0, 300).join('') }); // by characters, so a pair is never cut in half
 }
 
 const SEND_BATCH = 10;
@@ -115,16 +115,27 @@ export class WebPushSender implements Push {
   /** Returns at once. The work happens in the background: a slow or failing push service never touches the caller. */
   send(personIds: string[], notification: Notification): Promise<void> {
     if (personIds.length === 0) return Promise.resolve();
-    const payload = payloadOf(notification);
-    const task: Promise<void> = this.deliver(personIds, payload)
+    const task: Promise<void> = this.deliver(personIds, notification)
       .catch((err) => this.log(`web push delivery failed: ${err instanceof Error ? err.name : 'error'}`))
       .finally(() => this.inflight.delete(task));
     this.inflight.add(task);
     return Promise.resolve();
   }
 
-  private async deliver(personIds: string[], payload: string): Promise<void> {
-    const { rows } = await this.o.pool.query('select endpoint, p256dh, auth from push_subscriptions where person_id = any($1)', [personIds]);
+  /** The payload as sent: a legacy notification gets the trip's title and the rest of the new shape here. */
+  private async payloadFor(notification: Notification): Promise<string> {
+    if (!isLegacyNotification(notification)) return payloadOf(notification);
+    const title = ((await this.o.pool.query('select title from trips where trip_id = $1', [notification.data.trip_id])).rows[0]?.title as string | undefined) ?? 'Go';
+    return payloadOf(upgradeNotification(notification, title));
+  }
+
+  private async deliver(personIds: string[], notification: Notification): Promise<void> {
+    const payload = await this.payloadFor(notification);
+    // Only people whose notifications switch is on (app contract §8): checked here too, for a caller that did not go through sendPush.
+    const { rows } = await this.o.pool.query(
+      'select s.endpoint, s.p256dh, s.auth from push_subscriptions s join people p using (person_id) where s.person_id = any($1) and p.notifications_enabled',
+      [personIds],
+    );
     // In small batches: the library signs and encrypts synchronously for each send, so a person with very many subscriptions must not
     // hold the server's single thread (and Go's answer deadline) for one long stretch.
     for (let i = 0; i < rows.length; i += SEND_BATCH) {

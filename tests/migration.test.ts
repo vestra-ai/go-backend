@@ -46,9 +46,16 @@ it('migrations 002 onwards apply on top of a database at 001 with data in it, an
   expect(applied.slice(0, 5)).toEqual(['002_people_actions.sql', '003_supabase.sql', '004_v1_conventions.sql', '005_v1_people.sql', '006_v1_room.sql']);
   expect(applied.at(-1)).toMatch(/^data\/cities-in\.json#[0-9a-f]{12}$/); // later phases add their own files after 006; each is listed by its own test
   expect(applied.slice(0, -1)).toEqual([...applied.slice(0, -1)].sort());
+  expect(applied).toContain('008_v1_bookings.sql');
   const tables = (await pool.query(`select table_name from information_schema.tables where table_schema = 'public'`)).rows.map((r) => r.table_name);
-  expect(tables).toEqual(expect.arrayContaining(['push_subscriptions', 'nudges', 'idempotency_keys', 'invite_marks', 'live_tickets', 'invites', 'places_cities', 'ideas', 'uploads']));
+  expect(tables).toEqual(expect.arrayContaining(['push_subscriptions', 'nudges', 'idempotency_keys', 'invite_marks', 'live_tickets', 'invites', 'places_cities', 'ideas', 'uploads', 'booking_documents']));
   expect(tables).not.toContain('push_devices');
+  // 008: the 1.1 booking columns are empty on the old row; a document needs a booking; a device may say its locale and time zone.
+  expect((await pool.query(`select details, return_journey, passengers from bookings where booking_id = 'b_1'`)).rows[0]).toEqual({ details: null, return_journey: null, passengers: null });
+  await expect(pool.query(`insert into booking_documents (document_id, booking_id, name, mime, size_bytes, visibility, path) values ('doc_x', 'b_nope', 'x.pdf', 'application/pdf', 1, 'covered', 'p')`)).rejects.toMatchObject({ code: '23503' });
+  await expect(pool.query(`insert into booking_documents (document_id, booking_id, name, mime, size_bytes, visibility, path) values ('doc_x', 'b_1', 'x.pdf', 'application/pdf', 1, 'everyone', 'p')`)).rejects.toMatchObject({ code: '23514' });
+  await pool.query(`insert into booking_documents (document_id, booking_id, name, mime, size_bytes, visibility, path) values ('doc_x', 'b_1', 'x.pdf', 'application/pdf', 1, 'group', 'p')`);
+  expect((await pool.query(`select column_name from information_schema.columns where table_name = 'push_subscriptions' and column_name in ('locale', 'tz')`)).rows).toHaveLength(2);
   expect((await pool.query(`select booking_id from bookings`)).rows).toEqual([{ booking_id: 'b_1' }]);
   // 005: the existing trip's code became its working invite; the cities file and the ideas are in.
   expect((await pool.query(`select code, trip_id, created_by, revoked_at from invites`)).rows).toEqual([{ code: 'inv_1', trip_id: 't_1', created_by: 'p_a', revoked_at: null }]);

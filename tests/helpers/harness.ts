@@ -33,8 +33,11 @@ export class RecordingLive implements Live {
   }
 }
 
+/** A recorded push: the new payload, or the legacy `{ body, data }` shape a call site that has not moved still sends (loosely typed, so a test can read either). */
+export type SentPush = { to: string[]; n: Notification & Record<string, any> };
+
 export class RecordingPush implements Push {
-  sent: Array<{ to: string[]; n: Notification }> = [];
+  sent: SentPush[] = [];
   async send(to: string[], n: Notification) {
     this.sent.push({ to, n });
   }

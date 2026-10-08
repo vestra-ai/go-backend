@@ -6,13 +6,13 @@ export const EVERYONE = ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'];
 /** Building blocks for tests about cancelling a booking by vote. */
 export function cancelFlow(h: Harness, t: ReturnType<typeof appApi>) {
   let n = 0;
-  /** A booking added by a member of `trip`. Returns its id. */
+  /** A booking added by a member of `trip` (with an Idempotency-Key, as the app sends). Returns its id. */
   const addBooking = async (trip = 't_goa', over: Record<string, unknown> = {}) =>
     (await t.api(t.as('p_arjun'), 'POST', `/app/v1/trips/${trip}/bookings`, {
-      client_id: `cf-${++n}`, kind: 'stay', title: `Stay ${n}`, vendor: 'ixigo', ref: 'R', amount_minor: 100, payer_person_id: 'p_rahul', for_person_ids: EVERYONE, ...over,
-    })).body.booking_id as string;
-  const propose = (bookingId: string, trip = 't_goa', who = 'p_priya', client_id = `pc-${++n}`) =>
-    t.api(t.as(who), 'POST', `/app/v1/trips/${trip}/bookings/${bookingId}/cancel-vote`, { client_id });
+      kind: 'stay', title: `Stay ${++n}`, vendor: 'ixigo', ref: 'R', amount_minor: 100, payer_person_id: 'p_rahul', for_person_ids: EVERYONE, ...over,
+    }, { 'idempotency-key': `cf-${n}` })).body.booking_id as string;
+  const propose = (bookingId: string, trip = 't_goa', who = 'p_priya', key = `pc-${++n}`) =>
+    t.api(t.as(who), 'POST', `/app/v1/trips/${trip}/bookings/${bookingId}/cancel-vote`, {}, { 'idempotency-key': key });
   const castVote = (decisionId: string, who: string, option: number, trip = 't_goa') =>
     t.api(t.as(who), 'PUT', `/app/v1/trips/${trip}/decisions/${decisionId}/vote`, { option_index: option });
   const closeEarly = (decisionId: string, trip = 't_goa', who = 'p_rahul') => t.api(t.as(who), 'POST', `/app/v1/trips/${trip}/decisions/${decisionId}/close`);

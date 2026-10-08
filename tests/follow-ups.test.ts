@@ -27,8 +27,9 @@ describe('the app can tell a cancellation vote from an ordinary one; Go cannot',
     const ordinary = (await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_goa/decisions', { client_id: 'plain', question: 'Where to eat?', kind: 'yesno', anonymous: false, options: [{ label: 'Yes' }, { label: 'No' }] })).body.decision.decision_id as string;
     const trip = (await t.api(t.as('p_kabir'), 'GET', '/app/v1/trips/t_goa')).body;
     const marks = Object.fromEntries(trip.decisions.map((d: any) => [d.decision_id, d.cancels_booking_id]));
-    const strip = (await t.api(t.as('p_kabir'), 'GET', '/app/v1/trips/t_goa/needs-you')).body.filter((x: any) => x.kind === 'vote');
-    expect([marks[cancel], 'cancels_booking_id' in trip.decisions.find((d: any) => d.decision_id === ordinary), strip.find((x: any) => x.decision_id === cancel).cancels_booking_id, 'cancels_booking_id' in strip.find((x: any) => x.decision_id === ordinary)]).toEqual([bid, false, bid, false]);
+    const strip = (await t.api(t.as('p_kabir'), 'GET', '/app/v1/trips/t_goa/needs-you')).body.items.filter((x: any) => x.kind === 'vote');
+    const item = (id: string) => strip.find((x: any) => x.target.decision_id === id);
+    expect([marks[cancel], 'cancels_booking_id' in trip.decisions.find((d: any) => d.decision_id === ordinary), item(cancel).target.cancels_booking_id, 'cancels_booking_id' in item(ordinary).target]).toEqual([bid, false, bid, false]);
     await h.flush();
     const goSees = JSON.stringify([h.go.events, (await h.go.call('read_trip', { trip_id: 't_goa' })).result]); // the events and the read Go gets
     expect(goSees.includes('cancels_booking')).toBe(false);

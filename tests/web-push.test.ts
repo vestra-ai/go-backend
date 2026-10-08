@@ -2,7 +2,8 @@ import { createECDH, randomBytes } from 'node:crypto';
 import webpush from 'web-push';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/api/app.js';
-import { LogPush } from '../src/push/push.js';
+import { pushClosingSoon } from '../src/jobs/votes.js';
+import { LogPush, pushPayload, upgradeNotification } from '../src/push/push.js';
 import { WebPushSender, createPush, isAllowedPushEndpoint, payloadOf, type SendFn } from '../src/push/web-push.js';
 import { appApi } from './helpers/app-api.js';
 import { rows, startHarness, type Harness } from './helpers/harness.js';
@@ -174,24 +175,103 @@ describe('delivery', () => {
     expect([hangEnded, finishedBeforeDrainReturned, bounded]).toEqual([true, true, true]);
   });
 
-  it('with the real library and throwaway keys, produces a signed, encrypted request whose payload is only the text (cut to 300) and where a tap goes, with no link', async () => {
+  it('with the real library and throwaway keys, produces a signed, encrypted request whose payload is the contract\'s (type, trip, message, title, text cut to 300, deep link, tag), with no absolute link', async () => {
     const ecdh = createECDH('prime256v1');
     ecdh.generateKeys();
     const subscription = { endpoint: FCM, keys: { p256dh: ecdh.getPublicKey().toString('base64url'), auth: randomBytes(16).toString('base64url') } };
     const vapid = webpush.generateVAPIDKeys();
-    const payload = payloadOf({ body: 'x'.repeat(400), data: { trip_id: 't_goa', message_id: 'm_1' } });
+    const notification = pushPayload({ type: 'mention', trip_id: 't_goa', title: 'Goa 🌴', body: 'x'.repeat(400), message_id: 'm_1' });
+    const payload = payloadOf(notification);
     const request = webpush.generateRequestDetails(subscription, payload, { vapidDetails: { subject: 'mailto:ops@example.com', ...vapid } });
     const sent = vi.spyOn(webpush, 'sendNotification').mockResolvedValue({ statusCode: 201, body: '', headers: {} });
     await h.pool.query('delete from push_subscriptions');
     await h.pool.query('insert into push_subscriptions (endpoint, person_id, p256dh, auth) values ($1, $2, $3, $4)', [subscription.endpoint, 'p_priya', subscription.keys.p256dh, subscription.keys.auth]);
     const real = new WebPushSender({ pool: h.pool, vapid: { ...vapid, subject: 'mailto:ops@example.com' } });
-    await real.send(['p_priya'], { body: 'x'.repeat(400), data: { trip_id: 't_goa', message_id: 'm_1' } });
+    await real.send(['p_priya'], notification);
     await real.drain();
     const args = sent.mock.calls[0]!;
     sent.mockRestore();
     expect([
       request.endpoint, request.method, String(request.headers.Authorization).startsWith('vapid t='), request.headers['Content-Encoding'], request.body.length === Buffer.byteLength(payload) + 103, request.body.includes(Buffer.from('trip_id')),
       Object.keys(JSON.parse(payload)), JSON.parse(payload).body.length, /https?:|\/\//.test(payload), [args[0].endpoint, args[1], (args[2] as any).vapidDetails.publicKey === vapid.publicKey],
-    ]).toEqual([FCM, 'POST', true, 'aes128gcm', true, false, ['body', 'data'], 300, false, [FCM, payload, true]]);
+    ]).toEqual([FCM, 'POST', true, 'aes128gcm', true, false, ['type', 'trip_id', 'message_id', 'title', 'body', 'deep_link', 'tag'], 300, false, [FCM, payload, true]]);
+    expect(JSON.parse(payload)).toMatchObject({ type: 'mention', trip_id: 't_goa', message_id: 'm_1', title: 'Goa 🌴', deep_link: '/trips/t_goa/chat?msg=m_1', tag: 't_goa:m_1' });
+  });
+});
+
+describe('the payload per type (app contract §8), and the notifications switch', () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  /** The payloads the fake push service received since `from`, parsed. */
+  const received = (from: number) => svc.calls.slice(from).map((c) => JSON.parse(c.payload));
+
+  it('builds deep_link and tag by type: a message opens the room at it, money opens the Expenses tab, anything else the trip; no badge_count', () => {
+    const p = (type: any, extra: Record<string, unknown> = {}) => pushPayload({ type, trip_id: 't_goa', title: 'Goa 🌴', body: 'b', ...extra });
+    expect(p('mention', { message_id: 'm_1' })).toEqual({ type: 'mention', trip_id: 't_goa', message_id: 'm_1', title: 'Goa 🌴', body: 'b', deep_link: '/trips/t_goa/chat?msg=m_1', tag: 't_goa:m_1' });
+    expect(p('card', { message_id: 'm_2' })).toMatchObject({ deep_link: '/trips/t_goa/chat?msg=m_2', tag: 't_goa:m_2' });
+    expect(p('vote_closing', { id: 'd_1' })).toMatchObject({ deep_link: '/trips/t_goa', tag: 't_goa:vote_closing:d_1' });
+    expect(p('joined', { id: 'p_priya' })).toMatchObject({ deep_link: '/trips/t_goa', tag: 't_goa:joined:p_priya' });
+    expect(p('checkin', { id: 'b_1' })).toMatchObject({ deep_link: '/trips/t_goa', tag: 't_goa:checkin:b_1' });
+    for (const type of ['owe', 'settlement', 'nudge', 'expense']) expect(p(type, { id: 'x' })).toMatchObject({ deep_link: '/trips/t_goa/expenses', tag: `t_goa:${type}:x` });
+    expect(Object.keys(p('owe'))).not.toContain('badge_count');
+    // The shape from before phase 4 is upgraded at delivery: a message is a mention, anything else a nudge unless data.type says.
+    expect(upgradeNotification({ body: 'b', data: { trip_id: 't_goa', message_id: 'm_9' } }, 'Goa 🌴')).toMatchObject({ type: 'mention', title: 'Goa 🌴', deep_link: '/trips/t_goa/chat?msg=m_9' });
+    expect(upgradeNotification({ body: 'b', data: { trip_id: 't_goa' } }, 'Goa 🌴')).toMatchObject({ type: 'nudge', deep_link: '/trips/t_goa/expenses', tag: 't_goa:nudge' });
+    expect(upgradeNotification({ body: 'b', data: { trip_id: 't_goa', type: 'settlement' } }, 'Goa 🌴')).toMatchObject({ type: 'settlement', tag: 't_goa:settlement' });
+  });
+
+  it('a mention, a card, an owe and a vote closing soon each reach the browser with their type, the trip\'s title and the deep link', async () => {
+    await h.pool.query('delete from push_subscriptions');
+    await subscribe('p_priya', FCM);
+    await subscribe('p_kabir', 'https://fcm.googleapis.com/fcm/send/kabir');
+    const from = svc.calls.length;
+    const m = (await h.go.call('post_message', { request_id: 'rq_pl_1', trip_id: 't_goa', text: 'Priya, look', mentions: ['p_priya'], card: { card_id: 'c_pl_1', kind: 'notice', fallback_text: 'Kabir, heads up', title: 'Heads up', body: 'x', tone: 'heads_up', for_person_ids: ['p_kabir'] } })).result;
+    await t.api(t.as('p_rahul'), 'POST', '/app/v1/trips/t_goa/expenses', { paid_by_person_id: 'p_rahul', amount_minor: 20000, note: 'Tea', category: 'food', split_person_ids: ['p_rahul', 'p_priya'] });
+    const soon = new Date(Date.now() + 30 * 60_000).toISOString();
+    const d = (await h.go.call('open_vote', { request_id: 'rq_pl_v', trip_id: 't_goa', question: 'Brunch where?', kind: 'choice', anonymous: false, options: [{ label: 'A' }, { label: 'B' }], closes_at: soon })).result;
+    await pushClosingSoon(h.ctx);
+    for (let i = 0; i < 50 && svc.calls.length - from < 5; i++) await sleep(20);
+    await sender.drain();
+    const got = received(from);
+    expect(got.find((p) => p.type === 'mention')).toEqual({ type: 'mention', trip_id: 't_goa', message_id: m.message_id, title: 'Goa 🌴', body: 'Priya, look', deep_link: `/trips/t_goa/chat?msg=${m.message_id}`, tag: `t_goa:${m.message_id}` });
+    expect(got.find((p) => p.type === 'card')).toMatchObject({ trip_id: 't_goa', message_id: m.message_id, title: 'Goa 🌴', body: 'Kabir, heads up' });
+    expect(got.find((p) => p.type === 'owe')).toEqual({ type: 'owe', trip_id: 't_goa', title: 'Goa 🌴', body: expect.stringMatching(/^You owe Rahul ₹[\d,.]+ for Tea$/), deep_link: '/trips/t_goa/expenses', tag: 't_goa:owe:p_rahul' }); // the amount is Priya's whole balance (earlier expenses count)
+    expect(got.filter((p) => p.type === 'vote_closing')).toEqual([expect.objectContaining({ body: 'Brunch where? closes in 30 minutes', deep_link: '/trips/t_goa', tag: `t_goa:vote_closing:${d.decision_id}` }), expect.anything()]); // Priya and Kabir
+  });
+
+  it('"Priya joined Goa" goes to the organizer when someone accepts an invite, not when the organizer re-accepts or someone already in does', async () => {
+    await h.pool.query('delete from push_subscriptions');
+    await subscribe('p_rahul', 'https://fcm.googleapis.com/fcm/send/rahul');
+    const code = (await t.api(t.as('p_rahul'), 'GET', '/app/v1/trips/t_goa/invite')).body.code;
+    const from = svc.calls.length;
+    const asha = await t.person('Asha');
+    await t.api(asha, 'POST', `/app/v1/invites/${code}/accept`, {});
+    await t.api(asha, 'POST', `/app/v1/invites/${code}/accept`, {}); // already in: nothing
+    await t.api(t.as('p_rahul'), 'POST', `/app/v1/invites/${code}/accept`, {}); // the organizer: nothing
+    for (let i = 0; i < 50 && svc.calls.length - from < 1; i++) await sleep(20);
+    await sender.drain();
+    expect(received(from)).toEqual([{ type: 'joined', trip_id: 't_goa', title: 'Goa 🌴', body: 'Asha joined Goa 🌴', deep_link: '/trips/t_goa', tag: `t_goa:joined:${asha.id}` }]);
+  });
+
+  it('a person with notifications off gets nothing, from any site: the domain drops them before the sender, and the sender drops them again for a legacy caller; on again, they are back', async () => {
+    await h.pool.query('delete from push_subscriptions');
+    await subscribe('p_meher', 'https://fcm.googleapis.com/fcm/send/meher');
+    await t.api(t.as('p_meher'), 'PATCH', '/app/v1/me', { notifications_enabled: false });
+    const from = svc.calls.length;
+    await h.go.call('post_message', { request_id: 'rq_off_1', trip_id: 't_goa', text: 'Meher?', mentions: ['p_meher'] });
+    await t.api(t.as('p_rahul'), 'POST', '/app/v1/trips/t_goa/expenses', { paid_by_person_id: 'p_rahul', amount_minor: 20000, note: 'Chai', category: 'food', split_person_ids: ['p_rahul', 'p_meher'] });
+    await sender.send(['p_meher'], { body: 'legacy', data: { trip_id: 't_goa' } }); // a call site that bypasses sendPush
+    await sleep(100);
+    await sender.drain();
+    expect(svc.calls.length - from).toBe(0);
+    await t.api(t.as('p_meher'), 'PATCH', '/app/v1/me', { notifications_enabled: true });
+    await h.go.call('post_message', { request_id: 'rq_off_2', trip_id: 't_goa', text: 'Meher!', mentions: ['p_meher'] });
+    for (let i = 0; i < 50 && svc.calls.length - from < 1; i++) await sleep(20);
+    await sender.drain();
+    expect(received(from).map((p) => [p.type, p.body])).toEqual([['mention', 'Meher!']]);
+  });
+
+  it('registers a device with its locale and time zone', async () => {
+    const r = await subscribe('p_arjun', 'https://fcm.googleapis.com/fcm/send/arjun-tz', { locale: 'en-IN', tz: 'Asia/Kolkata' });
+    expect([r.status, (await rows(h.pool, 'select locale, tz from push_subscriptions where device_id = $1', [r.body.device_id]))[0]]).toEqual([201, { locale: 'en-IN', tz: 'Asia/Kolkata' }]);
   });
 });

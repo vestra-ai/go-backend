@@ -1,6 +1,6 @@
 // Supabase Storage (decision D4): one private bucket, the service key only on the server. Signed upload URLs come from
 // POST /storage/v1/object/upload/sign/<bucket>/<path>; signed download links from POST /storage/v1/object/sign/<bucket>.
-import type { SignedUpload, Storage } from './storage.js';
+import { fetchForCopy, type Copied, type CopyLimits, type SignedUpload, type Storage } from './storage.js';
 
 export interface SupabaseStorageOptions {
   /** The project URL, https://<ref>.supabase.co */
@@ -68,10 +68,9 @@ export class SupabaseStorage implements Storage {
     await this.call('DELETE', `/object/${encodeURIComponent(this.opts.bucket)}`, { prefixes: [path] });
   }
 
-  async putFromUrl(url: string, path: string): Promise<void> {
-    const res = await this.fetch(url);
-    if (!res.ok) throw new Error(`could not fetch ${url}: ${res.status}`);
-    const bytes = new Blob([await res.arrayBuffer()]);
-    await this.call('POST', `/object/${this.objectPath(path)}`, bytes, { 'content-type': res.headers.get('content-type') ?? 'application/octet-stream', 'x-upsert': 'true' });
+  async putFromUrl(url: string, path: string, limits?: CopyLimits): Promise<Copied> {
+    const { bytes, mime } = await fetchForCopy(url, limits, this.fetch);
+    await this.call('POST', `/object/${this.objectPath(path)}`, new Blob([new Uint8Array(bytes)]), { 'content-type': mime, 'x-upsert': 'true' });
+    return { mime, size_bytes: bytes.length };
   }
 }

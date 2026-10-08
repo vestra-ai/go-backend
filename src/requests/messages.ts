@@ -6,6 +6,7 @@ import { nextSeq, emit } from '../db/write-change.js';
 import { conflict, invalid, notFound } from '../domain/errors.js';
 import { messageForGo } from '../domain/mappers.js';
 import type { MessageRow } from '../domain/mappers.js';
+import { sendPush } from '../push/send.js';
 import { assertMessagesInTrip, assertPeopleInTrip, tripOf } from './guards.js';
 
 /** A card id from Go's card, for the record cards that are drawn from our own rows. */
@@ -55,12 +56,12 @@ export const postMessage = (ctx: Ctx) => async (p: any, raw: Record<string, unkn
     after(async () => {
       await ctx.live.publish(trip.trip_id, { kind: 'message', message_id: row.message_id, updated_seq: seq });
       await ctx.live.publish(trip.trip_id, { kind: 'typing', who: { kind: 'go' }, on: false });
-      // People Go names get Go's text. People a new card needs get its fallback_text. Once each.
-      if (mentions.length) await ctx.push.send(mentions, { body: p.text ?? card?.fallback_text ?? '', data: { trip_id: trip.trip_id, message_id: row.message_id } });
+      // People Go names get Go's text (`mention`). People a new card needs get its fallback_text (`card`). Once each.
+      if (mentions.length) await sendPush(ctx, trip.trip_id, mentions, { type: 'mention', body: p.text ?? card?.fallback_text ?? '', message_id: row.message_id });
       const needed = (card?.for_person_ids ?? []).filter((id) => !mentions.includes(id));
       if (card && needed.length) {
         const inTrip = await ctx.pool.query('select person_id from trip_people where trip_id = $1 and left_at is null and person_id = any($2)', [trip.trip_id, needed]);
-        await ctx.push.send(inTrip.rows.map((r) => r.person_id), { body: card.fallback_text, data: { trip_id: trip.trip_id, message_id: row.message_id } });
+        await sendPush(ctx, trip.trip_id, inTrip.rows.map((r) => r.person_id), { type: 'card', body: card.fallback_text, message_id: row.message_id });
       }
     });
     return { message_id: row.message_id, seq };

@@ -144,8 +144,8 @@ it('each answer uses a different one of Go\'s card kinds, and a tap on Go\'s car
   while (go.replies.length < 5 && Date.now() < end) await new Promise((r) => setTimeout(r, 50));
   expect(go.replies.map((r) => r.card_kind)).toEqual(['options', 'working', 'call', 'pay', 'notice']);
   // The pay card names Rahul (the organizer): it is in his "needs you" strip.
-  const strip = (await api(`/app/v1/trips/${trip}/needs-you`, { token: rahul.token })).body;
-  expect(strip).toContainEqual(expect.objectContaining({ kind: 'card', text: 'Approve ₹54,200 for Villa Sol' }));
+  const strip = (await api(`/app/v1/trips/${trip}/needs-you`, { token: rahul.token })).body.items;
+  expect(strip).toContainEqual(expect.objectContaining({ kind: 'card', title: 'Approve ₹54,200 for Villa Sol', cta_label: 'Approve' }));
   // A tap on the options card goes to Go and its fixed answer comes back.
   const options = (await api(`/app/v1/trips/${trip}/messages?after_seq=0`, { token: rahul.token })).body.messages.find((m: any) => m.card?.kind === 'options');
   const tap = await api(`/app/v1/trips/${trip}/cards/${options.card.card_id}/actions`, { method: 'POST', body: { action_id: 'pick', option_id: 'opt_fl_1' }, token: rahul.token });

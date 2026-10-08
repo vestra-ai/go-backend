@@ -22,10 +22,10 @@ it('one journey from the web app\'s origin: decide a vote, add a booking against
   });
   for (const who of EVERYONE) await call(who, 'PUT', `/app/v1/trips/t_goa/decisions/${opened.body.decision.decision_id}/vote`, { option_index: 0 });
   const booked = await call('p_arjun', 'POST', '/app/v1/trips/t_goa/bookings', {
-    client_id: 'b1', kind: 'stay', title: 'Villa Sol, 3 nights', vendor: 'ixigo', ref: 'IXG-1', amount_minor: 5420000, payer_person_id: 'p_rahul', for_person_ids: EVERYONE, decision_id: opened.body.decision.decision_id,
+    kind: 'stay', title: 'Villa Sol, 3 nights', vendor: 'ixigo', ref: 'IXG-1', amount_minor: 5420000, payer_person_id: 'p_rahul', for_person_ids: EVERYONE, decision_id: opened.body.decision.decision_id,
   });
   await call('p_meher', 'PATCH', `/app/v1/trips/t_goa/bookings/${booked.body.booking_id}`, { ref: 'IXG-2', starts_at: '2026-11-06T08:00:00Z' });
-  const proposed = await call('p_priya', 'POST', `/app/v1/trips/t_goa/bookings/${booked.body.booking_id}/cancel-vote`, { client_id: 'c1' });
+  const proposed = await call('p_priya', 'POST', `/app/v1/trips/t_goa/bookings/${booked.body.booking_id}/cancel-vote`, {});
   for (const who of ['p_rahul', 'p_priya', 'p_arjun']) await call(who, 'PUT', `/app/v1/trips/t_goa/decisions/${proposed.body.decision_id}/vote`, { option_index: 0 });
   await call('p_rahul', 'POST', `/app/v1/trips/t_goa/decisions/${proposed.body.decision_id}/close`);
   await h.flush();

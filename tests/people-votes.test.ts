@@ -34,7 +34,7 @@ describe('a member opens a vote', () => {
     expect(check('Event', opened)).toMatchObject({ ok: true });
     expect(opened.data).toMatchObject({ by: { kind: 'person', person_id: 'p_priya' }, decision: { opened_by_person_id: 'p_priya', of: 5, voted: 0, status: 'open', options: [{ label: 'Villa Sol', price_minor: 1200000, currency: 'INR' }, { label: 'Beach hut' }] } });
     expect(opened.data.decision.options[1]).not.toHaveProperty('currency');
-    expect((await t.api(t.as('p_kabir'), 'GET', '/app/v1/trips/t_goa/needs-you')).body).toContainEqual({ kind: 'vote', decision_id: did, text: 'Where do we stay?' });
+    expect((await t.api(t.as('p_kabir'), 'GET', '/app/v1/trips/t_goa/needs-you')).body.items).toContainEqual({ item_id: `vote:${did}:p_kabir`, kind: 'vote', title: 'Where do we stay?', subtitle: '0 of 5 voted', cta_label: 'Vote', since: expect.any(String), target: { decision_id: did, message_id: r.body.message.message_id } });
     expect(h.live.events).toContainEqual({ tripId: 't_goa', event: { kind: 'trip', seq: opened.seq, kinds: ['decision'] } });
     for (const p of ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir']) await t.api(t.as(p), 'PUT', `/app/v1/trips/t_goa/decisions/${did}/vote`, { option_index: 0 });
     await h.flush();
@@ -169,7 +169,7 @@ describe('cancelling a booking by group vote', () => {
     expect([await f.bookingStatus(bid), closedEvent(did).data.decision.result_index, t.events('record.changed').find((e) => e.data.line.decision_id === did)!.data.line.text]).toEqual(['confirmed', 1, 'Keep: Casa Azul']);
   });
 
-  it('two proposals at the same moment give one 201 and one 409 naming the open vote; a repeated client id, in sequence or at once, gets the first answer', async () => {
+  it('two proposals at the same moment give one 201 and one 409 naming the open vote; a repeated Idempotency-Key gets the first answer; two at once with the same key still open one vote', async () => {
     const bid = await f.addBooking();
     const two = await Promise.all([f.propose(bid, 't_goa', 'p_priya', 'race-a'), f.propose(bid, 't_goa', 'p_arjun', 'race-b')]);
     const [won, lost] = two[0].status === 201 ? two : [two[1]!, two[0]!];
@@ -177,10 +177,12 @@ describe('cancelling a booking by group vote', () => {
     const other = await f.addBooking();
     const first = await f.propose(other, 't_goa', 'p_priya', 'same-press');
     const second = await f.propose(other, 't_goa', 'p_priya', 'same-press');
-    expect([second.status, second.body]).toEqual([201, first.body]);
+    expect([second.status, second.body, second.headers['idempotent-replayed']]).toEqual([201, first.body, 'true']);
+    // The header's store is written after the answer, so two copies racing past the lookup both run: the booking lock makes the second a 409, never a second vote.
     const third = await f.addBooking();
     const both = await Promise.all([f.propose(third, 't_goa', 'p_priya', 'same-tap'), f.propose(third, 't_goa', 'p_priya', 'same-tap')]);
-    expect([both[0].status, both[1].status, both[1].body]).toEqual([201, 201, both[0].body]);
+    expect(both.map((r) => r.status).sort()).toEqual([201, 409]);
+    expect(await rows(h.pool, 'select count(*)::int as n from decisions where cancels_booking_id = $1', [third])).toEqual([{ n: 1 }]);
   });
 
   it('refuses a cancelled booking and one paid through Go\'s vault with 409, and a 120-character title (with characters outside the basic plane) gives a contract-valid vote', async () => {
@@ -203,10 +205,11 @@ describe('cancelling a booking by group vote', () => {
     await h.pool.query(`insert into bookings (booking_id, trip_id, kind, title, vendor, ref, amount_minor, currency, payer_person_id) values ('b_elsewhere', 't_other', 'stay', 'Villa', 'V', 'R', 1, 'INR', 'p_orgx')`);
     const bid = await f.addBooking();
     const post = (who: any, id: string, body: unknown) => t.api(who, 'POST', `/app/v1/trips/t_goa/bookings/${id}/cancel-vote`, body);
-    expect(refused(await post(null, bid, { client_id: 'x' }))).toEqual([401, 'unauthorized']);
-    expect(refused(await post(t.as('p_stranger'), bid, { client_id: 'x' }))).toEqual([403, 'forbidden']);
-    expect(refused(await post(t.as('p_priya'), bid, { client_id: 'x', extra: 1 }))).toEqual([422, 'invalid']);
-    expect(refused(await post(t.as('p_priya'), 'b_elsewhere', { client_id: 'x' }))).toEqual([404, 'not_found']);
+    expect(refused(await post(null, bid, {}))).toEqual([401, 'unauthorized']);
+    expect(refused(await post(t.as('p_stranger'), bid, {}))).toEqual([403, 'forbidden']);
+    expect(refused(await post(t.as('p_priya'), bid, { extra: 1 }))).toEqual([422, 'invalid']);
+    expect(refused(await post(t.as('p_priya'), bid, { client_id: 'x' }))).toEqual([422, 'invalid']); // the press key is gone: the Idempotency-Key header is the one mechanism
+    expect(refused(await post(t.as('p_priya'), 'b_elsewhere', {}))).toEqual([404, 'not_found']);
   });
 
   it('when Go cancels the booking while the vote is open and the vote then passes, there is no second booking event', async () => {

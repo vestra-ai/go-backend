@@ -29,8 +29,9 @@ export const routes: RouteMeta[] = [
     example: { body: { upi_id: 'aarav@okhdfc' }, responses: [{ name: 'Me', status: 200, body: ME_EXAMPLE }, { name: 'Not a UPI id', status: 422, body: { error: { code: 'invalid', message: 'upi_id must match pattern "^[\\w.\\-]{2,256}@[a-zA-Z]{2,64}$"', field: 'upi_id', retry_after_seconds: null, request_id: 'a1b2c3d4e5f6' } } }] } },
   { method: 'DELETE', path: '/app/v1/me/upi', section: SECTIONS.me, title: 'Remove my UPI id', summary: 'Removes it. Safe to repeat.',
     example: { responses: [{ name: 'Me', status: 200, body: { ...ME_EXAMPLE, has_upi: false, upi_id_masked: null } }] } },
-  { method: 'POST', path: '/app/v1/me/devices', section: SECTIONS.me, title: 'Register a device', summary: 'Register this browser for Web Push: { platform: "web_push", web_push: { endpoint, keys } }. Answers the device_id to delete at sign-out.' },
-  { method: 'DELETE', path: '/app/v1/me/devices/:device_id', section: SECTIONS.me, title: 'Remove a device', summary: 'Removes your own device registration. Safe to repeat.' },
+  { method: 'POST', path: '/app/v1/me/devices', section: SECTIONS.me, title: 'Register a device', summary: 'Register this browser for Web Push: { platform: "web_push", web_push: { endpoint, keys }, locale?, tz? }. At most 10 devices per person (the oldest goes). Answers the device_id to delete at sign-out. Pushes (§8) then carry { type, trip_id, message_id?, title, body, deep_link, tag }; none when Me.notifications_enabled is off.',
+    example: { body: { platform: 'web_push', web_push: { endpoint: 'https://fcm.googleapis.com/fcm/send/abc123', keys: { p256dh: 'BNcRd…', auth: 'tBHI…' } }, locale: 'en-IN', tz: 'Asia/Kolkata' }, responses: [{ name: 'Registered', status: 201, body: { device_id: 'dev_01JA7R' } }] } },
+  { method: 'DELETE', path: '/app/v1/me/devices/:device_id', section: SECTIONS.me, title: 'Remove a device', summary: 'Removes your own device registration (sign-out). Safe to repeat.', example: { responses: [{ name: 'Removed', status: 204 }] } },
   { method: 'POST', path: '/app/v1/me/vault-link', section: SECTIONS.me, title: 'Vault link', summary: "A short-lived link to the person's vault page in Go, for the browser sheet." },
   { method: 'DELETE', path: '/app/v1/me', section: SECTIONS.me, title: 'Delete my account', summary: 'Body { confirm: true }. Go forgets you everywhere (502 and nothing else if it cannot), your answers are cleared, you leave every trip, your messages read "Former member", your email, UPI id and photo go. Your token stops working.',
     example: { body: { confirm: true }, responses: [{ name: 'Accepted', status: 202 }, { name: 'Go did not answer', status: 502, body: { error: { code: 'go_unavailable', message: 'Go could not forget you just now; nothing was deleted. Try again.', field: null, retry_after_seconds: null, request_id: 'a1b2c3d4e5f6' } } }] } },
@@ -66,7 +67,7 @@ export function register(app: FastifyInstance, ctx: Ctx, deps: V1Deps): void {
     const sub = device.web_push;
     if (!isAllowedPushEndpoint(sub.endpoint)) throw invalid('endpoint must be an https address on a known push service', 'web_push.endpoint');
     if (!isValidSubscriptionKeys(sub.keys)) throw invalid('keys must be the browser\'s p256dh (65 bytes) and auth (16 bytes) values, base64url', 'web_push.keys');
-    return reply.code(201).send(await saveSubscription(ctx.pool, req.personId, sub));
+    return reply.code(201).send(await saveSubscription(ctx.pool, req.personId, sub, { locale: device.locale, tz: device.tz }));
   });
   app.delete('/app/v1/me/devices/:device_id', async (req: any, reply) => {
     await removeDevice(ctx.pool, req.personId, req.params.device_id);

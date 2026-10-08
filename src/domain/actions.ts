@@ -8,6 +8,7 @@ import { newId } from '../db/ids.js';
 import { once } from '../db/once.js';
 import { withTx, type AfterCommit } from '../db/pool.js';
 import type { ChangeKind } from '../live/live.js';
+import { sendPush } from '../push/send.js';
 import { change, emit, nextSeq } from '../db/write-change.js';
 import type { Db } from '../db/pool.js';
 import type { PatchTripMeBody } from '../api/bodies.js';
@@ -15,8 +16,9 @@ import { resolveAttachments } from './attachments.js';
 import { conflict, invalid, notFound, rateLimited } from './errors.js';
 import { BUDGET_BANDS, knowWithVibe } from './join-answers.js';
 import { assertDate } from './limits.js';
-import { decisionOf, expenseOf, messageForGo, personForGo, recordLineOf, tallyOf } from './mappers.js';
+import { compact, decisionOf, expenseOf, messageForGo, personForGo, recordLineOf, tallyOf } from './mappers.js';
 import type { DecisionRow, ExpenseRow, MessageRow, RecordLineRow, VoteRow } from './mappers.js';
+import { moneyOf } from './money.js';
 import { loadMessageForApp } from './room.js';
 import { activePeople, buildSnapshot } from './snapshot.js';
 import { joinedText, leftText, personName, postSystemMessage, tripCreatedText } from './system-messages.js';
@@ -592,10 +594,7 @@ export async function pushOwed(ctx: Ctx, tripId: string, expense: ExpenseRow): P
   const inSplit = new Set(expense.split_person_ids.filter((id) => id !== expense.paid_by_person_id));
   for (const t of snap.money.transfers) {
     if (!inSplit.has(t.from_person_id)) continue;
-    await ctx.push.send([t.from_person_id], {
-      body: `You owe ${names.get(t.to_person_id) ?? 'someone'} ${formatMoney(t.amount_minor, t.currency)} for ${expense.note}`,
-      data: { trip_id: tripId },
-    });
+    await sendPush(ctx, tripId, [t.from_person_id], { type: 'owe', body: `You owe ${names.get(t.to_person_id) ?? 'someone'} ${formatMoney(t.amount_minor, t.currency)} for ${expense.note}`, id: t.to_person_id });
   }
 }
 
@@ -618,43 +617,171 @@ export async function markSeen(ctx: Ctx, tripId: string, personId: string, upToS
   );
 }
 
-/** The "needs you" strip: what this person has to do in this trip, worked out from our own rows. */
-export const needsYou = (ctx: Ctx, tripId: string, personId: string) => needsYouIn(ctx.pool, tripId, personId);
+/** The app contract's NeedsYouItem (§2, §4.11), plus our `cancels_booking_id` on a vote about cancelling a booking. */
+export interface NeedsYouItem {
+  /** Stable per underlying thing: `vote:<decision>:<me>`, `mandate:<decision>`, `card:<card>`, `record_line:<line>`, `settle:<payee>`, `expense:<expense>:<me>`, `checkin:<booking>`. */
+  item_id: string;
+  kind: 'vote' | 'mandate' | 'card' | 'record_line' | 'settle_up' | 'expense' | 'checkin';
+  title: string;
+  subtitle?: string;
+  cta_label?: string;
+  since: string;
+  target: {
+    message_id?: string; card_id?: string; decision_id?: string; line_id?: string; expense_id?: string; booking_id?: string;
+    transfer?: { to_person_id: string; amount_minor: number; currency: string };
+    cancels_booking_id?: string;
+  };
+}
 
-/** The same, on a given connection (so a trip read can count it inside its own transaction). */
-export async function needsYouIn(db: Db, tripId: string, personId: string) {
+/** "closes in 1 hour", "closes in 25 minutes", "closes in 2 days": the vote's subtitle. */
+export function closesIn(closesAt: Date, now = Date.now()): string {
+  const minutes = Math.max(1, Math.round((closesAt.getTime() - now) / 60_000));
+  if (minutes < 60) return `closes in ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `closes in ${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+  const days = Math.round(hours / 24);
+  return `closes in ${days} days`;
+}
+
+/** The "needs you" strip (GET …/needs-you): the items and the change number they match, from one consistent read. */
+export async function needsYou(ctx: Ctx, tripId: string, personId: string): Promise<{ items: NeedsYouItem[]; seq: number }> {
+  const db = await ctx.pool.connect();
+  try {
+    await db.query('begin transaction isolation level repeatable read read only');
+    const seq = (await db.query('select seq from trips where trip_id = $1', [tripId])).rows[0]?.seq as number | undefined;
+    if (seq === undefined) throw notFound(`trip ${tripId} does not exist`);
+    const items = await needsYouIn(db, tripId, personId);
+    await db.query('commit');
+    return { items, seq };
+  } catch (err) {
+    await db.query('rollback').catch(() => {});
+    throw err;
+  } finally {
+    db.release();
+  }
+}
+
+/**
+ * What this person has to do in this trip, worked out from our own rows (app contract §4.11, the sources table plus the
+ * money line), on a given connection so a trip read and the home screen count it inside their own transactions.
+ * `vote`: each open vote they have not voted in. `mandate`: the payer, while the mandate is unanswered. `card`: Go's cards
+ * naming them in `for_person_ids` (until replace_card drops them). `record_line`: an open, active line naming them.
+ * `settle_up`: each net transfer where they owe. `expense`: each pending confirmation of theirs (phase 3's table, read
+ * only when it exists). `checkin` comes with web check-in (phase 5).
+ */
+export async function needsYouIn(db: Db, tripId: string, personId: string): Promise<NeedsYouItem[]> {
   const votes = await db.query(
-    `select d.decision_id, d.question, d.cancels_booking_id from decisions d
+    `select d.decision_id, d.question, d.cancels_booking_id, d.closes_at, d.opened_at, d.of_count,
+            (select count(*)::int from votes v where v.decision_id = d.decision_id) as voted,
+            (select m.message_id from messages m where m.trip_id = d.trip_id and m.card->>'kind' = 'vote' and m.card->>'decision_id' = d.decision_id order by m.seq limit 1) as message_id
+       from decisions d
       where d.trip_id = $1 and d.status = 'open'
-        and not exists (select 1 from votes v where v.decision_id = d.decision_id and v.person_id = $2)`,
+        and not exists (select 1 from votes v where v.decision_id = d.decision_id and v.person_id = $2)
+      order by d.opened_at, d.decision_id`,
     [tripId, personId],
   );
   const mandates = await db.query(
-    `select decision_id, question, options, mandate from decisions
-      where trip_id = $1 and status = 'closed' and mandate->>'payer_person_id' = $2
-        and mandate->>'confirmed_at' is null and mandate->>'declined_at' is null`,
+    `select d.decision_id, d.question, d.options, d.mandate, d.closed_at,
+            (select m.message_id from messages m where m.trip_id = d.trip_id and m.card->>'kind' = 'mandate' and m.card->>'decision_id' = d.decision_id order by m.seq desc limit 1) as message_id,
+            (select m.card->>'card_id' from messages m where m.trip_id = d.trip_id and m.card->>'kind' = 'mandate' and m.card->>'decision_id' = d.decision_id order by m.seq desc limit 1) as card_id
+       from decisions d
+      where d.trip_id = $1 and d.status = 'closed' and d.mandate->>'payer_person_id' = $2
+        and d.mandate->>'confirmed_at' is null and d.mandate->>'declined_at' is null
+      order by d.closed_at, d.decision_id`,
     [tripId, personId],
   );
   const cards = await db.query(
-    `select message_id, card->>'card_id' as card_id, card->>'fallback_text' as text from messages
-      where trip_id = $1 and author_kind = 'go' and card->'for_person_ids' ? $2`,
+    `select message_id, card->>'card_id' as card_id, card->>'fallback_text' as text, card->>'title' as title, card->'actions'->0->>'label' as cta, sent_at from messages
+      where trip_id = $1 and author_kind = 'go' and card->'for_person_ids' ? $2 order by seq`,
     [tripId, personId],
   );
   const lines = await db.query(
-    `select line_id, text from record_lines where trip_id = $1 and kind = 'open' and status = 'active' and person_ids ? $2`,
+    `select line_id, text, due_at, created_at from record_lines where trip_id = $1 and kind = 'open' and status = 'active' and person_ids ? $2 order by created_at, line_id`,
     [tripId, personId],
   );
+  const trip = (await db.query('select currency, plan_minor from trips where trip_id = $1', [tripId])).rows[0];
+  const people = await activePeople(db, tripId);
+  const expenses = (await db.query<ExpenseRow>('select * from expenses where trip_id = $1 and removed_at is null order by created_at, expense_id', [tripId])).rows;
+  const money = trip ? moneyOf(expenses, people.map((p) => p.person_id), trip.currency, trip.plan_minor) : { transfers: [] as { from_person_id: string; to_person_id: string; amount_minor: number; currency: string }[] };
+  const nameOf = new Map(people.map((p) => [p.person_id, p.name]));
+  const lastExpenseAt = expenses.length ? new Date(expenses[expenses.length - 1]!.created_at).toISOString() : new Date(0).toISOString();
+  const approvals = await pendingApprovals(db, tripId, personId);
+  const at = (d: Date | string) => new Date(d).toISOString();
+
   return [
-    ...votes.rows.map((r) => ({ kind: 'vote', decision_id: r.decision_id, text: r.question, ...(r.cancels_booking_id ? { cancels_booking_id: r.cancels_booking_id } : {}) })),
-    // What the payer is asked to confirm, such as "Yes, book it? Villa Sol, up to ₹55,000", and the vote it came from.
-    ...mandates.rows.map((r) => ({
-      kind: 'mandate',
-      decision_id: r.decision_id,
-      text: `Yes, book it? ${r.options[r.mandate.choice_index]?.label ?? r.question}, up to ${formatMoney(r.mandate.cap_minor, r.mandate.currency)}`,
-      question: r.question,
+    ...votes.rows.map((r): NeedsYouItem => ({
+      item_id: `vote:${r.decision_id}:${personId}`,
+      kind: 'vote',
+      title: r.question,
+      subtitle: r.closes_at ? closesIn(new Date(r.closes_at)) : `${r.voted} of ${r.of_count} voted`,
+      cta_label: 'Vote',
+      since: at(r.opened_at),
+      target: compact({ decision_id: r.decision_id, message_id: r.message_id ?? undefined, cancels_booking_id: r.cancels_booking_id ?? undefined }),
     })),
-    ...cards.rows.map((r) => ({ kind: 'card', card_id: r.card_id, message_id: r.message_id, text: r.text })),
-    ...lines.rows.map((r) => ({ kind: 'record', line_id: r.line_id, text: r.text })),
+    // What the payer is asked to confirm, such as "Yes, book it? Villa Sol, up to ₹55,000", and the vote it came from.
+    ...mandates.rows.map((r): NeedsYouItem => ({
+      item_id: `mandate:${r.decision_id}`,
+      kind: 'mandate',
+      title: `Yes, book it? ${r.options[r.mandate.choice_index]?.label ?? r.question}, up to ${formatMoney(r.mandate.cap_minor, r.mandate.currency)}`,
+      subtitle: r.question,
+      cta_label: 'Yes, book it',
+      since: at(r.mandate.set_at ?? r.closed_at),
+      target: compact({ decision_id: r.decision_id, card_id: r.card_id ?? undefined, message_id: r.message_id ?? undefined }),
+    })),
+    ...cards.rows.map((r): NeedsYouItem => ({
+      item_id: `card:${r.card_id}`,
+      kind: 'card',
+      title: r.text,
+      ...(r.title && r.title !== r.text ? { subtitle: r.title } : {}),
+      ...(r.cta ? { cta_label: r.cta } : {}),
+      since: at(r.sent_at),
+      target: { card_id: r.card_id, message_id: r.message_id },
+    })),
+    ...lines.rows.map((r): NeedsYouItem => ({
+      item_id: `record_line:${r.line_id}`,
+      kind: 'record_line',
+      title: r.text,
+      ...(r.due_at ? { subtitle: `due ${new Date(r.due_at).toISOString().slice(0, 10)}` } : {}),
+      since: at(r.created_at),
+      target: { line_id: r.line_id },
+    })),
+    ...money.transfers.filter((t) => t.from_person_id === personId).map((t): NeedsYouItem => ({
+      item_id: `settle:${t.to_person_id}`,
+      kind: 'settle_up',
+      title: `Settle up with ${nameOf.get(t.to_person_id) ?? 'a former member'}`,
+      subtitle: `${formatMoney(t.amount_minor, t.currency)} left of your share`,
+      cta_label: 'Record',
+      since: lastExpenseAt,
+      target: { transfer: { to_person_id: t.to_person_id, amount_minor: t.amount_minor, currency: t.currency } },
+    })),
+    ...approvals.map((e): NeedsYouItem => ({
+      item_id: `expense:${e.expense_id}:${personId}`,
+      kind: 'expense',
+      title: `Approve ${formatMoney(e.amount_minor, e.currency)} · ${e.note}`,
+      cta_label: 'Approve',
+      since: at(e.created_at),
+      target: { expense_id: e.expense_id },
+    })),
   ];
+}
+
+/**
+ * Expenses waiting for this person's approval (APP-CONTRACT-CHANGES §4.9): one row per pending entry of theirs in
+ * `expense_confirmations`, which the money phase adds (migration 007). Read only when that table exists, so this
+ * code runs the same before and after it lands; a shape that differs from the plan's is logged, never a failed read.
+ */
+async function pendingApprovals(db: Db, tripId: string, personId: string): Promise<Array<Pick<ExpenseRow, 'expense_id' | 'amount_minor' | 'currency' | 'note' | 'created_at'>>> {
+  const exists = (await db.query(`select to_regclass('public.expense_confirmations') as t`)).rows[0]?.t !== null;
+  if (!exists) return [];
+  try {
+    return (await db.query(
+      `select e.expense_id, e.amount_minor, e.currency, e.note, e.created_at from expense_confirmations c join expenses e using (expense_id)
+        where e.trip_id = $1 and e.removed_at is null and c.person_id = $2 and c.state = 'pending' order by e.created_at, e.expense_id`,
+      [tripId, personId],
+    )).rows;
+  } catch (err) {
+    console.error('[needs-you] expense_confirmations could not be read', err instanceof Error ? err.message : err);
+    return [];
+  }
 }
 

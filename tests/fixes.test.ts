@@ -154,7 +154,7 @@ describe('A4: the "you owe" push comes from money.transfers', () => {
     // Asha pays ₹1,000 for both: Ben owes Asha ₹500.
     h.push.sent.length = 0;
     await api(asha!, 'POST', `/app/v1/trips/${t.trip_id}/expenses`, { paid_by_person_id: a, amount_minor: 100000, note: 'Dinner', category: 'food', split_person_ids: [a, b] });
-    expect(h.push.sent).toEqual([{ to: [b], n: { body: 'You owe Asha ₹500 for Dinner', data: { trip_id: t.trip_id } } }]);
+    expect(h.push.sent).toEqual([{ to: [b], n: { type: 'owe', trip_id: t.trip_id, title: 'Owe test', body: 'You owe Asha ₹500 for Dinner', deep_link: `/trips/${t.trip_id}/expenses`, tag: `${t.trip_id}:owe:${a}` } }]);
     // Ben pays ₹200 for both: Asha's share is ₹100, but she is still owed ₹400 overall, so she gets no push.
     h.push.sent.length = 0;
     await api(ben!, 'POST', `/app/v1/trips/${t.trip_id}/expenses`, { paid_by_person_id: b, amount_minor: 20000, note: 'Coffee', category: 'food', split_person_ids: [a, b] });

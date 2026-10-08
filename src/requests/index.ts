@@ -1,4 +1,5 @@
 import type { Ctx } from '../context.js';
+import { storeBookingExtras } from '../domain/bookings.js';
 import { SocketCallError, type Handler } from '../go/go-socket.js';
 import { addReaction, removeReaction } from './reactions.js';
 import { readMessages, readTrip } from './reads.js';
@@ -22,6 +23,19 @@ function withDeadline(name: string, handler: Handler, ms: number): Handler {
   };
 }
 
+/**
+ * add_booking, then the 1.1 fields (GO-CHANGES 1.7): details, the return leg and the passengers go on the row, and the
+ * documents Go named are copied into Storage in the background (src/domain/bookings.ts). Go's answer is the same either way.
+ */
+function addBookingWithExtras(ctx: Ctx): Handler {
+  const base = addBooking(ctx);
+  return async (p, raw) => {
+    const answer = (await base(p, raw)) as { booking_id: string; seq: number };
+    await storeBookingExtras(ctx, p.trip_id, answer.booking_id, { details: p.details, return_journey: p.return_journey, passengers: p.passengers, documents: p.documents });
+    return answer;
+  };
+}
+
 /** Go's 18 requests, each answered from the shared database. A method not in this table is answered -32601. */
 export function goRequestHandlers(ctx: Ctx, answerWithinMs = ANSWER_WITHIN_MS): Record<string, Handler> {
   const handlers: Record<string, Handler> = {
@@ -38,7 +52,7 @@ export function goRequestHandlers(ctx: Ctx, answerWithinMs = ANSWER_WITHIN_MS): 
     set_mandate: setMandate(ctx),
     add_record_line: addRecordLine(ctx),
     update_record_line: updateRecordLine(ctx),
-    add_booking: addBooking(ctx),
+    add_booking: addBookingWithExtras(ctx),
     update_booking: updateBooking(ctx),
     add_expense: addExpense(ctx),
     request_spend_approval: requestSpendApproval(ctx),
