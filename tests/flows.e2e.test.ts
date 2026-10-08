@@ -386,10 +386,10 @@ describe('F4. From a vote to a booking (guides: "From a vote to a booking", "Mon
     expect(await goError('add_booking', trip, params)).toMatchObject({ code: 409 });
   });
 
-  it('10. Go adds the expense for the villa: each of the other four is pushed what they owe Rahul', async () => {
+  it('10. Go adds the expense for the villa with its approval (a vault payment needs no one\'s approval): each of the other four is pushed what they owe Rahul', async () => {
     h.push.sent.length = 0;
-    const [b] = await rows(h.pool, 'select booking_id from bookings where trip_id = $1', [trip]);
-    await go('add_expense', trip, { paid_by_person_id: rahul.id, amount_minor: 5420000, currency: 'INR', note: 'Villa Sol', category: 'stay', split_person_ids: all.map((p) => p.id), booking_id: b.booking_id });
+    const [b] = await rows(h.pool, 'select booking_id, approval_id from bookings where trip_id = $1', [trip]);
+    await go('add_expense', trip, { paid_by_person_id: rahul.id, amount_minor: 5420000, currency: 'INR', note: 'Villa Sol', category: 'stay', split_person_ids: all.map((p) => p.id), booking_id: b.booking_id, approval_id: b.approval_id });
     expect(h.push.sent.map((s) => s.to[0]).sort()).toEqual([priya.id, arjun.id, meher.id, kabir.id].sort());
     for (const s of h.push.sent) expect(s.n.body).toBe('You owe Rahul ₹10,840 for Villa Sol');
     expect(await goError('post_message', trip, { card: { card_id: 'c_ticket_bad', kind: 'ticket', booking_id: 'b_nope', fallback_text: 'x' } })).toMatchObject({ code: 422 });

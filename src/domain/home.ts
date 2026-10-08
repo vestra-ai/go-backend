@@ -3,7 +3,8 @@
 import type { Ctx } from '../context.js';
 import { needsYouIn } from './actions.js';
 import { peoplePreview, personLite, type PersonLite } from './invites.js';
-import type { BookingRow, ExpenseRow } from './mappers.js';
+import { loadExpenses, loadSettlements } from './ledger.js';
+import type { BookingRow } from './mappers.js';
 import { compact } from './mappers.js';
 import { moneyOf } from './money.js';
 import { activePeople } from './snapshot.js';
@@ -81,8 +82,7 @@ export async function homeFor(ctx: Ctx, personId: string): Promise<Home> {
   for (const t of trips) {
     const people = await activePeople(db, t.trip_id);
     if (t.status === 'over') {
-      const expenses = (await db.query<ExpenseRow>('select * from expenses where trip_id = $1 and removed_at is null order by created_at, expense_id', [t.trip_id])).rows;
-      const money = moneyOf(expenses, people.map((p) => p.person_id), t.currency, t.plan_minor);
+      const money = moneyOf(await loadExpenses(db, t.trip_id), people.map((p) => p.person_id), t.currency, t.plan_minor, await loadSettlements(db, t.trip_id));
       past.push(compact({ trip_id: t.trip_id, title: t.title, photo_url: t.destination?.photo_url ?? undefined, dates: datesOf(t), people_count: people.length, all_settled: money.transfers.length === 0 }));
       continue;
     }

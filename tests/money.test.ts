@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { check, verifySpendApproval } from '../src/contract/index.js';
 import { SPEND_PUBLIC_KEY, rows, startHarness, type Harness } from './helpers/harness.js';
+import { seedTrip } from './helpers/seed.js';
 
 let h: Harness;
 beforeAll(async () => (h = await startHarness()));
@@ -327,5 +328,33 @@ describe('change numbers over the whole flow', () => {
     // and Go received them in that order
     const received = h.go.events.map((e) => e.seq);
     expect(received).toEqual([...received].sort((a, b) => a - b));
+  });
+});
+
+// Phase 3, in a trip of its own (a settlement takes a change number with no event, which the check above would read as a gap).
+describe('settlements and disputed expenses in Go\'s read_trip (phase 3)', () => {
+  const T = 't_money';
+  const everyone = ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'];
+  const api = async (who: string, method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, payload?: unknown) => {
+    const r = await h.app.inject({ method, url: `/app/v1/trips/${T}${path}`, payload: payload as any, headers: { authorization: `Bearer ${await h.token(who)}` } });
+    return { status: r.statusCode, body: r.body ? JSON.parse(r.body) : null };
+  };
+  const money = async () => (await h.go.call('read_trip', { trip_id: T })).result;
+  const owes = (snap: any, from: string) => snap.money.transfers.find((x: any) => x.from_person_id === from)?.amount_minor ?? 0;
+
+  it('a recorded settlement counts at once, a disputed one does not; a disputed expense leaves the totals and the transfers; the snapshot still passes the contract', async () => {
+    await seedTrip(h.pool, T);
+    const e = await api('p_rahul', 'POST', '/expenses', { amount_minor: 100000, note: 'Dinner', category: 'food', split_person_ids: everyone });
+    expect([e.status, e.body.status, owes(await money(), 'p_priya')]).toEqual([201, 'pending', 20000]); // pending already counts
+    const s = await api('p_priya', 'POST', '/settlements', { to_person_id: 'p_rahul', amount_minor: 20000, currency: 'INR', method: 'upi' });
+    expect([s.status, owes(await money(), 'p_priya')]).toEqual([201, 0]); // provisionally squared up
+    await api('p_rahul', 'POST', `/settlements/${s.body.settlement.settlement_id}/dispute`);
+    expect(owes(await money(), 'p_priya')).toBe(20000); // put back
+    await api('p_kabir', 'POST', `/expenses/${e.body.expense_id}/dispute`, { reason: 'not me' });
+    const snap = await money();
+    expect([snap.money.spent_minor, snap.money.by_category, snap.money.transfers]).toEqual([0, [], []]);
+    expect(snap.expenses[0]).toMatchObject({ status: 'disputed', confirmations: expect.arrayContaining([{ person_id: 'p_kabir', state: 'disputed', at: expect.any(String), reason: 'not me' }]) });
+    expect(check('TripSnapshot', snap)).toMatchObject({ ok: true });
+    expect(check('Money', snap.money)).toMatchObject({ ok: true });
   });
 });

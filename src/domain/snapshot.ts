@@ -1,7 +1,8 @@
 import type pg from 'pg';
 import { notFound } from './errors.js';
-import { compact, bookingOf, decisionOf, expenseOf, iso, personForGo, recordLineOf } from './mappers.js';
-import type { BookingRow, DecisionRow, ExpenseRow, PersonRow, RecordLineRow, VoteRow } from './mappers.js';
+import { loadExpenses, loadSettlements } from './ledger.js';
+import { compact, bookingOf, decisionOf, iso, personForGo, recordLineOf } from './mappers.js';
+import type { BookingRow, DecisionRow, PersonRow, RecordLineRow, VoteRow } from './mappers.js';
 import { moneyOf } from './money.js';
 import type { BudgetSummary, TripSnapshot } from './types.js';
 import type { Db } from '../db/pool.js';
@@ -60,7 +61,8 @@ export async function buildSnapshot(db: Db, tripId: string, publicBaseUrl: strin
   // One at a time: a transaction's connection runs one query at a time.
   const decisions = await loadDecisions(db, tripId);
   const bookings = await db.query<BookingRow>('select * from bookings where trip_id = $1 order by created_at, booking_id', [tripId]);
-  const expenses = await db.query<ExpenseRow>('select * from expenses where trip_id = $1 and removed_at is null order by created_at, expense_id', [tripId]);
+  const expenses = await loadExpenses(db, tripId); // with status and confirmations (1.1): Go sees the same fields as the app
+  const settlements = await loadSettlements(db, tripId); // never in the snapshot itself; they only move `money.transfers`
   const record = await db.query<RecordLineRow>('select * from record_lines where trip_id = $1 order by created_at, line_id', [tripId]);
   const budget = await budgetSummary(db, tripId, t.currency);
   return compact({
@@ -79,8 +81,8 @@ export async function buildSnapshot(db: Db, tripId: string, publicBaseUrl: strin
     people: people.map(personForGo),
     decisions,
     bookings: bookings.rows.map(bookingOf),
-    expenses: expenses.rows.map(expenseOf),
-    money: moneyOf(expenses.rows, order, t.currency, t.plan_minor),
+    expenses,
+    money: moneyOf(expenses, order, t.currency, t.plan_minor, settlements),
     itinerary: t.itinerary,
     record: record.rows.map(recordLineOf),
   }) as unknown as TripSnapshot;

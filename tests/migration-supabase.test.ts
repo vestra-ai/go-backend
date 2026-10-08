@@ -41,10 +41,13 @@ it("closes every table to Supabase's API roles, including tables made later", as
   expect(await canRead('anon', 'people')).toBe(true); // the danger 003 removes
 
   const applied = await migrate(pool);
-  expect(applied.slice(0, 3)).toEqual(['003_supabase.sql', '004_v1_conventions.sql', '005_v1_people.sql']);
-  expect(applied[3]).toMatch(/^data\/cities-in\.json#/);
+  // 003 onwards in name order (a phase's migration may be missing in a worktree, so the list is not pinned whole), then the cities file.
+  const sql = applied.filter((f) => f.endsWith('.sql'));
+  expect(sql.slice(0, 3)).toEqual(['003_supabase.sql', '004_v1_conventions.sql', '005_v1_people.sql']);
+  expect([sql, applied.at(-1)]).toEqual([expect.arrayContaining(['007_v1_money.sql']), expect.stringMatching(/^data\/cities-in\.json#/)]);
+  expect(sql).toEqual([...sql].sort());
   for (const role of ['anon', 'authenticated']) {
-    for (const table of ['people', 'trips', 'messages', 'outbox', 'spend_approvals', 'push_subscriptions', 'schema_migrations', 'idempotency_keys', 'invite_marks', 'live_tickets', 'invites', 'places_cities', 'ideas']) {
+    for (const table of ['people', 'trips', 'messages', 'outbox', 'spend_approvals', 'push_subscriptions', 'schema_migrations', 'idempotency_keys', 'invite_marks', 'live_tickets', 'invites', 'places_cities', 'ideas', 'settlements', 'expense_confirmations']) {
       expect(await canRead(role, table), `${role} on ${table}`).toBe(false);
     }
   }

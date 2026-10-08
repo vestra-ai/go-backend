@@ -147,14 +147,15 @@ describe('A4: the "you owe" push comes from money.transfers', () => {
     const [a, b] = [asha!.id, ben!.id];
     const t = (await api(asha!, 'POST', '/app/v1/trips', { title: 'Owe test' })).body;
     await api(ben!, 'POST', `/app/v1/invites/${t.invite_url.split('/j/')[1]}/accept`, {});
-    // Asha pays ₹1,000 for both: Ben owes Asha ₹500.
+    // Asha pays ₹1,000 for both: Ben is asked to approve his ₹500 share (phase 3: the "you owe" push is for an expense that needs no approval).
     h.push.sent.length = 0;
-    await api(asha!, 'POST', `/app/v1/trips/${t.trip_id}/expenses`, { paid_by_person_id: a, amount_minor: 100000, note: 'Dinner', category: 'food', split_person_ids: [a, b] });
-    expect(h.push.sent).toEqual([{ to: [b], n: { body: 'You owe Asha ₹500 for Dinner', data: { trip_id: t.trip_id } } }]);
-    // Ben pays ₹200 for both: Asha's share is ₹100, but she is still owed ₹400 overall, so she gets no push.
+    const dinner = await api(asha!, 'POST', `/app/v1/trips/${t.trip_id}/expenses`, { paid_by_person_id: a, amount_minor: 100000, note: 'Dinner', category: 'food', split_person_ids: [a, b] });
+    expect(h.push.sent).toEqual([{ to: [b], n: { type: 'expense', body: 'Asha added Dinner · your share ₹500. Approve?', data: { trip_id: t.trip_id } } }]);
+    await api(ben!, 'POST', `/app/v1/trips/${t.trip_id}/expenses/${dinner.body.expense_id}/approve`);
+    // Ben pays ₹200 for both through the vault (approved at once, so the "you owe" rule runs): Asha's share is ₹100, but she is still owed ₹400 overall, so she gets no push.
     h.push.sent.length = 0;
-    await api(ben!, 'POST', `/app/v1/trips/${t.trip_id}/expenses`, { paid_by_person_id: b, amount_minor: 20000, note: 'Coffee', category: 'food', split_person_ids: [a, b] });
-    expect(h.push.sent).toEqual([]);
+    const coffee = await h.go.call('add_expense', { request_id: rq(), trip_id: t.trip_id, paid_by_person_id: b, amount_minor: 20000, currency: 'INR', note: 'Coffee', category: 'food', split_person_ids: [a, b], approval_id: 'ap_coffee' });
+    expect([coffee.error, h.push.sent]).toEqual([undefined, []]);
   });
 });
 
@@ -250,8 +251,9 @@ describe('B11: two instances starting at the same moment', () => {
     const b = new pg.Pool({ connectionString: `${base}/${name}` });
     const [ra, rb] = await Promise.all([migrate(a), migrate(b)]);
     const applied = [...ra, ...rb];
-    expect(applied.slice(0, 5)).toEqual(['001_core.sql', '002_people_actions.sql', '003_supabase.sql', '004_v1_conventions.sql', '005_v1_people.sql']); // each file is applied once, by whichever instance got the lock first
-    expect([applied.length, applied[5]]).toEqual([6, expect.stringMatching(/^data\/cities-in\.json#/)]); // and the cities file once
+    const sql = applied.filter((f) => f.endsWith('.sql'));
+    expect(sql.slice(0, 5)).toEqual(['001_core.sql', '002_people_actions.sql', '003_supabase.sql', '004_v1_conventions.sql', '005_v1_people.sql']); // each file is applied once, by whichever instance got the lock first
+    expect([new Set(sql).size === sql.length, sql.includes('007_v1_money.sql'), applied.filter((f) => !f.endsWith('.sql'))]).toEqual([true, true, [expect.stringMatching(/^data\/cities-in\.json#/)]]); // no file twice, and the cities file once
     await a.end();
     await b.end();
   });

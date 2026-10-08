@@ -253,18 +253,20 @@ describe('leaving a trip', () => {
 });
 
 describe('expenses', () => {
-  it('a person adds an expense: Go hears it, and the people who owe are pushed', async () => {
+  it('a person adds an expense: Go hears it, and the people in the split are asked to approve their share', async () => {
     h.push.sent.length = 0;
     const r = await api(kabir, 'POST', `/app/v1/trips/${trip}/expenses`, { paid_by_person_id: kabir.id, amount_minor: 340000, note: 'Airport cab', category: 'getting_around', split_person_ids: [rahul.id, priya.id, kabir.id] });
-    expect(r.status).toBe(200);
+    expect(r.status).toBe(201);
+    expect(r.body).toMatchObject({ expense_id: expect.any(String), status: 'pending', confirmations: [{ person_id: rahul.id, state: 'pending' }, { person_id: priya.id, state: 'pending' }] });
     await h.flush();
-    expect(events('expense.changed').at(-1)!.data).toMatchObject({ change: 'added', by: { kind: 'person', person_id: kabir.id }, expense: { amount_minor: 340000, added_by_person_id: kabir.id } });
-    const owed = h.push.sent.flatMap((s) => s.to);
-    expect(owed.sort()).toEqual([priya.id, rahul.id].sort());
-    // From money.transfers: the extra paisa of ₹3,400 / 3 goes to the first person who joined, so the shares add up.
+    expect(events('expense.changed').at(-1)!.data).toMatchObject({ change: 'added', by: { kind: 'person', person_id: kabir.id }, expense: { amount_minor: 340000, added_by_person_id: kabir.id, status: 'pending' } });
+    const asked = h.push.sent.flatMap((s) => s.to);
+    expect(asked.sort()).toEqual([priya.id, rahul.id].sort());
+    // Each is asked for their own share: the extra paisa of ₹3,400 / 3 goes to the first person who joined, so the shares add up.
     const body = (id: string) => h.push.sent.find((s) => s.to[0] === id)!.n.body;
-    expect(body(rahul.id)).toBe('You owe Kabir ₹1,133.34 for Airport cab');
-    expect(body(priya.id)).toBe('You owe Kabir ₹1,133.33 for Airport cab');
+    expect(h.push.sent.every((s) => s.n.type === 'expense')).toBe(true);
+    expect(body(rahul.id)).toBe('Kabir added Airport cab · your share ₹1,133.34. Approve?');
+    expect(body(priya.id)).toBe('Kabir added Airport cab · your share ₹1,133.33. Approve?');
     const snap = (await h.go.call('read_trip', { trip_id: trip })).result;
     expect(snap.money.transfers).toEqual(expect.arrayContaining([
       { from_person_id: rahul.id, to_person_id: kabir.id, amount_minor: 113334, currency: 'INR' },

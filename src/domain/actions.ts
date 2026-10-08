@@ -13,8 +13,9 @@ import type { PatchTripMeBody } from '../api/bodies.js';
 import { conflict, invalid, notFound } from './errors.js';
 import { BUDGET_BANDS, knowWithVibe } from './join-answers.js';
 import { assertDate } from './limits.js';
-import { expenseOf, messageForGo, personForGo, recordLineOf } from './mappers.js';
+import { messageForGo, personForGo, recordLineOf } from './mappers.js';
 import type { ExpenseRow, MessageRow, RecordLineRow } from './mappers.js';
+import { sharesOf } from './money.js';
 import { activePeople, buildSnapshot } from './snapshot.js';
 import { closeDecision, lockBooking, lockDecision, votesOf } from './voting.js';
 
@@ -398,52 +399,7 @@ export async function undoRecordLine(ctx: Ctx, tripId: string, personId: string,
   });
 }
 
-// ---------------------------------------------------------------- expenses
-
-export interface NewExpense {
-  paid_by_person_id: string;
-  amount_minor: number;
-  note: string;
-  category: string;
-  split_person_ids: string[];
-  booking_id?: string;
-}
-
-export async function addPersonExpense(ctx: Ctx, tripId: string, personId: string, input: NewExpense) {
-  return withTx(ctx.pool, async (db, after) => {
-    await requireMember(db, tripId, personId);
-    const trip = (await db.query('select currency from trips where trip_id = $1', [tripId])).rows[0];
-    if (input.amount_minor <= 0) throw invalid('amount_minor must be more than zero');
-    if (!check('Category', input.category).ok) throw invalid('category must be stay, food, getting_around, activities or other');
-    const ids = [...new Set([input.paid_by_person_id, ...input.split_person_ids])];
-    const found = await db.query('select person_id from trip_people where trip_id = $1 and left_at is null and person_id = any($2)', [tripId, ids]);
-    if (found.rowCount !== ids.length) throw invalid('paid_by_person_id/split_person_ids: someone is not in the trip');
-    if (input.booking_id) {
-      const b = await db.query('select 1 from bookings where trip_id = $1 and booking_id = $2', [tripId, input.booking_id]);
-      if (!b.rowCount) throw invalid(`booking_id: ${input.booking_id} is not a booking in this trip`);
-    }
-    const expense = (await db.query<ExpenseRow>(
-      `insert into expenses (expense_id, trip_id, paid_by_person_id, amount_minor, currency, note, category, split_person_ids, booking_id, added_by_person_id)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *`,
-      [newId('e'), tripId, input.paid_by_person_id, input.amount_minor, trip.currency, input.note, input.category, JSON.stringify(input.split_person_ids), input.booking_id ?? null, personId],
-    )).rows[0]!;
-    const seq = await change(db, tripId, 'expense.changed', { expense: expenseOf(expense), change: 'added', by: { kind: 'person', person_id: personId } });
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
-    after(() => pushOwed(ctx, tripId, expense));
-    return { expense_id: expense.expense_id, seq };
-  });
-}
-
-export async function removePersonExpense(ctx: Ctx, tripId: string, personId: string, expenseId: string) {
-  return withTx(ctx.pool, async (db, after) => {
-    await requireMember(db, tripId, personId);
-    const row = (await db.query<ExpenseRow>('update expenses set removed_at = now() where trip_id = $1 and expense_id = $2 and removed_at is null returning *', [tripId, expenseId])).rows[0];
-    if (!row) throw notFound(`expense ${expenseId} does not exist`);
-    const seq = await change(db, tripId, 'expense.changed', { expense: expenseOf(row), change: 'removed', by: { kind: 'person', person_id: personId } });
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
-    return { seq };
-  });
-}
+// ---------------------------------------------------------------- expenses (the actions themselves live in expenses.ts since phase 3)
 
 /**
  * An amount for people to read, in the trip's currency: ₹1,133.34, or ₹680 when there is no fraction. Amounts are whole numbers in the
@@ -461,7 +417,7 @@ export function formatMoney(amountMinor: number, currency: string): string {
  * `money.transfers` (guides: "Pushes"): who and how much, such as "You owe Kabir ₹680 for the airport cab".
  * Someone whose balance is settled or in credit after the whole trip's expenses gets no push.
  */
-export async function pushOwed(ctx: Ctx, tripId: string, expense: ExpenseRow): Promise<void> {
+export async function pushOwed(ctx: Ctx, tripId: string, expense: Pick<ExpenseRow, 'paid_by_person_id' | 'split_person_ids' | 'note'>): Promise<void> {
   const snap = await buildSnapshot(ctx.pool, tripId, ctx.publicBaseUrl);
   const names = new Map(snap.people.map((p) => [p.person_id, p.name]));
   const inSplit = new Set(expense.split_person_ids.filter((id) => id !== expense.paid_by_person_id));
@@ -519,6 +475,13 @@ export async function needsYouIn(db: Db, tripId: string, personId: string) {
     `select line_id, text from record_lines where trip_id = $1 and kind = 'open' and status = 'active' and person_ids ? $2`,
     [tripId, personId],
   );
+  // An expense waiting for my approval (§4.9, D6): my share of it and its note.
+  const approvals = await db.query(
+    `select e.expense_id, e.note, e.amount_minor, e.currency, e.split_person_ids from expense_confirmations c join expenses e using (expense_id)
+      where e.trip_id = $1 and c.person_id = $2 and c.state = 'pending' and e.removed_at is null order by e.created_at, e.expense_id`,
+    [tripId, personId],
+  );
+  const order = approvals.rowCount ? (await db.query('select person_id from trip_people where trip_id = $1 and left_at is null order by joined_at, person_id', [tripId])).rows.map((r) => r.person_id as string) : [];
   return [
     ...votes.rows.map((r) => ({ kind: 'vote', decision_id: r.decision_id, text: r.question, ...(r.cancels_booking_id ? { cancels_booking_id: r.cancels_booking_id } : {}) })),
     // What the payer is asked to confirm, such as "Yes, book it? Villa Sol, up to ₹55,000", and the vote it came from.
@@ -530,6 +493,9 @@ export async function needsYouIn(db: Db, tripId: string, personId: string) {
     })),
     ...cards.rows.map((r) => ({ kind: 'card', card_id: r.card_id, message_id: r.message_id, text: r.text })),
     ...lines.rows.map((r) => ({ kind: 'record', line_id: r.line_id, text: r.text })),
+    // Today's shape, like the others. Phase 4.4 reshapes the whole list to NeedsYouItem; this entry then becomes
+    // { item_id: "expense:<id>:<me>", kind: "expense", title: text, cta_label: "Approve", since, target: { expense_id } }.
+    ...approvals.rows.map((r) => ({ kind: 'expense', expense_id: r.expense_id, text: `Approve ${formatMoney(sharesOf(r, order).get(personId) ?? 0, r.currency)} · ${r.note}` })),
   ];
 }
 

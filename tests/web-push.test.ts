@@ -126,7 +126,7 @@ describe('delivery', () => {
     const elapsed = Date.now() - started;
     const spent = await t.api(t.as('p_rahul'), 'POST', '/app/v1/trips/t_goa/expenses', { paid_by_person_id: 'p_rahul', amount_minor: 40000, note: 'Cab', category: 'getting_around', split_person_ids: ['p_rahul', 'p_priya'] });
     for (let i = 0; i < 50 && svc.calls.length < 2; i++) await sleep(20);
-    expect([elapsed < 1800, posted.error === undefined, spent.status, (await rows(h.pool, `select 1 from messages where message_id = $1`, [posted.result.message_id])).length, svc.calls.length]).toEqual([true, true, 200, 1, 2]);
+    expect([elapsed < 1800, posted.error === undefined, spent.status, (await rows(h.pool, `select 1 from messages where message_id = $1`, [posted.result.message_id])).length, svc.calls.length]).toEqual([true, true, 201, 1, 2]);
     svc.release();
     svc.set('ok');
     await sender.drain();
@@ -144,7 +144,7 @@ describe('delivery', () => {
     const write = await t.api(t.as('p_rahul'), 'POST', '/app/v1/trips/t_goa/expenses', { paid_by_person_id: 'p_rahul', amount_minor: 20000, note: 'Tea', category: 'food', split_person_ids: ['p_rahul', 'p_meher'] });
     await sender.drain();
     svc.set('ok');
-    expect([afterGone, write.status, await subscriptionOwner(FCM), logs.length > 0, new RegExp(`fcm\\.googleapis|abc123|${keys.p256dh}|${keys.auth}`).test(logs.join(' '))]).toEqual([null, 200, 'p_meher', true, false]);
+    expect([afterGone, write.status, await subscriptionOwner(FCM), logs.length > 0, new RegExp(`fcm\\.googleapis|abc123|${keys.p256dh}|${keys.auth}`).test(logs.join(' '))]).toEqual([null, 201, 'p_meher', true, false]);
   });
 
   it('ends a send that hangs at the per-send limit, lets a drain finish a pending send, and returns from a drain within its bound when a send never ends', async () => {

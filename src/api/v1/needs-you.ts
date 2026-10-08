@@ -6,7 +6,7 @@ import { SECTIONS, type RouteMeta } from './meta.js';
 import { inTrip, type V1Deps } from './shared.js';
 
 export const routes: RouteMeta[] = [
-  { method: 'GET', path: '/app/v1/trips/:trip/needs-you', section: SECTIONS.needsYou, title: 'Needs you', summary: 'What this person has to do in the trip: open votes, a mandate to answer, a Go card naming them, an open record line.' },
+  { method: 'GET', path: '/app/v1/trips/:trip/needs-you', section: SECTIONS.needsYou, title: 'Needs you', summary: 'What this person has to do in the trip: open votes, a mandate to answer, a Go card naming them, an open record line, an expense waiting for their approval ({ kind: "expense", expense_id, text }).' },
 ];
 
 export function register(app: FastifyInstance, ctx: Ctx, _deps: V1Deps): void {

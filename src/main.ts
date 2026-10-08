@@ -28,6 +28,7 @@ const ctx: Ctx = {
   push,
   publicBaseUrl: process.env.PUBLIC_BASE_URL ?? 'https://go.example',
   spendPrivateKey: config.goSpendPrivateKey,
+  features: config.features,
 };
 
 // 1. The socket to Go, with a fresh signature on every connect. Any instance can answer any of Go's requests.
