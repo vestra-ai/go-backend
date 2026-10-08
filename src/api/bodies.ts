@@ -434,8 +434,20 @@ const payLink = {
   properties: { to_person_id: id, amount_minor: amount },
 } as const;
 
+// The check-in sheets (app contract §4.12): DigiYatra, the declaration, a seat from the seat map, the mobile the airline texts.
+const patchCheckin = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    digi_yatra: { type: 'boolean' },
+    declaration: { type: 'boolean' },
+    seat: { type: 'string', minLength: 2, maxLength: 8, pattern: '^[0-9]{1,3}[A-Z]{1,2}$' },
+    mobile: { type: 'string', minLength: 5, maxLength: 20, pattern: '^\\+?[0-9 ]{5,20}$' },
+  },
+} as const;
+
 /** Every route's body definition, by name. */
-export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, putUpi, deleteMe, patchTripMe, acceptInvite, putBudget, patchTrip, nudge, addDevice, createTrip, readTrip, postMessage, putReaction, cardAction, castVote, upload, liveTicket, addExpense, patchExpense, disputeExpense, recordSettlement, payLink } as const;
+export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, putUpi, deleteMe, patchTripMe, acceptInvite, putBudget, patchTrip, nudge, addDevice, createTrip, readTrip, postMessage, putReaction, cardAction, castVote, upload, liveTicket, addExpense, patchExpense, disputeExpense, recordSettlement, payLink, patchCheckin } as const;
 
 /** Nodes the walk in tests/bodies.test.ts does not enter: they are checked against the contract's own definitions elsewhere. */
 export const PASSTHROUGH: readonly string[] = ['patchTrip.itinerary[]', 'postMessage.attachments[]'];
@@ -578,6 +590,13 @@ export interface PayLinkBody {
   amount_minor: number;
 }
 
+export interface PatchCheckinBody {
+  digi_yatra?: boolean;
+  declaration?: boolean;
+  seat?: string;
+  mobile?: string;
+}
+
 export interface AddDeviceBody {
   platform: 'web_push';
   web_push: { endpoint: string; keys: { p256dh: string; auth: string } };
@@ -653,3 +672,4 @@ export const checkPatchExpense = bodyChecker<PatchExpenseBody>(bodies.patchExpen
 export const checkDisputeExpense = bodyChecker<DisputeExpenseBody>(bodies.disputeExpense);
 export const checkRecordSettlement = bodyChecker<RecordSettlementBody>(bodies.recordSettlement);
 export const checkPayLink = bodyChecker<PayLinkBody>(bodies.payLink);
+export const checkPatchCheckin = bodyChecker<PatchCheckinBody>(bodies.patchCheckin);

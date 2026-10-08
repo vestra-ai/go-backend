@@ -22,7 +22,7 @@ export function stageOf(t: StageInput): Stage {
 
 export type Attention = { kind: 'needs_you'; count: number } | { kind: 'all_set' } | { kind: 'collecting' } | { kind: 'task'; label: string };
 
-/** The home card's status line: things pending on me first, else "all set" once planned, else Go is still collecting. (`task` is phase 4/5.) */
+/** The home card's status line: things pending on me first, else "all set" once planned, else Go is still collecting. (`task` is decided before this, in src/domain/home.ts.) */
 export function attentionOf(stage: Stage, needsYouCount: number): Attention {
   if (needsYouCount > 0) return { kind: 'needs_you', count: needsYouCount };
   return stage === 'planned' ? { kind: 'all_set' } : { kind: 'collecting' };

@@ -80,7 +80,7 @@ export async function readTripView(ctx: Ctx, tripId: string, personId: string, i
         group by author_kind, author_person_id order by (author_kind = 'go') desc, last_seq desc limit 4`,
       [tripId],
     );
-    const needs = (await needsYouIn(db, tripId, personId)).length;
+    const needs = (await needsYouIn(db, tripId, personId, ctx.features)).length;
     const bookings = await bookingsForPerson(db, snap.bookings, personId);
     await db.query('commit');
 

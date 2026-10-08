@@ -12,7 +12,9 @@ import { sendPush } from '../push/send.js';
 import { change, emit, nextSeq } from '../db/write-change.js';
 import type { Db } from '../db/pool.js';
 import type { PatchTripMeBody } from '../api/bodies.js';
+import type { Features } from '../config.js';
 import { resolveAttachments } from './attachments.js';
+import { checkinItems, checkinOn } from './checkin.js';
 import { conflict, invalid, notFound, rateLimited } from './errors.js';
 import { BUDGET_BANDS, knowWithVibe } from './join-answers.js';
 import { assertDate } from './limits.js';
@@ -606,7 +608,7 @@ export async function needsYou(ctx: Ctx, tripId: string, personId: string): Prom
     await db.query('begin transaction isolation level repeatable read read only');
     const seq = (await db.query('select seq from trips where trip_id = $1', [tripId])).rows[0]?.seq as number | undefined;
     if (seq === undefined) throw notFound(`trip ${tripId} does not exist`);
-    const items = await needsYouIn(db, tripId, personId);
+    const items = await needsYouIn(db, tripId, personId, ctx.features);
     await db.query('commit');
     return { items, seq };
   } catch (err) {
@@ -623,9 +625,10 @@ export async function needsYou(ctx: Ctx, tripId: string, personId: string): Prom
  * `vote`: each open vote they have not voted in. `mandate`: the payer, while the mandate is unanswered. `card`: Go's cards
  * naming them in `for_person_ids` (until replace_card drops them). `record_line`: an open, active line naming them.
  * `settle_up`: each net transfer where they owe. `expense`: each pending confirmation of theirs (phase 3's table, read
- * only when it exists). `checkin` comes with web check-in (phase 5).
+ * only when it exists). `checkin`: each flight covering them whose cached check-in state is open (src/domain/checkin.ts),
+ * only when `features.checkin` is on; the strip never asks Go.
  */
-export async function needsYouIn(db: Db, tripId: string, personId: string): Promise<NeedsYouItem[]> {
+export async function needsYouIn(db: Db, tripId: string, personId: string, features?: Partial<Features>): Promise<NeedsYouItem[]> {
   const votes = await db.query(
     `select d.decision_id, d.question, d.cancels_booking_id, d.closes_at, d.opened_at, d.of_count,
             (select count(*)::int from votes v where v.decision_id = d.decision_id) as voted,
@@ -663,6 +666,7 @@ export async function needsYouIn(db: Db, tripId: string, personId: string): Prom
   const nameOf = new Map(people.map((p) => [p.person_id, p.name]));
   const lastExpenseAt = expenses.length ? new Date(expenses[expenses.length - 1]!.created_at).toISOString() : new Date(0).toISOString();
   const approvals = await pendingApprovals(db, tripId, personId);
+  const checkins = checkinOn(features) ? await checkinItems(db, tripId, personId) : [];
   const at = (d: Date | string) => new Date(d).toISOString();
 
   return [
@@ -719,6 +723,7 @@ export async function needsYouIn(db: Db, tripId: string, personId: string): Prom
       since: at(e.created_at),
       target: { expense_id: e.expense_id },
     })),
+    ...checkins,
   ];
 }
 

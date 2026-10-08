@@ -204,13 +204,14 @@ describe('the payload per type (app contract §8), and the notifications switch'
   /** The payloads the fake push service received since `from`, parsed. */
   const received = (from: number) => svc.calls.slice(from).map((c) => JSON.parse(c.payload));
 
-  it('builds deep_link and tag by type: a message opens the room at it, money opens the Expenses tab, anything else the trip; no badge_count', () => {
+  it('builds deep_link and tag by type: a message opens the room at it, money opens the Expenses tab, a check-in its flight, anything else the trip; no badge_count', () => {
     const p = (type: any, extra: Record<string, unknown> = {}) => pushPayload({ type, trip_id: 't_goa', title: 'Goa 🌴', body: 'b', ...extra });
     expect(p('mention', { message_id: 'm_1' })).toEqual({ type: 'mention', trip_id: 't_goa', message_id: 'm_1', title: 'Goa 🌴', body: 'b', deep_link: '/trips/t_goa/chat?msg=m_1', tag: 't_goa:m_1' });
     expect(p('card', { message_id: 'm_2' })).toMatchObject({ deep_link: '/trips/t_goa/chat?msg=m_2', tag: 't_goa:m_2' });
     expect(p('vote_closing', { id: 'd_1' })).toMatchObject({ deep_link: '/trips/t_goa', tag: 't_goa:vote_closing:d_1' });
     expect(p('joined', { id: 'p_priya' })).toMatchObject({ deep_link: '/trips/t_goa', tag: 't_goa:joined:p_priya' });
-    expect(p('checkin', { id: 'b_1' })).toMatchObject({ deep_link: '/trips/t_goa', tag: 't_goa:checkin:b_1' });
+    expect(p('checkin', { id: 'b_1' })).toMatchObject({ deep_link: '/trips/t_goa/checkin/b_1', tag: 't_goa:checkin:b_1' }); // the booking's check-in (§4.12)
+    expect(p('checkin', {})).toMatchObject({ deep_link: '/trips/t_goa', tag: 't_goa:checkin' });
     for (const type of ['owe', 'settlement', 'nudge', 'expense']) expect(p(type, { id: 'x' })).toMatchObject({ deep_link: '/trips/t_goa/expenses', tag: `t_goa:${type}:x` });
     expect(Object.keys(p('owe'))).not.toContain('badge_count');
     // The shape from before phase 4 is upgraded at delivery: a message is a mention, anything else a nudge unless data.type says.

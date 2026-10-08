@@ -53,7 +53,8 @@ export async function askGo<T = Record<string, unknown>>(go: GoClient, method: s
   return answer as T;
 }
 
-const GO_CARD_KINDS = new Set(['options', 'working', 'call', 'pay', 'notice']);
+/** The cards whose buttons are Go's to answer (the 1.1 `checklist` among them); vote, mandate and expense cards are the Server's. */
+const GO_CARD_KINDS = new Set(['options', 'working', 'call', 'pay', 'notice', 'checklist']);
 
 /**
  * The tap id sent to Go for the app's own press id. Go acts on each tap_id once and answers a repeat with its
@@ -133,9 +134,13 @@ export const getPerson = (go: GoClient, personId: string) => askGo(go, 'get_pers
 export const updateCarryOver = (go: GoClient, personId: string, carryOver: boolean) => askGo(go, 'update_person', { person_id: personId, carry_over: carryOver });
 export const deleteFact = (go: GoClient, personId: string, factId: string) => askGo(go, 'delete_fact', { person_id: personId, fact_id: factId });
 
+export type VaultStart = 'home' | 'add_card' | 'add_login' | 'add_documents';
+/** Why the vault page is opened (GO-CHANGES 2.2): the visa form for a trip. Passport data never touches the server. */
+export type VaultContext = { trip_id: string; purpose: 'visa' };
+
 /** A short-lived link to the person's vault page, for the system browser sheet. Never kept, never put in a push. */
-export const vaultLink = (go: GoClient, personId: string, start?: 'home' | 'add_card' | 'add_login') =>
-  askGo(go, 'vault_link', { kind: 'vault', person_id: personId, ...(start ? { start } : {}) });
+export const vaultLink = (go: GoClient, personId: string, start?: VaultStart, context?: VaultContext) =>
+  askGo(go, 'vault_link', { kind: 'vault', person_id: personId, ...(start ? { start } : {}), ...(context ? { context } : {}) });
 
 /**
  * "Forget me", in one trip or everywhere, including trips the person has left. Go deletes what it learned

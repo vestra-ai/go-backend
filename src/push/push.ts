@@ -12,7 +12,7 @@ export interface PushPayload {
   /** The trip's title. */
   title: string;
   body: string;
-  /** `/trips/<trip>/chat?msg=<message>` for a message, `/trips/<trip>/expenses` for money, `/trips/<trip>` otherwise. */
+  /** `/trips/<trip>/chat?msg=<message>` for a message, `/trips/<trip>/expenses` for money, `/trips/<trip>/checkin/<booking>` for check-in, `/trips/<trip>` otherwise. */
   deep_link: string;
   /** `<trip>:<message>` or `<trip>:<type>:<id>`: the same thing twice collapses into one notification. */
   tag: string;
@@ -38,8 +38,9 @@ export const isLegacyNotification = (n: Notification): n is LegacyNotification =
 /** The push types whose tap lands on the Expenses tab. */
 const MONEY: ReadonlySet<PushType> = new Set(['owe', 'settlement', 'nudge', 'expense']);
 
-export const deepLinkFor = (type: PushType, tripId: string, messageId?: string): string =>
-  messageId ? `/trips/${tripId}/chat?msg=${messageId}` : MONEY.has(type) ? `/trips/${tripId}/expenses` : `/trips/${tripId}`;
+/** `id` is the booking for a `checkin` push: its tap opens that flight's check-in. */
+export const deepLinkFor = (type: PushType, tripId: string, messageId?: string, id?: string): string =>
+  messageId ? `/trips/${tripId}/chat?msg=${messageId}` : MONEY.has(type) ? `/trips/${tripId}/expenses` : type === 'checkin' && id ? `/trips/${tripId}/checkin/${id}` : `/trips/${tripId}`;
 
 export const tagFor = (type: PushType, tripId: string, messageId?: string, id?: string): string =>
   messageId ? `${tripId}:${messageId}` : `${tripId}:${type}${id ? `:${id}` : ''}`;
@@ -63,7 +64,7 @@ export function pushPayload(input: PushInput): PushPayload {
     ...(input.message_id ? { message_id: input.message_id } : {}),
     title: input.title,
     body: Array.from(input.body).slice(0, 300).join(''),
-    deep_link: deepLinkFor(input.type, input.trip_id, input.message_id),
+    deep_link: deepLinkFor(input.type, input.trip_id, input.message_id, input.id),
     tag: tagFor(input.type, input.trip_id, input.message_id, input.id),
   };
 }

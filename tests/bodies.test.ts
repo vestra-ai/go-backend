@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { CLEARABLE, PASSTHROUGH, bodies } from '../src/api/bodies.js';
 
 /** The routes with a body definition. Each block that adds a definition adds its name here. */
-const EXPECTED = ['openVote', 'addBooking', 'updateBooking', 'cancelVote', 'patchMe', 'putUpi', 'deleteMe', 'patchTripMe', 'acceptInvite', 'putBudget', 'patchTrip', 'nudge', 'addDevice', 'createTrip', 'readTrip', 'postMessage', 'putReaction', 'cardAction', 'castVote', 'upload', 'liveTicket', 'addExpense', 'patchExpense', 'disputeExpense', 'recordSettlement', 'payLink'];
+const EXPECTED = ['openVote', 'addBooking', 'updateBooking', 'cancelVote', 'patchMe', 'putUpi', 'deleteMe', 'patchTripMe', 'acceptInvite', 'putBudget', 'patchTrip', 'nudge', 'addDevice', 'createTrip', 'readTrip', 'postMessage', 'putReaction', 'cardAction', 'castVote', 'upload', 'liveTicket', 'addExpense', 'patchExpense', 'disputeExpense', 'recordSettlement', 'payLink', 'patchCheckin'];
 const ALLOWED_KEYWORDS = ['type', 'properties', 'required', 'additionalProperties', 'items', 'minItems', 'maxItems', 'uniqueItems', 'minLength', 'maxLength', 'minimum', 'maximum', 'enum', 'format', 'pattern', 'description'];
 
 it('every body definition is strict: typed, closed objects, null only where clearable, bounded strings and arrays', () => {

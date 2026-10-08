@@ -12,7 +12,7 @@ import { isAllowedPushEndpoint, isValidSubscriptionKeys } from '../../push/web-p
 import { signSession } from '../auth.js';
 import { checkAddDevice, checkDeleteMe, checkPatchMe, checkPutUpi } from '../bodies.js';
 import { SECTIONS, type RouteMeta } from './meta.js';
-import { PUBLIC, atLeastOneField, body, str, type V1Deps } from './shared.js';
+import { PUBLIC, atLeastOneField, body, id, str, type V1Deps } from './shared.js';
 
 const ME_EXAMPLE = {
   person_id: 'p_aarav', name: 'Aarav Shah', email: 'aarav@gmail.com', photo_url: 'https://lh3.googleusercontent.com/a/photo', auth_provider: 'google',
@@ -32,7 +32,8 @@ export const routes: RouteMeta[] = [
   { method: 'POST', path: '/app/v1/me/devices', section: SECTIONS.me, title: 'Register a device', summary: 'Register this browser for Web Push: { platform: "web_push", web_push: { endpoint, keys }, locale?, tz? }. At most 10 devices per person (the oldest goes). Answers the device_id to delete at sign-out. Pushes (§8) then carry { type, trip_id, message_id?, title, body, deep_link, tag }; none when Me.notifications_enabled is off.',
     example: { body: { platform: 'web_push', web_push: { endpoint: 'https://fcm.googleapis.com/fcm/send/abc123', keys: { p256dh: 'BNcRd…', auth: 'tBHI…' } }, locale: 'en-IN', tz: 'Asia/Kolkata' }, responses: [{ name: 'Registered', status: 201, body: { device_id: 'dev_01JA7R' } }] } },
   { method: 'DELETE', path: '/app/v1/me/devices/:device_id', section: SECTIONS.me, title: 'Remove a device', summary: 'Removes your own device registration (sign-out). Safe to repeat.', example: { responses: [{ name: 'Removed', status: 204 }] } },
-  { method: 'POST', path: '/app/v1/me/vault-link', section: SECTIONS.me, title: 'Vault link', summary: "A short-lived link to the person's vault page in Go, for the browser sheet." },
+  { method: 'POST', path: '/app/v1/me/vault-link', section: SECTIONS.me, title: 'Vault link', summary: "A short-lived link to the person's vault page in Go, for the browser sheet: { start?: home | add_card | add_login | add_documents, context?: { trip_id, purpose: \"visa\" } }. add_documents is the visa form (passport data never touches the server), behind features.visa: 422 start when it is off. start and context go to Go's vault_link as they are. Never cached, never put in a push.",
+    example: { body: { start: 'add_documents', context: { trip_id: 't_goa', purpose: 'visa' } }, responses: [{ name: 'Link', status: 200, body: { url: 'https://brain.go.example/vault/documents?link=lk_4Rt8Zp2Lq', expires_at: '2026-10-05T09:06:30Z' } }, { name: 'Visa off', status: 422, body: { error: { code: 'invalid', message: 'add_documents is not on yet (features.visa)', field: 'start', retry_after_seconds: null, request_id: 'a1b2c3d4e5f6' } } }] } },
   { method: 'DELETE', path: '/app/v1/me', section: SECTIONS.me, title: 'Delete my account', summary: 'Body { confirm: true }. Go forgets you everywhere (502 and nothing else if it cannot), your answers are cleared, you leave every trip, your messages read "Former member", your email, UPI id and photo go. Your token stops working.',
     example: { body: { confirm: true }, responses: [{ name: 'Accepted', status: 202 }, { name: 'Go did not answer', status: 502, body: { error: { code: 'go_unavailable', message: 'Go could not forget you just now; nothing was deleted. Try again.', field: null, retry_after_seconds: null, request_id: 'a1b2c3d4e5f6' } } }] } },
   { method: 'POST', path: '/app/v1/dev/sign-in', section: SECTIONS.dev, title: 'Dev sign-in', summary: 'Creates a person and answers a dev token. Only when the server runs with AUTH_MODE=dev.', auth: 'none', dev: true },
@@ -74,7 +75,14 @@ export function register(app: FastifyInstance, ctx: Ctx, deps: V1Deps): void {
     return reply.code(204).send();
   });
 
-  app.post('/app/v1/me/vault-link', body({ start: { type: 'string', enum: ['home', 'add_card', 'add_login'] } }), async (req: any) => vaultLink(deps.go, req.personId, req.body.start));
+  // `start: add_documents` (+ `context`) is the visa form (GO-CHANGES 2.2), behind features.visa: the overlay lets both through to Go.
+  app.post('/app/v1/me/vault-link', body({
+    start: { type: 'string', enum: ['home', 'add_card', 'add_login', 'add_documents'] },
+    context: { type: 'object', required: ['trip_id', 'purpose'], additionalProperties: false, properties: { trip_id: id, purpose: { type: 'string', enum: ['visa'] } } },
+  }), async (req: any) => {
+    if (req.body.start === 'add_documents' && !deps.features.visa) throw invalid('add_documents is not on yet (features.visa)', 'start');
+    return vaultLink(deps.go, req.personId, req.body.start, req.body.context);
+  });
 
   app.delete('/app/v1/me', async (req, reply) => {
     checkDeleteMe(req.body);

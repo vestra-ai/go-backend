@@ -30,6 +30,34 @@ export function fakeCard(kind: 'options' | 'working' | 'call' | 'pay' | 'notice'
   }
 }
 
+/** A `checklist` card (GO-CHANGES 2.2): a table of people with a status, such as the visa form's progress. */
+export function fakeChecklist(cardId: string, rows: Array<{ person_id: string; status: 'todo' | 'started' | 'done' | 'info'; label?: string; sub?: string }>, title = 'Indonesia e-VOA'): Frame {
+  return { card_id: cardId, kind: 'checklist', fallback_text: `${title}: who has sent their documents`, title, subtitle: 'Passport page, photo, dates', due_at: '2026-12-10', rows,
+    suggestion: { text: 'Send yours in the vault; the group only sees "Sent".', cta: { action_id: 'add_documents', label: 'Add documents' } },
+    actions: [{ action_id: 'add_documents', label: 'Add documents', style: 'primary' }] };
+}
+
+/** The boarding pass the fake Go issues when a check-in is done. */
+export const fakeBoardingPass = (name = 'RAHUL') => ({ passenger: name, boarding: '20:00', departs: '20:40', gate: null, zone: '2', seq: '087', barcode: { format: 'qr', payload: `M1${name}/GO…` } });
+
+/**
+ * What the fake Go finds on the airline site (GO-CHANGES 3; app contract §4.12): check-in open, no answers yet, a small
+ * seat map with a free seat (14A), a paid one (12A, ₹450), a taken one (14C) and the companion's (14B). `companion` is left
+ * to the server, which fills it from the booking's passengers.
+ */
+export function fakeCheckinState(p: { booking_id: string; person_id: string }, status: 'not_open' | 'open' | 'working' | 'done' = 'open'): Frame {
+  const seat = (id: string, state: string, price_minor = 0) => ({ id, row: Number(id.slice(0, -1)), col: id.slice(-1), state, price_minor });
+  return {
+    status, opens_at: '2026-11-04T08:40:00+05:30', closes_at: '2026-11-06T19:40:00+05:30',
+    flight: { number: '6E 5313', carrier_name: 'IndiGo', date: '2026-11-06', origin: { name: 'Bengaluru T1', code: 'BLR', time: '20:40' }, destination: { name: 'Goa · Mopa', code: 'GOX', time: '21:55' } },
+    passenger: { name: p.person_id.replace(/^p_/, '').replace(/^./, (c) => c.toUpperCase()), mobile_masked: '+91 98••• ••210', bags: '7 kg cabin · 15 kg check-in' },
+    digi_yatra: false, declaration: false,
+    seat_map: { front_label: 'FRONT OF PLANE', columns: ['A', 'B', 'C', 'D', 'E', 'F'], aisle_after: 'C', rows: [12, 14],
+      seats: [seat('12A', 'paid', 45000), seat('12B', 'free'), seat('14A', 'free'), seat('14B', 'companion'), seat('14C', 'taken'), seat('14D', 'free')] },
+    boarding_pass: null,
+  };
+}
+
 /** Go's chips under a message (GO-CHANGES 1.3), as the fake Go sends them with post_message. */
 export const fakeQuickReplies = () => [{ label: '🏖️ Beach', text: 'Beach' }, { label: '⛰️ Mountains', text: 'Mountains' }, { label: 'Not sure, suggest some' }];
 
@@ -58,7 +86,23 @@ export class MockGo {
     delete_fact: () => ({ result: { ok: true } }),
     forget_person: () => ({ result: { deleted_facts: 3, remaining_facts: 0 } }),
     vault_link: () => ({ result: { url: 'https://brain.go.example/vault/add-card?link=lk_1', expires_at: '2099-01-01T00:00:00Z' } }),
+    // Web check-in (GO-CHANGES 3): the airline site's state, and `done` with a boarding pass once submitted (see `checkin`).
+    get_checkin: (p) => ({ result: this.checkins.get(`${p.booking_id}:${p.person_id}`) ?? fakeCheckinState(p as { booking_id: string; person_id: string }, this.checkin.opens) }),
+    submit_checkin: (p) => {
+      this.checkin.submitted.push(p);
+      const answer = this.checkin.submit;
+      if (answer === 'done') {
+        const pass = fakeBoardingPass(String(p.person_id).replace(/^p_/, '').toUpperCase());
+        this.checkins.set(`${p.booking_id}:${p.person_id}`, { ...fakeCheckinState(p as { booking_id: string; person_id: string }), digi_yatra: p.digi_yatra, declaration: p.declaration, seat: p.seat, status: 'done', boarding_pass: pass });
+        return { result: { status: 'done', boarding_pass: pass } };
+      }
+      return { result: answer === 'failed' ? { status: 'failed', message: 'The airline refused: the name does not match the PNR.' } : { status: 'working' } };
+    },
   };
+  /** The check-in knobs: what get_checkin says before anything was submitted, and how submit_checkin answers. */
+  checkin: { opens: 'not_open' | 'open' | 'working'; submit: 'done' | 'working' | 'failed'; submitted: Frame[] } = { opens: 'open', submit: 'done', submitted: [] };
+  /** What the fake Go remembers per `<booking>:<person>` after a submit: get_checkin then answers this. */
+  readonly checkins = new Map<string, Frame>();
   /** How send_event is answered. Return an error body to refuse. */
   onEvent: (params: Frame) => Frame | Promise<Frame> = () => ({ result: { accepted: true, duplicate: false } });
   /**

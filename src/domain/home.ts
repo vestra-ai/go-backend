@@ -1,7 +1,9 @@
 // §4.2 Home: one read for the whole home screen. My trips with the status line the Server works out (`stage`,
 // `attention`), the invites I kept for later, my trips that are over, and the ideas carousel for the first run.
+import type { Features } from '../config.js';
 import type { Ctx } from '../context.js';
-import { needsYouIn } from './actions.js';
+import type { Db } from '../db/pool.js';
+import { needsYouIn, type NeedsYouItem } from './actions.js';
 import { peoplePreview, personLite, type PersonLite } from './invites.js';
 import { loadExpenses, loadSettlements } from './ledger.js';
 import type { BookingRow } from './mappers.js';
@@ -60,6 +62,35 @@ interface TripRow {
 
 const datesOf = (t: { dates_start: string | null; dates_end: string | null }) => (t.dates_start && t.dates_end ? { start: t.dates_start, end: t.dates_end } : undefined);
 
+/** The latest `checklist` card in the trip with a row for this person still to do (status todo or started): its title. */
+async function pendingChecklist(db: Db, tripId: string, personId: string): Promise<string | null> {
+  const { rows } = await db.query(
+    `select card->>'title' as title from messages, jsonb_array_elements(card->'rows') as r
+      where trip_id = $1 and author_kind = 'go' and deleted = false and card->>'kind' = 'checklist'
+        and r->>'person_id' = $2 and r->>'status' in ('todo', 'started')
+      order by seq desc limit 1`,
+    [tripId, personId],
+  );
+  return (rows[0]?.title as string | undefined) ?? null;
+}
+
+/**
+ * `attention.task` (APP-CONTRACT-CHANGES §4.2): one thing with a deadline or a form behind it, which beats the plain
+ * "needs you" count. In this order: web check-in open for my flight ("Web check-in is open"; the flight closes), then a
+ * checklist row of mine still to do ("Indonesia e-VOA needed"; a document deadline, only with features.visa), then
+ * expenses waiting for my approval ("2 expenses to approve"). Anything else is the usual rule (attentionOf).
+ */
+async function taskFor(db: Db, tripId: string, personId: string, needs: NeedsYouItem[], features?: Partial<Features>): Promise<Attention | null> {
+  if (needs.some((i) => i.kind === 'checkin')) return { kind: 'task', label: 'Web check-in is open' };
+  if (features?.visa) {
+    const title = await pendingChecklist(db, tripId, personId);
+    if (title) return { kind: 'task', label: `${title} needed` };
+  }
+  const approvals = needs.filter((i) => i.kind === 'expense').length;
+  if (approvals > 0) return { kind: 'task', label: `${approvals} ${approvals === 1 ? 'expense' : 'expenses'} to approve` };
+  return null;
+}
+
 /**
  * Everything the home screen shows, for one person. `trips` are the trips I am in that are not over, latest activity first
  * (the time of the trip's last change, or its creation). `invites` are "later" marks on links that still work, for trips I am
@@ -88,7 +119,7 @@ export async function homeFor(ctx: Ctx, personId: string): Promise<Home> {
     }
     const bookings = (await db.query<Pick<BookingRow, 'kind' | 'status'>>('select kind, status from bookings where trip_id = $1', [t.trip_id])).rows;
     const stage = stageOf({ destination: t.destination, dates: datesOf(t), bookings });
-    const needs = (await needsYouIn(db, t.trip_id, personId)).length;
+    const needs = await needsYouIn(db, t.trip_id, personId, ctx.features);
     active.push(compact({
       trip_id: t.trip_id,
       title: t.title,
@@ -99,7 +130,7 @@ export async function homeFor(ctx: Ctx, personId: string): Promise<Home> {
       photo_url: t.destination?.photo_url ?? undefined,
       people_preview: peoplePreview(people),
       people_count: people.length,
-      attention: attentionOf(stage, needs),
+      attention: (await taskFor(db, t.trip_id, personId, needs, ctx.features)) ?? attentionOf(stage, needs.length),
       last_activity_at: new Date(t.last_activity_at).toISOString(),
     }));
   }

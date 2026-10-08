@@ -142,7 +142,8 @@ it('each answer uses a different one of Go\'s card kinds, and a tap on Go\'s car
   }
   const end = Date.now() + 10000;
   while (go.replies.length < 5 && Date.now() < end) await new Promise((r) => setTimeout(r, 50));
-  expect(go.replies.map((r) => r.card_kind)).toEqual(['options', 'working', 'call', 'pay', 'notice']);
+  // The four answers are produced as the outbox delivers, so their order is not fixed; the first reply is the earlier test's.
+  expect([go.replies[0]!.card_kind, go.replies.slice(1).map((r) => r.card_kind).sort()]).toEqual(['options', ['call', 'notice', 'pay', 'working']]);
   // The pay card names Rahul (the organizer): it is in his "needs you" strip.
   const strip = (await api(`/app/v1/trips/${trip}/needs-you`, { token: rahul.token })).body.items;
   expect(strip).toContainEqual(expect.objectContaining({ kind: 'card', title: 'Approve ₹54,200 for Villa Sol', cta_label: 'Approve' }));

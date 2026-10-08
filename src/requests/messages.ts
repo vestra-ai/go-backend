@@ -3,6 +3,7 @@ import { newId } from '../db/ids.js';
 import { once } from '../db/once.js';
 import { withTx } from '../db/pool.js';
 import { nextSeq, emit } from '../db/write-change.js';
+import { noteCheckinSignal } from '../domain/checkin.js';
 import { conflict, invalid, notFound } from '../domain/errors.js';
 import { messageForGo } from '../domain/mappers.js';
 import type { MessageRow } from '../domain/mappers.js';
@@ -56,9 +57,11 @@ export const postMessage = (ctx: Ctx) => async (p: any, raw: Record<string, unkn
     after(async () => {
       await ctx.live.publish(trip.trip_id, { kind: 'message', message_id: row.message_id, updated_seq: seq });
       await ctx.live.publish(trip.trip_id, { kind: 'typing', who: { kind: 'go' }, on: false });
+      // A notice card linking go://…/checkin/<booking> is Go saying "check-in is open" (§4.12): those people get the `checkin` push instead of the card's.
+      const opened = card ? await noteCheckinSignal(ctx, trip.trip_id, card) : [];
       // People Go names get Go's text (`mention`). People a new card needs get its fallback_text (`card`). Once each.
       if (mentions.length) await sendPush(ctx, trip.trip_id, mentions, { type: 'mention', body: p.text ?? card?.fallback_text ?? '', message_id: row.message_id });
-      const needed = (card?.for_person_ids ?? []).filter((id) => !mentions.includes(id));
+      const needed = (card?.for_person_ids ?? []).filter((id) => !mentions.includes(id) && !opened.includes(id));
       if (card && needed.length) {
         const inTrip = await ctx.pool.query('select person_id from trip_people where trip_id = $1 and left_at is null and person_id = any($2)', [trip.trip_id, needed]);
         await sendPush(ctx, trip.trip_id, inTrip.rows.map((r) => r.person_id), { type: 'card', body: card.fallback_text, message_id: row.message_id });
@@ -82,6 +85,7 @@ export const replaceCard = (ctx: Ctx) => async (p: { trip_id: string }, raw: Rec
     await db.query('update messages set card = $2, updated_seq = $3 where message_id = $1', [found.rows[0].message_id, JSON.stringify(card), seq]);
     const message_id = found.rows[0].message_id as string;
     after(() => ctx.live.publish(p.trip_id, { kind: 'card', message_id }));
+    after(async () => void (await noteCheckinSignal(ctx, p.trip_id, card))); // a notice replaced into the "check-in is open" signal counts too
     return { message_id };
   });
 

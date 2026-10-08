@@ -78,6 +78,40 @@ describe('GET /cards', () => {
   });
 });
 
+describe('POST /cards/:card_id/actions: claim (GO-CHANGES 1.10, APP-CONTRACT-CHANGES §11.13)', () => {
+  it('two people tapping "I\'ll book it" at once each reach Go as their own card_tap with distinct tap_ids, and each gets Go\'s answer back unchanged: done for the first Go sees, refused for the other', async () => {
+    await post({ ...fakeCard('notice', 'c_claim', 'p_rahul'), title: 'One person books for all', body: 'Villa Sol won. Who books it?', actions: [{ action_id: 'claim', label: "I'll book it", style: 'primary' }] });
+    const was = h.go.answers.card_tap!;
+    let claimed: string | null = null;
+    // Go takes the first claim and refuses the rest (nothing on the Server side decides this).
+    h.go.answers.card_tap = (p) => {
+      if (p.action_id !== 'claim') return was(p);
+      if (claimed) return { result: { result: 'refused', toast: `${claimed} is already booking this.` } };
+      claimed = p.person_id;
+      return { result: { result: 'done', toast: 'You are booking for all 5.' } };
+    };
+    try {
+      const tap = (who: string, press: string) => t.api(t.as(who), 'POST', '/app/v1/trips/t_goa/cards/c_claim/actions', { action_id: 'claim', press_id: press });
+      const [priya, kabir] = await Promise.all([tap('p_priya', '11111111-1111-4111-8111-111111111111'), tap('p_kabir', '22222222-2222-4222-8222-222222222222')]);
+      const taps = h.go.requests.filter((r) => r.method === 'card_tap' && r.params.card_id === 'c_claim').map((r) => r.params);
+      expect(taps.map((p) => p.person_id).sort()).toEqual(['p_kabir', 'p_priya']);
+      expect(new Set(taps.map((p) => p.tap_id)).size).toBe(2);
+      expect(taps.every((p) => /^tap_[0-9a-f]{32}$/.test(p.tap_id) && p.action_id === 'claim' && p.trip_id === 't_goa')).toBe(true);
+      const byPerson = { p_priya: priya, p_kabir: kabir } as Record<string, { status: number; body: any }>;
+      const winner = claimed!;
+      const loser = winner === 'p_priya' ? 'p_kabir' : 'p_priya';
+      expect([byPerson[winner]!.status, byPerson[winner]!.body]).toEqual([200, { result: 'done', toast: 'You are booking for all 5.' }]);
+      expect([byPerson[loser]!.status, byPerson[loser]!.body]).toEqual([200, { result: 'refused', toast: `${winner} is already booking this.` }]);
+      // The same press again is the same tap_id (Go answers it once); a new press by the winner is a new tap, which Go now refuses too.
+      await tap(winner, winner === 'p_priya' ? '11111111-1111-4111-8111-111111111111' : '22222222-2222-4222-8222-222222222222');
+      const again = h.go.requests.filter((r) => r.method === 'card_tap' && r.params.card_id === 'c_claim').map((r) => r.params.tap_id);
+      expect(new Set(again).size).toBe(2);
+    } finally {
+      h.go.answers.card_tap = was;
+    }
+  });
+});
+
 describe('POST /cards/:card_id/share', () => {
   it('copies the recording into storage and posts a message by the caller with it as a file attachment; Go hears message.created; a second share answers the same message', async () => {
     const before = (await rows(h.pool, `select seq from trips where trip_id = 't_goa'`))[0].seq;

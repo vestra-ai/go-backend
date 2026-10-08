@@ -8,7 +8,7 @@ import type { V1Deps } from './shared.js';
 const PERSON = { person_id: 'p_aarav', name: 'Aarav Shah', photo_url: 'https://lh3.googleusercontent.com/a/photo' };
 
 export const routes: RouteMeta[] = [
-  { method: 'GET', path: '/app/v1/home', section: SECTIONS.home, title: 'Home', summary: 'My trips (latest activity first, with stage and the attention line the server works out), invites I kept for later, trips that are over, and a seq hint. Empty trips ⇒ the first-run screen. Re-read on a home_changed notice.',
+  { method: 'GET', path: '/app/v1/home', section: SECTIONS.home, title: 'Home', summary: 'My trips (latest activity first, with stage and the attention line the server works out), invites I kept for later, trips that are over, and a seq hint. attention: task when web check-in is open for my flight ("Web check-in is open"), else a checklist row of mine still to do ("Indonesia e-VOA needed", with features.visa), else expenses waiting for my approval ("1 expense to approve"); otherwise needs_you with the count, all_set once planned, else collecting. Empty trips ⇒ the first-run screen. Re-read on a home_changed notice.',
     example: { responses: [{ name: 'Returning', status: 200, body: {
       me: PERSON,
       trips: [{ trip_id: 't_goa', title: 'Goa 🌴', status: 'planning', stage: 'deciding', destination: { name: 'Goa', photo_url: 'https://images.example/goa.jpg' }, dates: { start: '2026-11-06', end: '2026-11-09' }, photo_url: 'https://images.example/goa.jpg',
