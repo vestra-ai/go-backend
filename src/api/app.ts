@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { resolveFeatures, type Features } from '../config.js';
 import type { Ctx } from '../context.js';
 import type { GoClient } from '../domain/ask-go.js';
+import type { LiveHub, LiveHubOptions } from '../live/ws.js';
 import { DevAuth, type Authenticator } from './auth.js';
 import { corsHeaders } from './cors.js';
 import { handleError, newRequestId, sendError } from './errors.js';
@@ -22,6 +23,9 @@ export interface AppDeps {
   pushPublicKey?: string;
   /** Feature flags the environment set; the rest take their defaults. */
   features?: Partial<Features>;
+  /** The live socket hub's settings (tests shorten the heartbeat), and a way to get hold of the hub. */
+  live?: LiveHubOptions;
+  onLiveHub?: (hub: LiveHub) => void;
 }
 
 /** True for a person whose account was deleted (people.deleted_at set). An unknown person id is not deleted: trip routes answer 403 for them. */
@@ -35,7 +39,7 @@ async function isDeleted(pool: Ctx['pool'], personId: string): Promise<boolean> 
  * error shape, sign-in and the Idempotency-Key store; the routes live one file per contract section in src/api/v1.
  * The app talks only to this, never to Go.
  */
-export function buildApp({ ctx, go, sessionSecret, auth: authenticator = new DevAuth(sessionSecret), origins = [], pushPublicKey, features = {} }: AppDeps): FastifyInstance {
+export function buildApp({ ctx, go, sessionSecret, auth: authenticator = new DevAuth(sessionSecret), origins = [], pushPublicKey, features = {}, live, onLiveHub }: AppDeps): FastifyInstance {
   const app = Fastify({
     logger: false,
     genReqId: () => newRequestId(),
@@ -104,7 +108,9 @@ export function buildApp({ ctx, go, sessionSecret, auth: authenticator = new Dev
   });
   registerIdempotency(app, ctx.pool);
 
-  const deps: V1Deps = { go, authenticator, sessionSecret, origins, pushPublicKey, features: resolveFeatures(features, !!pushPublicKey) };
+  const deps: V1Deps = { go, authenticator, sessionSecret, origins, pushPublicKey, features: resolveFeatures(features, !!pushPublicKey), live, onLiveHub };
   for (const section of sections) section.register(app, ctx, deps);
+  // The in-process storage fake serves its own upload and download endpoints; Supabase Storage needs none.
+  ctx.storage.attach?.(app);
   return app;
 }

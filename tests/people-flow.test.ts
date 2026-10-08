@@ -20,21 +20,24 @@ it('one journey from the web app\'s origin: decide a vote, add a booking against
   const opened = await call('p_priya', 'POST', '/app/v1/trips/t_goa/decisions', {
     client_id: 'v1', question: 'Where do we stay?', kind: 'choice', anonymous: false, options: [{ label: 'Villa Sol', price_minor: 5420000 }, { label: 'Casa Azul', price_minor: 6180000 }],
   });
-  for (const who of EVERYONE) await call(who, 'PUT', `/app/v1/trips/t_goa/decisions/${opened.body.decision_id}/vote`, { option_index: 0 });
+  for (const who of EVERYONE) await call(who, 'PUT', `/app/v1/trips/t_goa/decisions/${opened.body.decision.decision_id}/vote`, { option_index: 0 });
   const booked = await call('p_arjun', 'POST', '/app/v1/trips/t_goa/bookings', {
-    client_id: 'b1', kind: 'stay', title: 'Villa Sol, 3 nights', vendor: 'ixigo', ref: 'IXG-1', amount_minor: 5420000, payer_person_id: 'p_rahul', for_person_ids: EVERYONE, decision_id: opened.body.decision_id,
+    client_id: 'b1', kind: 'stay', title: 'Villa Sol, 3 nights', vendor: 'ixigo', ref: 'IXG-1', amount_minor: 5420000, payer_person_id: 'p_rahul', for_person_ids: EVERYONE, decision_id: opened.body.decision.decision_id,
   });
   await call('p_meher', 'PATCH', `/app/v1/trips/t_goa/bookings/${booked.body.booking_id}`, { ref: 'IXG-2', starts_at: '2026-11-06T08:00:00Z' });
   const proposed = await call('p_priya', 'POST', `/app/v1/trips/t_goa/bookings/${booked.body.booking_id}/cancel-vote`, { client_id: 'c1' });
   for (const who of ['p_rahul', 'p_priya', 'p_arjun']) await call(who, 'PUT', `/app/v1/trips/t_goa/decisions/${proposed.body.decision_id}/vote`, { option_index: 0 });
-  await call('p_kabir', 'POST', `/app/v1/trips/t_goa/decisions/${proposed.body.decision_id}/close`);
+  await call('p_rahul', 'POST', `/app/v1/trips/t_goa/decisions/${proposed.body.decision_id}/close`);
   await h.flush();
 
   const events = await rows(h.pool, 'select body from outbox where trip_id = $1 order by seq', ['t_goa']);
   const bodies = events.map((r) => r.body);
   const snap = (await h.go.call('read_trip', { trip_id: 't_goa' })).result;
   expect(answers.map((a, i) => (a.status < 300 && a.headers['access-control-allow-origin'] === PWA ? null : `call ${i}: ${a.status}`)).filter(Boolean)).toEqual([]); // every call succeeded and carried the origin's headers
-  expect(bodies.map((e) => e.seq)).toEqual(Array.from({ length: bodies.length }, (_, i) => i + 2)); // trip.created took 1 (seeded); then 2, 3, 4... with no gap and no repeat
+  // trip.created took 1 (seeded); then 2, 3, 4... with no gap and no repeat, once the server's own pills (the poll's anchor, "won", "booked": a change number, no event) are counted in
+  const pills = (await rows(h.pool, `select seq, text from messages where trip_id = 't_goa' and author_kind = 'system' order by seq`)).map((p) => p.seq as number);
+  expect([...bodies.map((e) => e.seq), ...pills].sort((a, b) => a - b)).toEqual(Array.from({ length: bodies.length + pills.length }, (_, i) => i + 2));
+  expect(pills).toHaveLength(5); // two poll anchors, "Villa Sol won", "booked", "Cancel: … won"
   expect(bodies.map((e) => check('Event', e).ok).every(Boolean)).toBe(true);
   expect(bodies.map((e) => e.type + (e.data.change ? `:${e.data.change}` : ''))).toEqual([
     'decision.opened', ...Array(5).fill('decision.voted'), 'decision.closed', 'record.changed:added', // the first vote and its decided line
@@ -42,6 +45,6 @@ it('one journey from the web app\'s origin: decide a vote, add a booking against
     'booking.changed:updated', // the reference and start time
     'decision.opened', ...Array(3).fill('decision.voted'), 'decision.closed', 'booking.changed:cancelled', 'record.changed:added', // the cancellation vote, passing
   ]);
-  expect([check('TripSnapshot', snap).ok, snap.seq, snap.bookings[0].status, snap.bookings[0].ref, snap.bookings[0].starts_at]).toEqual([true, bodies.at(-1)!.seq, 'cancelled', 'IXG-2', '2026-11-06T08:00:00.000Z']);
+  expect([check('TripSnapshot', snap).ok, snap.seq, snap.bookings[0].status, snap.bookings[0].ref, snap.bookings[0].starts_at]).toEqual([true, Math.max(bodies.at(-1)!.seq, ...pills), 'cancelled', 'IXG-2', '2026-11-06T08:00:00.000Z']);
   expect(JSON.stringify(snap)).not.toContain('cancels_booking');
 });

@@ -28,15 +28,15 @@ const api = async (who: string | { token: string } | null, method: Method, url: 
   return { status: r.statusCode, body: r.body ? JSON.parse(r.body) : null, headers: r.headers };
 };
 const events = (type: string) => h.go.events.filter((e) => e.type === type);
-const msg = (who: string, client_id: string, text: string) => api(who, 'POST', `/app/v1/trips/${T}/messages`, { client_id, text });
+const msg = (who: string, client_message_id: string, text: string) => api(who, 'POST', `/app/v1/trips/${T}/messages`, { client_message_id, text });
 
-describe('A1: a person\'s message without client_id', () => {
-  it('is refused with 422 (unless an Idempotency-Key stands in for it) instead of being silently dropped as a "repeat"', async () => {
+describe('A1: a person\'s message without client_message_id', () => {
+  it('is refused with 422 naming the field instead of being silently dropped as a "repeat"', async () => {
     const first = await api('p_rahul', 'POST', `/app/v1/trips/${T}/messages`, { text: 'first' });
     const second = await api('p_rahul', 'POST', `/app/v1/trips/${T}/messages`, { text: 'second' });
     expect(first.status).toBe(422);
     expect(second.status).toBe(422);
-    expect(first.body.error).toMatchObject({ code: 'invalid', field: 'client_id' });
+    expect(first.body.error).toMatchObject({ code: 'invalid', field: 'client_message_id' });
     expect((await rows(h.pool, "select count(*)::int as n from messages where text in ('first','second')"))[0].n).toBe(0);
   });
 
@@ -51,10 +51,13 @@ describe('A1: a person\'s message without client_id', () => {
 
 describe('A2: bad app input answers 422 with the standard error (400 only for unreadable JSON), never 500', () => {
   const bad: Array<[string, Method, string, unknown, number]> = [
-    ['text over 4000 characters', 'POST', `/app/v1/trips/${T}/messages`, { client_id: 'fx_long', text: 'x'.repeat(4001) }, 422],
+    ['text over 4000 characters', 'POST', `/app/v1/trips/${T}/messages`, { client_message_id: 'fx_long', text: 'x'.repeat(4001) }, 422],
     ['an empty JSON object for a message', 'POST', `/app/v1/trips/${T}/messages`, {}, 422],
-    ['an attachment of the wrong shape', 'POST', `/app/v1/trips/${T}/messages`, { client_id: 'fx_att', text: 'pic', attachments: [{ kind: 'video' }] }, 422],
-    ['an emoji longer than 16 characters', 'POST', `/app/v1/trips/${T}/messages/m_any/reactions`, { emoji: '👍'.repeat(17) }, 422],
+    ['an attachment of the wrong shape', 'POST', `/app/v1/trips/${T}/messages`, { client_message_id: 'fx_att', text: 'pic', attachments: [{ kind: 'video' }] }, 422],
+    ['an emoji longer than 16 characters', 'PUT', `/app/v1/trips/${T}/messages/m_any/reaction`, { emoji: '👍'.repeat(17) }, 422],
+    ['a vote that is both for an option and flexible', 'PUT', `/app/v1/trips/${T}/decisions/d_any/vote`, { option_index: 0, flexible: true }, 422],
+    ['a card press with a payload the contract does not know', 'POST', `/app/v1/trips/${T}/cards/c_any/actions`, { action_id: 'pick', payload: { trip: 'triangle' } }, 422],
+    ['an upload of a type that is not allowed', 'POST', '/app/v1/uploads', { purpose: 'chat_attachment', kind: 'photo', mime: 'image/gif', size_bytes: 10 }, 422],
     ['a vote with no option', 'PUT', `/app/v1/trips/${T}/decisions/d_any/vote`, {}, 422],
     ['an expense of zero', 'POST', `/app/v1/trips/${T}/expenses`, { paid_by_person_id: 'p_rahul', amount_minor: 0, note: 'x', category: 'food', split_person_ids: ['p_rahul'] }, 422],
     ['an expense with no amount', 'POST', `/app/v1/trips/${T}/expenses`, { paid_by_person_id: 'p_rahul', note: 'x', category: 'food', split_person_ids: ['p_rahul'] }, 422],
@@ -64,7 +67,6 @@ describe('A2: bad app input answers 422 with the standard error (400 only for un
     ['a card press with an action id the contract refuses', 'POST', `/app/v1/trips/${T}/cards/c_any/actions`, { action_id: 'Pick' }, 422],
     ['a card press with no action', 'POST', `/app/v1/trips/${T}/cards/c_any/actions`, {}, 422],
     ['pausing Go with no answer', 'PATCH', `/app/v1/trips/${T}/me`, {}, 422],
-    ['typing with no on/off', 'POST', `/app/v1/trips/${T}/typing`, {}, 422],
     ['a vault link to a page that does not exist', 'POST', '/app/v1/me/vault-link', { start: 'bogus' }, 422],
     ['carry-over with no value', 'PATCH', '/app/v1/me/go', {}, 422],
   ];
@@ -86,16 +88,18 @@ describe('A2: bad app input answers 422 with the standard error (400 only for un
   });
 
   it('unreadable JSON is 400 bad_request; an empty JSON body is 422 (a field is missing), not 500', async () => {
-    const broken = await api('p_rahul', 'POST', `/app/v1/trips/${T}/messages`, '{"client_id": "x", ', { 'content-type': 'application/json' });
+    const broken = await api('p_rahul', 'POST', `/app/v1/trips/${T}/messages`, '{"client_message_id": "x", ', { 'content-type': 'application/json' });
     expect(broken.status).toBe(400);
     expect(broken.body.error.code).toBe('bad_request');
     const empty = await h.app.inject({ method: 'POST', url: `/app/v1/trips/${T}/messages`, payload: '', headers: { authorization: `Bearer ${await token('p_rahul')}`, 'content-type': 'application/json' } });
     expect(empty.statusCode).toBe(422);
   });
 
-  it('a bad after_seq or limit on the message list: 422', async () => {
+  it('a bad after_seq or limit on the message list, or both cursors at once: 422', async () => {
     expect((await api('p_rahul', 'GET', `/app/v1/trips/${T}/messages?after_seq=abc`)).status).toBe(422);
     expect((await api('p_rahul', 'GET', `/app/v1/trips/${T}/messages?limit=500`)).status).toBe(422);
+    expect((await api('p_rahul', 'GET', `/app/v1/trips/${T}/messages?after_seq=0&limit=201`)).status).toBe(422);
+    expect((await api('p_rahul', 'GET', `/app/v1/trips/${T}/messages?after_seq=0&before_seq=5`)).status).toBe(422);
     expect((await api('p_rahul', 'GET', `/app/v1/trips/${T}/messages?after_seq=0&limit=2`)).status).toBe(200);
   });
 
@@ -250,8 +254,8 @@ describe('B11: two instances starting at the same moment', () => {
     const b = new pg.Pool({ connectionString: `${base}/${name}` });
     const [ra, rb] = await Promise.all([migrate(a), migrate(b)]);
     const applied = [...ra, ...rb];
-    expect(applied.slice(0, 5)).toEqual(['001_core.sql', '002_people_actions.sql', '003_supabase.sql', '004_v1_conventions.sql', '005_v1_people.sql']); // each file is applied once, by whichever instance got the lock first
-    expect([applied.length, applied[5]]).toEqual([6, expect.stringMatching(/^data\/cities-in\.json#/)]); // and the cities file once
+    expect(applied.slice(0, 6)).toEqual(['001_core.sql', '002_people_actions.sql', '003_supabase.sql', '004_v1_conventions.sql', '005_v1_people.sql', '006_v1_room.sql']); // each file is applied once, by whichever instance got the lock first
+    expect([new Set(applied).size === applied.length, applied.at(-1)]).toEqual([true, expect.stringMatching(/^data\/cities-in\.json#/)]); // later phases add files after 006; the cities file is loaded once, last
     await a.end();
     await b.end();
   });
@@ -278,7 +282,7 @@ describe('R2 (real Go): an empty body with content-type: application/json', () =
     expect((await h.app.inject({ method: 'POST', url: `/app/v1/trips/${T}/read`, payload: '', headers })).statusCode).toBe(204);
     const msg = await h.app.inject({ method: 'POST', url: `/app/v1/trips/${T}/messages`, payload: '', headers });
     expect(msg.statusCode).toBe(422);
-    expect(JSON.parse(msg.body).error.message).toMatch(/client_id/);
+    expect(JSON.parse(msg.body).error.message).toMatch(/client_message_id/);
   });
 });
 

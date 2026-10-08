@@ -129,9 +129,9 @@ describe('the trip as the app reads it (TripView)', () => {
   it('carries stage, me, chat, needs_you_count and can; unread counts others\' messages after my read marker; POST /read moves it by seq or by message; ETag answers 304; include trims', async () => {
     const rahul = t.as('p_rahul');
     const arjun = t.as('p_arjun'); // Kabir left t_a above
-    const m1 = await t.api(arjun, 'POST', '/app/v1/trips/t_a/messages', { client_id: 'r1', text: 'hello' });
-    const m2 = await t.api(arjun, 'POST', '/app/v1/trips/t_a/messages', { client_id: 'r2', text: 'anyone?' });
-    await t.api(rahul, 'POST', '/app/v1/trips/t_a/messages', { client_id: 'r3', text: 'here' }); // my own: never unread for me
+    const m1 = await t.api(arjun, 'POST', '/app/v1/trips/t_a/messages', { client_message_id: 'r1', text: 'hello' });
+    const m2 = await t.api(arjun, 'POST', '/app/v1/trips/t_a/messages', { client_message_id: 'r2', text: 'anyone?' });
+    await t.api(rahul, 'POST', '/app/v1/trips/t_a/messages', { client_message_id: 'r3', text: 'here' }); // my own: never unread for me
     let view = (await t.api(rahul, 'GET', '/app/v1/trips/t_a')).body;
     expect([view.stage, view.me.last_read_seq, view.me.unread_count, view.chat.unread_count, view.chat.participants_preview, view.needs_you_count, view.can]).toEqual([
       'deciding', 0, 2, 2, [{ kind: 'person', person_id: 'p_rahul' }, { kind: 'person', person_id: 'p_arjun' }], 0, { invite: true, manage_trip: true }, // dates seeded, no destination

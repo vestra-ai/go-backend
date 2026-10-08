@@ -8,3 +8,6 @@ logs
 supabase/signing_keys.json
 supabase/.temp
 supabase/.branches
+
+# Agent worktrees made by the Claude desktop app
+.claude/worktrees/

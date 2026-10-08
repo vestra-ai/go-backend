@@ -5,17 +5,22 @@ import type pg from 'pg';
 import type { Ctx } from '../context.js';
 import { check } from '../contract/index.js';
 import { newId } from '../db/ids.js';
-import { onceIfKeyed } from '../db/once.js';
-import { withTx } from '../db/pool.js';
+import { once } from '../db/once.js';
+import { withTx, type AfterCommit } from '../db/pool.js';
+import type { ChangeKind } from '../live/live.js';
 import { change, emit, nextSeq } from '../db/write-change.js';
 import type { Db } from '../db/pool.js';
 import type { PatchTripMeBody } from '../api/bodies.js';
-import { conflict, invalid, notFound } from './errors.js';
+import { resolveAttachments } from './attachments.js';
+import { conflict, invalid, notFound, rateLimited } from './errors.js';
 import { BUDGET_BANDS, knowWithVibe } from './join-answers.js';
 import { assertDate } from './limits.js';
-import { expenseOf, messageForGo, personForGo, recordLineOf } from './mappers.js';
-import type { ExpenseRow, MessageRow, RecordLineRow } from './mappers.js';
+import { decisionOf, expenseOf, messageForGo, personForGo, recordLineOf, tallyOf } from './mappers.js';
+import type { DecisionRow, ExpenseRow, MessageRow, RecordLineRow, VoteRow } from './mappers.js';
+import { loadMessageForApp } from './room.js';
 import { activePeople, buildSnapshot } from './snapshot.js';
+import { joinedText, leftText, personName, postSystemMessage, tripCreatedText } from './system-messages.js';
+import type { Decision, Mandate, Message, RecordLine } from './types.js';
 import { closeDecision, lockBooking, lockDecision, votesOf } from './voting.js';
 
 export class Forbidden extends Error {}
@@ -99,8 +104,10 @@ export async function createTrip(ctx: Ctx, organizerId: string, input: NewTrip) 
     const seq = await nextSeq(db, trip_id); // 1
     const trip = await buildSnapshot(db, trip_id, ctx.publicBaseUrl);
     await emit(db, trip_id, seq, 'trip.created', { trip });
-    after(() => ctx.live.publish(trip_id, { kind: 'trip', seq }));
-    after(() => ctx.live.publish(trip_id, { kind: 'home_changed', person_id: organizerId }));
+    // The room's first line, after the event (so trip.created keeps change 1).
+    await postSystemMessage(ctx, db, after, trip_id, tripCreatedText(trip.people[0]!.name));
+    after(() => ctx.live.publish(trip_id, { kind: 'trip', seq, kinds: ['trip', 'people'] }));
+    after(() => ctx.live.publish(trip_id, { kind: 'home', person_id: organizerId }));
     return { trip_id, invite_url: trip.invite_url, seq };
   });
 }
@@ -155,11 +162,13 @@ export async function joinTrip(ctx: Ctx, code: string, personId: string, answers
       [tripId, personId],
     );
     await db.query('delete from invite_marks where person_id = $1 and code = $2', [personId, code]);
-    const person = (await activePeople(db, tripId)).find((p) => p.person_id === personId)!;
+    const people = await activePeople(db, tripId);
+    const person = people.find((p) => p.person_id === personId)!;
     let seq = await change(db, tripId, 'person.joined', { person: personForGo(person) });
     if (band) seq = await change(db, tripId, 'trip.updated', { by: { kind: 'system' }, changed: ['budget'] });
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
-    after(() => ctx.live.publish(tripId, { kind: 'home_changed', person_id: personId }));
+    await postSystemMessage(ctx, db, after, tripId, joinedText(person.name)); // after the events, so they keep adjacent numbers
+    after(() => ctx.live.publish(tripId, { kind: 'trip', seq, kinds: band ? ['people', 'budget'] : ['people'] }));
+    publishHome(ctx, after, tripId, people.map((p) => p.person_id)); // the joiner's home gains the trip; everyone's card shows one more face
     return { trip_id: tripId, seq, already: false };
   });
 }
@@ -185,9 +194,11 @@ export async function leaveTrip(ctx: Ctx, tripId: string, personId: string) {
     let seq = await change(db, tripId, 'person.left', { person_id: personId });
     // Their budget answer no longer counts, so the band (and how many answered) moved: say so, naming nobody.
     if (left.budget_min_minor !== null) seq = await change(db, tripId, 'trip.updated', { by: { kind: 'system' }, changed: ['budget'] });
+    await postSystemMessage(ctx, db, after, tripId, leftText(await personName(db, personId)));
     const lastSeq = seq;
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq: lastSeq }));
-    after(() => ctx.live.publish(tripId, { kind: 'home_changed', person_id: personId }));
+    const kinds: ChangeKind[] = left.budget_min_minor !== null ? ['people', 'budget'] : ['people'];
+    after(() => ctx.live.publish(tripId, { kind: 'trip', seq: lastSeq, kinds }));
+    publishHome(ctx, after, tripId, [personId, ...(await activePeople(db, tripId)).map((p) => p.person_id)]);
     // A vote that was only waiting for the person who left has now been voted on by everyone.
     const ready = await db.query(
       `select d.decision_id from decisions d where d.trip_id = $1 and d.status = 'open'
@@ -206,9 +217,14 @@ export async function setGoPaused(ctx: Ctx, tripId: string, personId: string, pa
     await db.query('update trip_people set go_paused = $3 where trip_id = $1 and person_id = $2', [tripId, personId, paused]);
     const person = (await activePeople(db, tripId)).find((p) => p.person_id === personId)!;
     const seq = await change(db, tripId, 'person.updated', { person: personForGo(person), changed: ['go_paused'] });
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
+    after(() => ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['people'] }));
     return { seq };
   });
+}
+
+/** `home_changed` for each of these people, after the commit (app contract §3.1: the home screen's data moved). */
+export function publishHome(ctx: Ctx, after: AfterCommit, tripId: string, personIds: string[]): void {
+  for (const person_id of new Set(personIds)) after(() => ctx.live.publish(tripId, { kind: 'home', person_id }));
 }
 
 // ---------------------------------------------------------------- messages
@@ -219,46 +235,61 @@ export function mentionsGo(text: string | undefined, repliesToGo: boolean, about
 }
 
 export interface NewMessage {
-  client_id?: string; // the app's own id for this press, so a retry does not post twice (or the Idempotency-Key header)
+  /** The app's own id for this message, unique per (trip, person): a retry does not post twice and gets the same Message back. */
+  client_message_id: string;
   text?: string;
+  /** `{ upload_id, caption? }` for a file the app uploaded, or a contract Attachment (a shared location, a link). */
   attachments?: unknown[];
   reply_to?: string;
   about_message_id?: string;
   mentions?: string[];
 }
 
-export async function postPersonMessage(ctx: Ctx, tripId: string, personId: string, input: NewMessage) {
-  return onceIfKeyed(ctx.pool, tripId, input.client_id && `app:msg:${personId}:${input.client_id}`, async (db, after) => {
+/** App contract §4.6: 30 messages per minute per person per trip. */
+export const MESSAGES_PER_MINUTE = 30;
+
+/**
+ * A person posts in the room. Stored once per (trip, person, client_message_id): a repeat gets the first answer, the
+ * stored Message. Go gets `message.created` in the same transaction; the room sees it live after the commit.
+ */
+export async function postPersonMessage(ctx: Ctx, tripId: string, personId: string, input: NewMessage): Promise<Message> {
+  const stored = await once(ctx.pool, tripId, `app:msg:${personId}:${input.client_message_id}`, async (db, after) => {
     const member = await requireMember(db, tripId, personId);
-    if (!input.text && !(input.attachments?.length)) throw invalid('text or an attachment is required');
-    for (const [i, a] of (input.attachments ?? []).entries()) {
-      const ok = check('Attachment', a);
-      if (!ok.ok) throw invalid(`attachments.${i}: ${ok.message}`);
-    }
+    if (!input.text && !(input.attachments?.length)) throw invalid('text or an attachment is required', 'text');
+    const recent = (await db.query(
+      `select count(*)::int as n from messages where trip_id = $1 and author_person_id = $2 and sent_at > now() - interval '1 minute'`,
+      [tripId, personId],
+    )).rows[0].n as number;
+    const perMinute = ctx.limits?.messagesPerMinute ?? MESSAGES_PER_MINUTE;
+    if (recent >= perMinute) throw rateLimited(`at most ${perMinute} messages a minute: wait a little`, 10);
+    const attachments = await resolveAttachments(ctx, db, personId, input.attachments ?? []);
     const mentions = [...new Set(input.mentions ?? [])];
     if (mentions.length) {
       const found = await db.query('select person_id from trip_people where trip_id = $1 and left_at is null and person_id = any($2)', [tripId, mentions]);
-      if (found.rowCount !== mentions.length) throw invalid('mentions: someone is not in the trip');
+      const have = new Set(found.rows.map((r) => r.person_id as string));
+      const i = mentions.findIndex((id) => !have.has(id));
+      if (i >= 0) throw invalid(`mentions[${i}]: ${mentions[i]} is not in the trip`, `mentions[${i}]`);
     }
     let repliesToGo = false;
-    for (const ref of [input.reply_to, input.about_message_id]) {
+    for (const [field, ref] of [['reply_to', input.reply_to], ['about_message_id', input.about_message_id]] as const) {
       if (!ref) continue;
       const m = (await db.query('select author_kind from messages where trip_id = $1 and message_id = $2', [tripId, ref])).rows[0];
-      if (!m) throw invalid(`message ${ref} is not in this trip`);
-      if (ref === input.reply_to && m.author_kind === 'go') repliesToGo = true;
+      if (!m) throw invalid(`${field}: message ${ref} is not in this trip`, field);
+      if (field === 'reply_to' && m.author_kind === 'go') repliesToGo = true;
     }
     const seq = await nextSeq(db, tripId);
     const row = (await db.query<MessageRow>(
       `insert into messages (message_id, trip_id, seq, updated_seq, author_kind, author_person_id, text, attachments, reply_to, about_message_id, mentions_go, mentions, withheld)
        values ($1,$2,$3,$3,'person',$4,$5,$6,$7,$8,$9,$10,$11) returning *`,
-      [newId('m'), tripId, seq, personId, input.text ?? null, JSON.stringify(input.attachments ?? []), input.reply_to ?? null, input.about_message_id ?? null,
+      [newId('m'), tripId, seq, personId, input.text ?? null, JSON.stringify(attachments), input.reply_to ?? null, input.about_message_id ?? null,
        mentionsGo(input.text, repliesToGo, !!input.about_message_id), JSON.stringify(mentions), member.go_paused],
     )).rows[0]!;
     // Go gets the message as it may see it: a person who paused Go has `withheld: true` and no words.
     await emit(db, tripId, seq, 'message.created', { message: messageForGo(row, []) });
     after(() => ctx.live.publish(tripId, { kind: 'message', message_id: row.message_id, updated_seq: seq }));
-    return { message_id: row.message_id, seq };
+    return { message_id: row.message_id };
   });
+  return loadMessageForApp(ctx, ctx.pool, tripId, stored.message_id);
 }
 
 async function ownMessage(db: pg.PoolClient, tripId: string, personId: string, messageId: string): Promise<MessageRow> {
@@ -269,7 +300,7 @@ async function ownMessage(db: pg.PoolClient, tripId: string, personId: string, m
   return row;
 }
 
-export async function editMessage(ctx: Ctx, tripId: string, personId: string, messageId: string, text: string) {
+export async function editMessage(ctx: Ctx, tripId: string, personId: string, messageId: string, text: string): Promise<Message> {
   return withTx(ctx.pool, async (db, after) => {
     const member = await requireMember(db, tripId, personId);
     await ownMessage(db, tripId, personId, messageId);
@@ -279,11 +310,11 @@ export async function editMessage(ctx: Ctx, tripId: string, personId: string, me
     const reactions = (await db.query('select message_id, person_id, emoji from reactions where message_id = $1 order by created_at', [messageId])).rows;
     await emit(db, tripId, seq, 'message.edited', { message: messageForGo(row, reactions) });
     after(() => ctx.live.publish(tripId, { kind: 'message', message_id: messageId, updated_seq: seq }));
-    return { seq };
+    return loadMessageForApp(ctx, db, tripId, messageId);
   });
 }
 
-export async function deleteMessage(ctx: Ctx, tripId: string, personId: string, messageId: string) {
+export async function deleteMessage(ctx: Ctx, tripId: string, personId: string, messageId: string): Promise<Message> {
   return withTx(ctx.pool, async (db, after) => {
     await requireMember(db, tripId, personId);
     await ownMessage(db, tripId, personId, messageId);
@@ -291,85 +322,140 @@ export async function deleteMessage(ctx: Ctx, tripId: string, personId: string, 
     await db.query(`update messages set deleted = true, text = null, attachments = '[]', updated_seq = $2 where message_id = $1`, [messageId, seq]);
     await emit(db, tripId, seq, 'message.deleted', { message_id: messageId });
     after(() => ctx.live.publish(tripId, { kind: 'message', message_id: messageId, updated_seq: seq }));
-    return { seq };
+    return loadMessageForApp(ctx, db, tripId, messageId);
   });
 }
 
-export async function reactTo(ctx: Ctx, tripId: string, personId: string, messageId: string, emoji: string, on: boolean) {
+/**
+ * One reaction per person per message (app contract §4.6): `emoji` sets or replaces it, `null` takes it back. A change
+ * of emoji is two changes for Go (`reaction.removed`, then `reaction.added`), each with its own number; the message's
+ * `updated_seq` is the last. The same emoji again, or `null` with none, changes nothing.
+ */
+export async function setReaction(ctx: Ctx, tripId: string, personId: string, messageId: string, emoji: string | null): Promise<Message> {
   return withTx(ctx.pool, async (db, after) => {
     await requireMember(db, tripId, personId);
-    const m = (await db.query('select deleted from messages where trip_id = $1 and message_id = $2', [tripId, messageId])).rows[0];
+    const m = (await db.query('select deleted from messages where trip_id = $1 and message_id = $2 for update', [tripId, messageId])).rows[0];
     if (!m) throw notFound(`message ${messageId} does not exist`);
     if (m.deleted) throw conflict('the message is deleted');
-    if (on) {
-      const added = await db.query('insert into reactions (trip_id, message_id, person_id, emoji) values ($1,$2,$3,$4) on conflict do nothing', [tripId, messageId, personId, emoji]);
-      if (!added.rowCount) return { seq: null }; // already reacted: nothing changed
-    } else {
-      const gone = await db.query('delete from reactions where message_id = $1 and person_id = $2 and emoji = $3', [messageId, personId, emoji]);
-      if (!gone.rowCount) return { seq: null };
+    const current = (await db.query('select emoji from reactions where message_id = $1 and person_id = $2', [messageId, personId])).rows[0]?.emoji as string | undefined;
+    if (current === (emoji ?? undefined)) return loadMessageForApp(ctx, db, tripId, messageId);
+    let seq: number | undefined;
+    if (current !== undefined) {
+      await db.query('delete from reactions where message_id = $1 and person_id = $2', [messageId, personId]);
+      seq = await change(db, tripId, 'reaction.removed', { message_id: messageId, reaction: { emoji: current, person_id: personId } });
     }
-    const seq = await nextSeq(db, tripId);
+    if (emoji !== null) {
+      await db.query('insert into reactions (trip_id, message_id, person_id, emoji) values ($1,$2,$3,$4)', [tripId, messageId, personId, emoji]);
+      seq = await change(db, tripId, 'reaction.added', { message_id: messageId, reaction: { emoji, person_id: personId } });
+    }
     await db.query('update messages set updated_seq = $1 where message_id = $2', [seq, messageId]);
-    await emit(db, tripId, seq, on ? 'reaction.added' : 'reaction.removed', { message_id: messageId, reaction: { emoji, person_id: personId } });
-    after(() => ctx.live.publish(tripId, { kind: 'message', message_id: messageId, updated_seq: seq }));
-    return { seq };
+    const last = seq!;
+    after(() => ctx.live.publish(tripId, { kind: 'message', message_id: messageId, updated_seq: last }));
+    return loadMessageForApp(ctx, db, tripId, messageId);
   });
 }
 
 // ---------------------------------------------------------------- votes, mandates and the record
 
-/** A person's vote (they may change it until the vote closes). Closes the vote when everyone has voted. */
-export async function castVote(ctx: Ctx, tripId: string, personId: string, decisionId: string, optionIndex: number) {
+/** A Decision as the app reads it: the contract's object plus this person's own vote (app contract §4.8). */
+export type DecisionForPerson = Decision & { my_vote: { option_index: number } | { flexible: true } | null };
+
+const myVoteOf = (votes: VoteRow[], personId: string): DecisionForPerson['my_vote'] => {
+  const mine = votes.find((v) => v.person_id === personId);
+  return !mine ? null : mine.flexible ? { flexible: true } : { option_index: mine.option_index! };
+};
+
+export const decisionForPerson = (row: DecisionRow, votes: VoteRow[], personId: string): DecisionForPerson => ({ ...decisionOf(row, votes), my_vote: myVoteOf(votes, personId) });
+
+export async function getDecision(ctx: Ctx, tripId: string, personId: string, decisionId: string): Promise<DecisionForPerson> {
+  const row = (await ctx.pool.query<DecisionRow>('select * from decisions where decision_id = $1 and trip_id = $2', [decisionId, tripId])).rows[0];
+  if (!row) throw notFound(`decision ${decisionId} does not exist in trip ${tripId}`);
+  return decisionForPerson(row, await votesOf(ctx.pool, decisionId), personId);
+}
+
+/** `decision.voted` for Go: an anonymous vote's event has totals only (no person, no option). Flexible and retracted are said either way. */
+const votedEvent = (d: DecisionRow, votes: VoteRow[], personId: string, mine: { option_index?: number; flexible?: true; retracted?: true }) => ({
+  decision_id: d.decision_id,
+  ...(d.anonymous ? {} : { person_id: personId }),
+  ...(d.anonymous && mine.option_index !== undefined ? {} : mine),
+  voted: votes.length,
+  of: d.of_count,
+  tally: tallyOf(d.options.length, votes),
+});
+
+/**
+ * A person's vote, for an option or "I'm flexible" (GO-CHANGES 1.5): they may change it until the vote closes. Closes
+ * the vote when everyone has voted. A flexible vote counts toward `voted` and leaves the tally alone.
+ */
+export async function castVote(ctx: Ctx, tripId: string, personId: string, decisionId: string, choice: { option_index: number } | { flexible: true }): Promise<DecisionForPerson> {
   return withTx(ctx.pool, async (db, after) => {
     await requireMember(db, tripId, personId);
     const d = await lockDecision(db, tripId, decisionId);
     if (d.status !== 'open') throw conflict(`decision ${decisionId} is ${d.status}`);
     // A vote about cancelling a booking may close below: hold the booking before this path takes a change number.
     if (d.cancels_booking_id) await lockBooking(db, tripId, d.cancels_booking_id);
-    if (!Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= d.options.length) throw invalid('option_index is not one of the options');
+    const flexible = 'flexible' in choice;
+    const optionIndex = flexible ? null : choice.option_index;
+    if (!flexible && (!Number.isInteger(optionIndex) || optionIndex! < 0 || optionIndex! >= d.options.length)) throw invalid('option_index is not one of the options', 'option_index');
     await db.query(
-      `insert into votes (decision_id, person_id, option_index) values ($1,$2,$3)
-       on conflict (decision_id, person_id) do update set option_index = excluded.option_index, voted_at = now()`,
-      [decisionId, personId, optionIndex],
+      `insert into votes (decision_id, person_id, option_index, flexible) values ($1,$2,$3,$4)
+       on conflict (decision_id, person_id) do update set option_index = excluded.option_index, flexible = excluded.flexible, voted_at = now()`,
+      [decisionId, personId, optionIndex, flexible],
     );
     const votes = await votesOf(db, decisionId);
-    const tally = d.options.map((_, i) => votes.filter((v) => v.option_index === i).length);
-    // An anonymous vote's event has totals only: no person, no option.
-    const seq = await change(db, tripId, 'decision.voted', {
-      decision_id: decisionId,
-      ...(d.anonymous ? {} : { person_id: personId, option_index: optionIndex }),
-      voted: votes.length,
-      of: d.of_count,
-      tally,
-    });
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
-    if (votes.length >= d.of_count) await closeDecision(ctx, db, after, tripId, decisionId, 'everyone_voted');
-    return { seq };
+    const seq = await change(db, tripId, 'decision.voted', votedEvent(d, votes, personId, flexible ? { flexible: true } : { option_index: optionIndex! }));
+    after(() => ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['decision'] }));
+    const closed = votes.length >= d.of_count ? await closeDecision(ctx, db, after, tripId, decisionId, 'everyone_voted') : null;
+    return closed ? { ...closed.decision, my_vote: myVoteOf(votes, personId) } : decisionForPerson(d, votes, personId);
   });
 }
 
-/** Anyone in the trip may close a vote early. */
-export async function closeVoteByPerson(ctx: Ctx, tripId: string, personId: string, decisionId: string) {
-  return withTx(ctx.pool, async (db, after) => {
-    await requireMember(db, tripId, personId);
-    return closeDecision(ctx, db, after, tripId, decisionId, 'closed_by_person');
-  });
-}
-
-export async function cancelDecision(ctx: Ctx, tripId: string, personId: string, decisionId: string) {
+/** Takes a vote back (GO-CHANGES 1.9): `decision.voted` with `retracted: true` and the new totals. Behind `features.vote_retract`. */
+export async function retractVote(ctx: Ctx, tripId: string, personId: string, decisionId: string): Promise<DecisionForPerson> {
   return withTx(ctx.pool, async (db, after) => {
     await requireMember(db, tripId, personId);
     const d = await lockDecision(db, tripId, decisionId);
     if (d.status !== 'open') throw conflict(`decision ${decisionId} is ${d.status}`);
-    await db.query(`update decisions set status = 'cancelled' where decision_id = $1`, [decisionId]);
+    const gone = await db.query('delete from votes where decision_id = $1 and person_id = $2', [decisionId, personId]);
+    if (!gone.rowCount) throw conflict('you have not voted');
+    const votes = await votesOf(db, decisionId);
+    const seq = await change(db, tripId, 'decision.voted', votedEvent(d, votes, personId, { retracted: true }));
+    after(() => ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['decision'] }));
+    return decisionForPerson(d, votes, personId);
+  });
+}
+
+/** App contract §4.8: closing or calling off a vote is for the organizer or the person who opened it. */
+async function requireOrganizerOrOpener(db: pg.PoolClient, tripId: string, personId: string, d: DecisionRow): Promise<void> {
+  const trip = (await db.query('select organizer_person_id from trips where trip_id = $1', [tripId])).rows[0];
+  if (trip?.organizer_person_id !== personId && d.opened_by_person_id !== personId) throw new Forbidden('only the organizer or the person who opened the vote can do that');
+}
+
+/** The organizer or the opener closes a vote early. */
+export async function closeVoteByPerson(ctx: Ctx, tripId: string, personId: string, decisionId: string): Promise<DecisionForPerson> {
+  return withTx(ctx.pool, async (db, after) => {
+    await requireMember(db, tripId, personId);
+    await requireOrganizerOrOpener(db, tripId, personId, await lockDecision(db, tripId, decisionId));
+    const { decision } = await closeDecision(ctx, db, after, tripId, decisionId, 'closed_by_person');
+    return { ...decision, my_vote: myVoteOf(await votesOf(db, decisionId), personId) };
+  });
+}
+
+export async function cancelDecision(ctx: Ctx, tripId: string, personId: string, decisionId: string): Promise<DecisionForPerson> {
+  return withTx(ctx.pool, async (db, after) => {
+    await requireMember(db, tripId, personId);
+    const d = await lockDecision(db, tripId, decisionId);
+    await requireOrganizerOrOpener(db, tripId, personId, d);
+    if (d.status !== 'open') throw conflict(`decision ${decisionId} is ${d.status}`);
+    const row = (await db.query<DecisionRow>(`update decisions set status = 'cancelled' where decision_id = $1 returning *`, [decisionId])).rows[0]!;
     const seq = await change(db, tripId, 'decision.cancelled', { decision_id: decisionId, by: { kind: 'person', person_id: personId } });
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
-    return { seq };
+    after(() => ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['decision'] }));
+    return decisionForPerson(row, await votesOf(db, decisionId), personId);
   });
 }
 
 /** The mandate card's buttons belong to the server: only the payer can tap them, and they are part of the spend check. */
-export async function answerMandate(ctx: Ctx, tripId: string, personId: string, decisionId: string, answer: 'confirm' | 'decline') {
+export async function answerMandate(ctx: Ctx, tripId: string, personId: string, decisionId: string, answer: 'confirm' | 'decline'): Promise<Mandate> {
   return withTx(ctx.pool, async (db, after) => {
     await requireMember(db, tripId, personId);
     const d = await lockDecision(db, tripId, decisionId);
@@ -379,22 +465,61 @@ export async function answerMandate(ctx: Ctx, tripId: string, personId: string, 
     const next = answer === 'confirm' ? { ...m, confirmed_at: new Date().toISOString() } : { ...m, declined_at: new Date().toISOString() };
     await db.query('update decisions set mandate = $2 where decision_id = $1', [decisionId, JSON.stringify(next)]);
     const seq = await change(db, tripId, answer === 'confirm' ? 'mandate.confirmed' : 'mandate.declined', { decision_id: decisionId, person_id: personId });
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
-    return { seq };
+    after(() => ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['mandate'] }));
+    return next as Mandate;
   });
 }
 
-/** Anyone in the trip can undo a line. Go never undoes one and never writes it back on its own. */
-export async function undoRecordLine(ctx: Ctx, tripId: string, personId: string, lineId: string) {
+/** The trip record (app contract §4.8): active and done lines, oldest first; undone lines too when asked. `seq` is read with them. */
+export async function getRecord(ctx: Ctx, tripId: string, includeUndone: boolean): Promise<{ lines: RecordLine[]; seq: number }> {
+  const db = await ctx.pool.connect();
+  try {
+    await db.query('begin transaction isolation level repeatable read read only');
+    const seq = (await db.query('select seq from trips where trip_id = $1', [tripId])).rows[0]?.seq as number | undefined;
+    if (seq === undefined) throw notFound(`trip ${tripId} does not exist`);
+    const { rows } = await db.query<RecordLineRow>(
+      `select * from record_lines where trip_id = $1 ${includeUndone ? '' : "and status <> 'undone'"} order by created_at, line_id`,
+      [tripId],
+    );
+    await db.query('commit');
+    return { lines: rows.map(recordLineOf), seq };
+  } catch (err) {
+    await db.query('rollback').catch(() => {});
+    throw err;
+  } finally {
+    db.release();
+  }
+}
+
+async function lockLine(db: pg.PoolClient, tripId: string, lineId: string): Promise<RecordLineRow> {
+  const cur = (await db.query<RecordLineRow>('select * from record_lines where trip_id = $1 and line_id = $2 for update', [tripId, lineId])).rows[0];
+  if (!cur) throw notFound(`line ${lineId} does not exist`);
+  return cur;
+}
+
+/** Anyone in the trip can undo a line. Go never undoes one and never writes it back on its own. Already undone: the line, unchanged. */
+export async function undoRecordLine(ctx: Ctx, tripId: string, personId: string, lineId: string): Promise<RecordLine> {
   return withTx(ctx.pool, async (db, after) => {
     await requireMember(db, tripId, personId);
-    const cur = (await db.query<RecordLineRow>('select * from record_lines where trip_id = $1 and line_id = $2 for update', [tripId, lineId])).rows[0];
-    if (!cur) throw notFound(`line ${lineId} does not exist`);
-    if (cur.status === 'undone') return { seq: null };
+    const cur = await lockLine(db, tripId, lineId);
+    if (cur.status === 'undone') return recordLineOf(cur);
     const line = (await db.query<RecordLineRow>(`update record_lines set status = 'undone', updated_at = now() where line_id = $1 returning *`, [lineId])).rows[0]!;
     const seq = await change(db, tripId, 'record.changed', { line: recordLineOf(line), change: 'undone', by: { kind: 'person', person_id: personId } });
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
-    return { seq };
+    after(() => ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['record'] }));
+    return recordLineOf(line);
+  });
+}
+
+/** Takes an undo back: the line is active again (`record.changed` updated). 409 when it was not undone. */
+export async function redoRecordLine(ctx: Ctx, tripId: string, personId: string, lineId: string): Promise<RecordLine> {
+  return withTx(ctx.pool, async (db, after) => {
+    await requireMember(db, tripId, personId);
+    const cur = await lockLine(db, tripId, lineId);
+    if (cur.status !== 'undone') throw conflict(`line ${lineId} is ${cur.status}, not undone`);
+    const line = (await db.query<RecordLineRow>(`update record_lines set status = 'active', updated_at = now() where line_id = $1 returning *`, [lineId])).rows[0]!;
+    const seq = await change(db, tripId, 'record.changed', { line: recordLineOf(line), change: 'updated', by: { kind: 'person', person_id: personId } });
+    after(() => ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['record'] }));
+    return recordLineOf(line);
   });
 }
 
@@ -428,7 +553,7 @@ export async function addPersonExpense(ctx: Ctx, tripId: string, personId: strin
       [newId('e'), tripId, input.paid_by_person_id, input.amount_minor, trip.currency, input.note, input.category, JSON.stringify(input.split_person_ids), input.booking_id ?? null, personId],
     )).rows[0]!;
     const seq = await change(db, tripId, 'expense.changed', { expense: expenseOf(expense), change: 'added', by: { kind: 'person', person_id: personId } });
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
+    after(() => ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['expense'] }));
     after(() => pushOwed(ctx, tripId, expense));
     return { expense_id: expense.expense_id, seq };
   });
@@ -440,7 +565,7 @@ export async function removePersonExpense(ctx: Ctx, tripId: string, personId: st
     const row = (await db.query<ExpenseRow>('update expenses set removed_at = now() where trip_id = $1 and expense_id = $2 and removed_at is null returning *', [tripId, expenseId])).rows[0];
     if (!row) throw notFound(`expense ${expenseId} does not exist`);
     const seq = await change(db, tripId, 'expense.changed', { expense: expenseOf(row), change: 'removed', by: { kind: 'person', person_id: personId } });
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
+    after(() => ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['expense'] }));
     return { seq };
   });
 }

@@ -50,10 +50,10 @@ export function personForApp(p: Person, viewerId: string): Person {
 
 const PREVIEW_CHARS = 80;
 
-/** Messages posted after what the person has read, by others, still standing. */
+/** Messages posted after what the person has read, by others, still standing. The server's own pills are not unread. */
 export async function unreadCount(db: pg.Pool | pg.PoolClient, tripId: string, personId: string, lastReadSeq: number): Promise<number> {
   const { rows } = await db.query(
-    'select count(*)::int as n from messages where trip_id = $1 and seq > $2 and deleted = false and author_person_id is distinct from $3',
+    `select count(*)::int as n from messages where trip_id = $1 and seq > $2 and deleted = false and author_kind <> 'system' and author_person_id is distinct from $3`,
     [tripId, lastReadSeq, personId],
   );
   return rows[0].n as number;
@@ -70,12 +70,12 @@ export async function readTripView(ctx: Ctx, tripId: string, personId: string, i
     const unread = await unreadCount(db, tripId, personId, membership.last_read_seq);
     const last = (await db.query(
       `select message_id, author_kind, author_person_id, text, card->>'fallback_text' as fallback, sent_at from messages
-        where trip_id = $1 and deleted = false order by seq desc limit 1`,
+        where trip_id = $1 and deleted = false and author_kind <> 'system' order by seq desc limit 1`,
       [tripId],
     )).rows[0];
-    // Who talks in the room: Go first when it ever posted, then people by their latest message.
+    // Who talks in the room: Go first when it ever posted, then people by their latest message. The server's pills are nobody.
     const talkers = await db.query(
-      `select author_kind, author_person_id, max(seq) as last_seq from messages where trip_id = $1 and deleted = false
+      `select author_kind, author_person_id, max(seq) as last_seq from messages where trip_id = $1 and deleted = false and author_kind <> 'system'
         group by author_kind, author_person_id order by (author_kind = 'go') desc, last_seq desc limit 4`,
       [tripId],
     );

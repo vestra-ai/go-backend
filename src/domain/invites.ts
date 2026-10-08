@@ -106,7 +106,7 @@ export async function markInvite(ctx: Ctx, code: string, personId: string, state
        on conflict (person_id, code) do update set state = excluded.state, at = now()`,
       [personId, code, state],
     );
-    after(() => ctx.live.publish(invite.trip_id, { kind: 'home_changed', person_id: personId }));
+    after(() => ctx.live.publish(invite.trip_id, { kind: 'home', person_id: personId }));
   });
 }
 

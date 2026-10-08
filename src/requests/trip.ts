@@ -40,6 +40,6 @@ export const updateTrip = (ctx: Ctx) => async (p: any, raw: Record<string, unkno
     await db.query(`update trips set ${sets.join(', ')} where trip_id = $1`, values);
     const changed = FIELDS.filter((f) => p[f] !== undefined);
     const seq = await change(db, p.trip_id, 'trip.updated', { by: { kind: 'go' }, changed });
-    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq }));
+    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: changed.includes('itinerary') ? ['trip', 'itinerary'] : ['trip'] }));
     return { seq };
   });

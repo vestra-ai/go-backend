@@ -27,7 +27,7 @@ export const addRecordLine = (ctx: Ctx) => async (p: any) =>
       [newId('r'), p.trip_id, p.kind, p.text, JSON.stringify(p.proof), JSON.stringify(p.person_ids), p.due_at ?? null],
     )).rows[0]!;
     const seq = await change(db, p.trip_id, 'record.changed', { line: recordLineOf(line), change: 'added', by: { kind: 'go' } });
-    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq }));
+    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: ['record'] }));
     return { line_id: line.line_id, seq };
   });
 
@@ -54,6 +54,6 @@ export const updateRecordLine = (ctx: Ctx) => async (p: any) =>
       change: p.status === 'done' && current.status !== 'done' ? 'done' : 'updated',
       by: { kind: 'go' },
     });
-    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq }));
+    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: ['record'] }));
     return { seq };
   });

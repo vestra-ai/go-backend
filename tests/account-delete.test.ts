@@ -20,7 +20,7 @@ describe('deleting an account', () => {
     await h.pool.query(`update people set photo_url = 'https://x.example/kabir.png' where person_id = 'p_kabir'`);
     await t.api(kabir, 'PUT', v1('/trips/t_goa/me/join-answers'), { from_city: 'Pune', spend_band: 'lt15' });
     await t.api(kabir, 'PUT', v1('/me/upi'), { upi_id: 'kabir@okbank' });
-    const m = await t.api(kabir, 'POST', v1('/trips/t_goa/messages'), { client_id: 'k1', text: 'I booked the cab' });
+    const m = await t.api(kabir, 'POST', v1('/trips/t_goa/messages'), { client_message_id: 'k1', text: 'I booked the cab' });
     await t.api(kabir, 'POST', v1('/invites/inv_t_other/later'));
     const vote = (await h.go.call('open_vote', { request_id: 'rq_v1', trip_id: 't_goa', question: 'Where?', kind: 'choice', anonymous: false, options: [{ label: 'A' }, { label: 'B' }] })).result;
     await t.api(kabir, 'PUT', v1(`/trips/t_goa/decisions/${vote.decision_id}/vote`), { option_index: 0 });
@@ -52,7 +52,7 @@ describe('deleting an account', () => {
     // His token is refused from now on, everywhere.
     expect((await t.api(kabir, 'GET', v1('/me'))).status).toBe(401);
     expect((await t.api(kabir, 'GET', v1('/home'))).status).toBe(401);
-    expect((await t.api(kabir, 'POST', v1('/trips/t_goa/messages'), { client_id: 'k2', text: 'still here?' })).status).toBe(401);
+    expect((await t.api(kabir, 'POST', v1('/trips/t_goa/messages'), { client_message_id: 'k2', text: 'still here?' })).status).toBe(401);
     expect((await t.api(kabir, 'DELETE', v1('/me'), { confirm: true })).status).toBe(401);
     expect((await t.api(null, 'GET', v1('/invites/inv_t_goa'))).body.joined_count).toBe(4);
   });

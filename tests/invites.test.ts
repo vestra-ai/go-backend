@@ -53,15 +53,17 @@ describe('accepting', () => {
     expect(joined.data.person).toMatchObject({ person_id: sam.id, from_city: 'Pune', know: ['Vibe: beach'] });
     expect(t.events('trip.updated').at(-1)!.data).toEqual({ by: { kind: 'system' }, changed: ['budget'] });
     expect((await rows(h.pool, 'select budget_min_minor, budget_max_minor from trip_people where trip_id = $1 and person_id = $2', ['t_goa', sam.id]))[0]).toEqual({ budget_min_minor: 2500000, budget_max_minor: null });
-    expect(h.live.events.slice(before).map((e) => e.event.kind)).toEqual(['trip', 'home_changed']);
+    // The "Sam joined" pill, the trip notice, then a home notice for every member (their card shows one more face) and for Sam.
+    const kinds = h.live.events.slice(before).map((e) => e.event.kind);
+    expect([kinds.filter((k) => k !== 'home'), kinds.filter((k) => k === 'home').length]).toEqual([['message', 'trip'], 6]);
     expect(await rows(h.pool, 'select 1 from invite_marks where person_id = $1', [sam.id])).toEqual([]);
     const again = await t.api(sam, 'POST', v1('/invites/inv_t_goa/accept'), {});
-    expect([again.body, t.events('person.joined').filter((e) => e.data.person.person_id === sam.id).length]).toEqual([{ trip_id: 't_goa', seq: r.body.seq, landing: 'trip_home' }, 1]);
+    expect([again.body, t.events('person.joined').filter((e) => e.data.person.person_id === sam.id).length]).toEqual([{ trip_id: 't_goa', seq: r.body.seq + 1, landing: 'trip_home' }, 1]); // the trip's seq is now the "Sam joined" pill
     expect((await preview('inv_t_goa', sam)).body.joined_count).toBe(6);
   });
 
   it('lands in the chat once anyone has spoken', async () => {
-    await t.api(t.as('p_rahul'), 'POST', v1('/trips/t_goa/messages'), { client_id: 'c1', text: 'Welcome!' });
+    await t.api(t.as('p_rahul'), 'POST', v1('/trips/t_goa/messages'), { client_message_id: 'c1', text: 'Welcome!' });
     const zoe = await h.signIn('Zoe');
     expect((await t.api(zoe, 'POST', v1('/invites/inv_t_goa/accept'), {})).body.landing).toBe('chat');
   });

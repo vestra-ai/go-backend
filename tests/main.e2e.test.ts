@@ -78,13 +78,13 @@ it('a new trip reaches Go as trip.created, and Go can read it back', async () =>
   while (go.events.length === 0 && Date.now() < end) await new Promise((r) => setTimeout(r, 50));
   expect(go.events[0]).toMatchObject({ type: 'trip.created', seq: 1, trip_id: t.body.trip_id });
   const read = await go.call('read_trip', { trip_id: t.body.trip_id });
-  expect(read.result).toMatchObject({ trip_id: t.body.trip_id, seq: 1, title: 'Goa 🌴' });
+  expect(read.result).toMatchObject({ trip_id: t.body.trip_id, seq: 2, title: 'Goa 🌴' }); // 2: the room's "Trip created · Rahul joined" pill took a change number, with no event
   // Go speaks: a message with a card reaches the room and comes back to Go as an event
   const posted = await go.call('post_message', { request_id: 'rq_1', trip_id: t.body.trip_id, text: 'Hi, I\'m Go.' });
-  expect(posted.result.seq).toBe(2);
+  expect(posted.result.seq).toBe(3);
   const end2 = Date.now() + 5000;
   while (go.events.length < 2 && Date.now() < end2) await new Promise((r) => setTimeout(r, 50));
-  expect(go.events.map((e) => e.seq)).toEqual([1, 2]);
+  expect(go.events.map((e) => e.seq)).toEqual([1, 3]);
 });
 
 it('shuts down cleanly on SIGTERM', async () => {

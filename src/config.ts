@@ -24,6 +24,12 @@ export interface Config {
   databaseCaCert?: string;
   /** Feature flags set in the environment (FEATURE_<NAME>=1|0). Anything not set takes its default (see FEATURE_DEFAULTS). */
   features: Partial<Features>;
+  /** Where uploads live: Supabase Storage (needs SUPABASE_URL and SUPABASE_SECRET_KEY), or the in-process fake (dev only). */
+  storage: 'supabase' | 'memory';
+  /** The Supabase service key: Storage only, never sent to a browser. On Railway only, never in a laptop's .env. */
+  supabaseSecretKey?: string;
+  /** The private bucket for files (SUPABASE_STORAGE_BUCKET, default go-files). */
+  supabaseStorageBucket: string;
 }
 
 /**
@@ -84,7 +90,19 @@ export function loadConfig(): Config {
     ...authConfig(),
     databaseCaCert: process.env.DATABASE_CA_CERT || undefined,
     features: featureOverrides(),
+    ...storageConfig(),
   };
+}
+
+/** STORAGE defaults to `supabase` when SUPABASE_SECRET_KEY is set, else `memory` (files are lost on restart: local use only). */
+function storageConfig(): Pick<Config, 'storage' | 'supabaseSecretKey' | 'supabaseStorageBucket'> {
+  const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY || undefined;
+  const storage = (process.env.STORAGE || (supabaseSecretKey ? 'supabase' : 'memory')) as Config['storage'];
+  if (storage !== 'supabase' && storage !== 'memory') throw new Error(`STORAGE must be supabase or memory, not ${storage}`);
+  if (storage === 'supabase' && !supabaseSecretKey) throw new Error('STORAGE=supabase needs SUPABASE_SECRET_KEY (see .env.example)');
+  if (storage === 'supabase' && !process.env.SUPABASE_URL) throw new Error('STORAGE=supabase needs SUPABASE_URL (see .env.example)');
+  if (storage === 'memory' && process.env.NODE_ENV === 'production') console.warn('[storage] STORAGE=memory: uploads are kept in memory and lost on restart. Set SUPABASE_SECRET_KEY for Supabase Storage.');
+  return { storage, supabaseSecretKey, supabaseStorageBucket: process.env.SUPABASE_STORAGE_BUCKET || 'go-files' };
 }
 
 /** AUTH_MODE defaults to `supabase` when SUPABASE_URL is set, else `dev`. Dev tokens are refused in production. */

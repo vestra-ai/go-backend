@@ -29,8 +29,8 @@ const vote = (over: Record<string, unknown> = {}) => ({
 /** Opens a vote as a member, and has all five vote for the first option so it closes with a result. */
 const closedVote = async (over: Record<string, unknown> = {}) => {
   const opened = await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_goa/decisions', vote(over));
-  for (const p of EVERYONE) await t.api(t.as(p), 'PUT', `/app/v1/trips/t_goa/decisions/${opened.body.decision_id}/vote`, { option_index: 0 });
-  return opened.body.decision_id as string;
+  for (const p of EVERYONE) await t.api(t.as(p), 'PUT', `/app/v1/trips/t_goa/decisions/${opened.body.decision.decision_id}/vote`, { option_index: 0 });
+  return opened.body.decision.decision_id as string;
 };
 const journey = {
   mode: 'flight', origin: { name: 'Delhi', code: 'DEL' }, destination: { name: 'Goa', code: 'GOI' },
@@ -67,8 +67,8 @@ describe('adding a booking', () => {
   });
 
   it('refuses a decision_id that is an open vote, a cancelled vote, a cancellation vote, or another trip\'s vote', async () => {
-    const open = (await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_goa/decisions', vote())).body.decision_id;
-    const cancelled = (await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_goa/decisions', vote())).body.decision_id;
+    const open = (await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_goa/decisions', vote())).body.decision.decision_id;
+    const cancelled = (await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_goa/decisions', vote())).body.decision.decision_id;
     await t.api(t.as('p_priya'), 'POST', `/app/v1/trips/t_goa/decisions/${cancelled}/cancel`);
     // No code can open a cancellation vote yet, so this one is written straight into the table, closed, with the link set.
     await h.pool.query(

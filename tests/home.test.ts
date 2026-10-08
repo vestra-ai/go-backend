@@ -16,7 +16,7 @@ beforeAll(async () => {
 afterAll(() => h.stop());
 
 const home = (who: { id: string; token: string }) => t.api(who, 'GET', v1('/home'));
-const homeChanged = (personId: string) => h.live.events.filter((e) => e.event.kind === 'home_changed' && e.event.person_id === personId).length;
+const homeChanged = (personId: string) => h.live.events.filter((e) => e.event.kind === 'home' && e.event.person_id === personId).length;
 const goCall = async (method: string, params: Record<string, unknown>) => {
   const f = await h.go.call(method, { request_id: `rq_${Math.random().toString(36).slice(2)}`, ...params });
   if (f.error) throw new Error(JSON.stringify(f.error));
@@ -62,11 +62,11 @@ describe('a returning person', () => {
       [newTrip, 'new', { kind: 'collecting' }, undefined, 1, 1, 'planning'],
     ]);
     expect(r.body.trips[0]).toMatchObject({ title: 'Goa 🌴', destination: { name: 'Goa' }, dates: { start: '2026-11-06', end: '2026-11-09' }, people_preview: [{ person_id: asha.id, name: 'Asha' }], last_activity_at: expect.any(String) });
-    expect(r.body.seq_hint).toBe(1);
+    expect(r.body.seq_hint).toBe(2); // trip.created, then the "Trip created" pill
     // Go opens a vote: something needs Asha.
     const vote = await goCall('open_vote', { trip_id: deciding, question: 'Where do we stay?', kind: 'choice', anonymous: false, options: [{ label: 'Villa Sol' }, { label: 'Casa Azul' }] });
     r = await home(asha);
-    expect([r.body.trips[0].attention, r.body.seq_hint]).toEqual([{ kind: 'needs_you', count: 1 }, 2]);
+    expect([r.body.trips[0].attention, r.body.seq_hint]).toEqual([{ kind: 'needs_you', count: 1 }, 3]);
     await t.api(asha, 'PUT', v1(`/trips/${deciding}/decisions/${vote.decision_id}/vote`), { option_index: 0 }); // everyone (she alone) voted: it closes
     expect((await home(asha)).body.trips[0].attention).toEqual({ kind: 'collecting' });
     // A confirmed booking with destination and dates: planned, and "all set".
@@ -121,7 +121,7 @@ describe('a returning person', () => {
 
   it('a destination hint becomes the title when there is none, and the organizer\'s from_city is their own answer', async () => {
     const r = await t.api(asha, 'POST', v1('/trips'), { destination_hint: 'Coorg', from_city: 'Bengaluru', currency: 'INR' });
-    expect([r.status, r.body.title, r.body.stage, r.body.me.person.from_city, r.body.people[0].from_city, r.body.seq, r.body.can]).toEqual([201, 'Coorg', 'new', 'Bengaluru', 'Bengaluru', 1, { invite: true, manage_trip: true }]);
+    expect([r.status, r.body.title, r.body.stage, r.body.me.person.from_city, r.body.people[0].from_city, r.body.seq, r.body.can]).toEqual([201, 'Coorg', 'new', 'Bengaluru', 'Bengaluru', 2, { invite: true, manage_trip: true }]); // seq 2: the "Trip created" pill
     expect((await t.api(asha, 'POST', v1('/trips'), { title: 'x', colour: 'blue' })).status).toBe(422);
     expect((await t.api(asha, 'POST', v1('/trips'), { dates: { start: '2026-11-09', end: '2026-11-06' } })).status).toBe(422);
     expect((await t.api(asha, 'POST', v1('/trips'), { currency: 'rupees' })).status).toBe(422);

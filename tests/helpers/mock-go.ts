@@ -30,6 +30,13 @@ export function fakeCard(kind: 'options' | 'working' | 'call' | 'pay' | 'notice'
   }
 }
 
+/** Go's chips under a message (GO-CHANGES 1.3), as the fake Go sends them with post_message. */
+export const fakeQuickReplies = () => [{ label: '🏖️ Beach', text: 'Beach' }, { label: '⛰️ Mountains', text: 'Mountains' }, { label: 'Not sure, suggest some' }];
+
+/** A location Go shares (GO-CHANGES 1.6), and a voice note with its length: the 1.1 attachment shapes. */
+export const fakeLocation = () => ({ kind: 'location', lat: 15.5736, lng: 73.7407, name: 'Anjuna Beach', address: 'Anjuna, Goa' });
+export const fakeVoiceNote = (url = 'https://files.example/note.m4a') => ({ kind: 'file', url, name: 'note.m4a', mime: 'audio/mp4', size_bytes: 48213, duration_s: 12 });
+
 /**
  * A stand-in for Go, for tests only: a real WebSocket server that checks the signature on the upgrade
  * (and refuses a signature it has seen before, as Go does), answers send_event, and lets a test send

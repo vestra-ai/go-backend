@@ -45,18 +45,11 @@ describe('browser access', () => {
     expect(none.headers.vary).toBe('Origin');
   });
 
-  it('the live stream, and its 401 and 403 refusals, carry the headers', async () => {
-    await h.app.listen({ port: 0, host: '127.0.0.1' });
-    const url = `http://127.0.0.1:${(h.app.server.address() as any).port}/app/v1/trips/t_goa/live`;
-    const get = async (who: ReturnType<typeof t.as> | null) => fetch(url, { headers: { origin: PWA, ...(who ? { authorization: `Bearer ${await who.token}` } : {}) } });
-    const stream = await get(t.as('p_rahul'));
-    expect(stream.headers.get('content-type')).toBe('text/event-stream');
-    expect([stream.headers.get('access-control-allow-origin'), stream.headers.get('vary')]).toEqual([PWA, 'Origin']);
-    await stream.body!.cancel();
-    const unsigned = await get(null);
-    expect([unsigned.status, unsigned.headers.get('access-control-allow-origin'), unsigned.headers.get('vary')]).toEqual([401, PWA, 'Origin']);
-    const notMember = await get(t.as('p_nobody'));
-    expect([notMember.status, notMember.headers.get('access-control-allow-origin'), notMember.headers.get('vary')]).toEqual([403, PWA, 'Origin']);
+  it('the live ticket, and its 401 refusal, carry the headers (the socket itself is not a browser fetch)', async () => {
+    const ticket = await t.api(t.as('p_rahul'), 'POST', '/app/v1/live/ticket', {}, { origin: PWA });
+    expect([ticket.status, ticket.body.ticket.startsWith('tk_'), ticket.headers['access-control-allow-origin'], ticket.headers.vary]).toEqual([201, true, PWA, 'Origin']);
+    const unsigned = await t.api(null, 'POST', '/app/v1/live/ticket', {}, { origin: PWA });
+    expect([unsigned.status, unsigned.headers['access-control-allow-origin'], unsigned.headers.vary]).toEqual([401, PWA, 'Origin']);
   });
 });
 

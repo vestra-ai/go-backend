@@ -9,6 +9,7 @@ import * as decisions from './decisions.js';
 import * as home from './home.js';
 import * as invites from './invites.js';
 import * as itinerary from './itinerary.js';
+import * as live from './live.js';
 import * as me from './me.js';
 import * as messages from './messages.js';
 import * as money from './money.js';
@@ -19,6 +20,7 @@ import * as uploads from './uploads.js';
 import * as you from './you.js';
 
 export const sections: Section[] = [
+  { name: 'live', ...live },
   { name: 'me', ...me },
   { name: 'home', ...home },
   { name: 'invites', ...invites },

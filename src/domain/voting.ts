@@ -1,11 +1,13 @@
 import type pg from 'pg';
-import type { AfterCommit } from '../db/pool.js';
+import type { AfterCommit, Db } from '../db/pool.js';
 import { newId } from '../db/ids.js';
 import { change, nextSeq, emit } from '../db/write-change.js';
 import type { Ctx } from '../context.js';
+import type { ChangeKind } from '../live/live.js';
 import { conflict, notFound } from './errors.js';
-import { bookingOf, decisionOf, recordLineOf } from './mappers.js';
+import { bookingOf, decisionOf, recordLineOf, tallyOf } from './mappers.js';
 import type { BookingRow, DecisionRow, RecordLineRow, VoteRow } from './mappers.js';
+import { decidedText, postSystemMessage } from './system-messages.js';
 import type { Decision } from './types.js';
 
 export interface NewDecision {
@@ -49,14 +51,14 @@ export async function lockBooking(db: pg.PoolClient, tripId: string, bookingId: 
   return rows[0];
 }
 
-export async function votesOf(db: pg.PoolClient, decisionId: string): Promise<VoteRow[]> {
-  const { rows } = await db.query<VoteRow>('select person_id, option_index from votes where decision_id = $1 order by voted_at, person_id', [decisionId]);
+export async function votesOf(db: Db, decisionId: string): Promise<VoteRow[]> {
+  const { rows } = await db.query<VoteRow>('select person_id, option_index, flexible from votes where decision_id = $1 order by voted_at, person_id', [decisionId]);
   return rows;
 }
 
-/** The option with the most votes. Nobody voted, or a tie at the top: no result. */
+/** The option with the most votes. Nobody voted, or a tie at the top: no result. Flexible votes name no option and never decide. */
 export function resultOf(optionCount: number, votes: VoteRow[]): number | null {
-  const tally = Array.from({ length: optionCount }, (_, i) => votes.filter((v) => v.option_index === i).length);
+  const tally = tallyOf(optionCount, votes);
   const top = Math.max(0, ...tally);
   if (top === 0) return null;
   const winners = tally.flatMap((n, i) => (n === top ? [i] : []));
@@ -103,11 +105,13 @@ export async function closeDecision(
   const decision = decisionOf(closed, votes);
   const seq = await change(db, tripId, 'decision.closed', { decision, reason });
   let last = seq;
+  const kinds: ChangeKind[] = ['decision'];
   // The group decided to cancel: the booking is cancelled in this same transaction, as the next change after the vote closed.
   // If it was already cancelled meanwhile (Go cancelled it), nothing more happens to it and no booking event is sent.
   if (booking && result === 0 && booking.status === 'confirmed') {
     const cancelled = (await db.query<BookingRow>(`update bookings set status = 'cancelled' where booking_id = $1 returning *`, [booking.booking_id])).rows[0]!;
     last = await change(db, tripId, 'booking.changed', { booking: bookingOf(cancelled), change: 'cancelled', by: { kind: 'system' } });
+    kinds.push('booking');
   }
   if (result !== null) {
     const label = (row.options[result] as { label: string }).label;
@@ -117,7 +121,10 @@ export async function closeDecision(
     )).rows[0]!;
     last = await nextSeq(db, tripId);
     await emit(db, tripId, last, 'record.changed', { line: recordLineOf(line), change: 'added', by: { kind: 'system' } });
+    kinds.push('record');
+    // The room's pill, "Villa Sol won · 4 votes" (decision D8): after the events, no event of its own.
+    await postSystemMessage(ctx, db, after, tripId, decidedText(label, decision.tally[result] ?? 0));
   }
-  after(() => ctx.live.publish(tripId, { kind: 'trip', seq: last }));
+  after(() => ctx.live.publish(tripId, { kind: 'trip', seq: last, kinds }));
   return { decision, seq };
 }

@@ -212,15 +212,20 @@ describe('typing and replace_card', () => {
     expect(h.go.frames.length).toBe(before);
   });
 
-  it('replaces a card in place with no change number and no event', async () => {
+  it('replaces a card in place: the message takes a change number (D9) so changes mode returns it, but no event and no push', async () => {
     const seqBefore = (await rows(h.pool, "select seq from trips where trip_id = 't_goa'"))[0].seq;
     const outboxBefore = (await rows(h.pool, 'select count(*)::int as n from outbox'))[0].n;
+    const liveMark = h.live.events.length;
     const card = { card_id: 'c_flights_1', kind: 'notice', fallback_text: 'Heads up, updated', title: 'Updated', body: 'New text', tone: 'heads_up', for_person_ids: [] };
     const f = await h.go.call('replace_card', { trip_id: 't_goa', card });
     expect(f.result.message_id).toBeTruthy();
-    expect((await rows(h.pool, "select card from messages where card_id = 'c_flights_1'"))[0].card).toEqual(card);
-    expect((await rows(h.pool, "select seq from trips where trip_id = 't_goa'"))[0].seq).toBe(seqBefore);
+    const [m] = await rows(h.pool, "select card, updated_seq from messages where card_id = 'c_flights_1'");
+    expect([m.card, m.updated_seq]).toEqual([card, seqBefore + 1]);
+    expect((await rows(h.pool, "select seq from trips where trip_id = 't_goa'"))[0].seq).toBe(seqBefore + 1);
     expect((await rows(h.pool, 'select count(*)::int as n from outbox'))[0].n).toBe(outboxBefore);
+    expect(h.live.events.slice(liveMark).map((e) => e.event)).toEqual([{ kind: 'card', message_id: f.result.message_id }]); // the live card frame, no seq
+    const page = await h.go.call('read_messages', { trip_id: 't_goa', after_seq: seqBefore });
+    expect(page.result.messages.map((x: any) => x.message_id)).toEqual([f.result.message_id]); // Go's own read_messages sees it (GO-CHANGES clarification 2)
     const again = await h.go.call('replace_card', { trip_id: 't_goa', card });
     expect(again.result.message_id).toBe(f.result.message_id); // safe to repeat
   });

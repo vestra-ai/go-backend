@@ -1,5 +1,5 @@
 // Cross-origin access for the web app. One small function, used on every response (including errors and
-// preflight) and by the live stream, which writes its own headers. No wildcard: only the exact origins listed.
+// preflight). No wildcard: only the exact origins listed. (The live WebSocket is not a browser fetch: no CORS there.)
 
 const METHODS = 'GET, POST, PUT, PATCH, DELETE';
 /** What a browser may send beyond the headers it always allows: the sign-in token, the body type and the repeat key. */

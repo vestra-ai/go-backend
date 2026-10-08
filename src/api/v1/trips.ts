@@ -1,15 +1,11 @@
-// §4.4: trips, the person's own answers in a trip, reading, leaving; and (§3, until the WebSocket lands) the live stream.
-import type { FastifyInstance, FastifyReply } from 'fastify';
+// §4.4: trips, the person's own answers in a trip, reading, leaving. The live connection is in live.ts (§3).
+import type { FastifyInstance } from 'fastify';
 import type { Ctx } from '../../context.js';
 import { createTrip, leaveTrip, markSeen, requireMember, setGoPaused } from '../../domain/actions.js';
 import { inviteOf, rotateInvite } from '../../domain/invites.js';
 import { deleteMyBudget, getMyTripAnswers, setMyBudget, updateMyTripAnswers, updateTripDetails } from '../../domain/person-edits.js';
 import { parseInclude, readTripView } from '../../domain/trip-view.js';
-import type { MessageRow, ReactionRow } from '../../domain/mappers.js';
-import { messageForApp } from '../../domain/mappers.js';
-import type { LiveEvent } from '../../live/live.js';
 import { checkCreateTrip, checkPatchTrip, checkPatchTripMe, checkPutBudget, checkReadTrip } from '../bodies.js';
-import { corsHeaders } from '../cors.js';
 import { SECTIONS, type RouteMeta } from './meta.js';
 import { atLeastOneField, body, bool, inTrip, type V1Deps } from './shared.js';
 
@@ -40,7 +36,6 @@ export const routes: RouteMeta[] = [
   { method: 'POST', path: '/app/v1/trips/:trip/leave', section: SECTIONS.trips, title: 'Leave the trip', summary: 'Leaves the trip; a vote waiting only for you closes.' },
   { method: 'POST', path: '/app/v1/trips/:trip/read', section: SECTIONS.trips, title: 'Mark as read', summary: '{ up_to_seq } or { message_id }: the room is read up to there (never moves back). Drives unread counts and catch-up. 204.',
     example: { body: { up_to_seq: 42 }, responses: [{ name: 'Read', status: 204 }] } },
-  { method: 'GET', path: '/app/v1/trips/:trip/live', section: SECTIONS.live, title: 'Live stream (SSE)', summary: 'Server-sent events for one trip: hello, message, trip, typing, home_changed. Replaced by the WebSocket in phase 2.' },
 ];
 
 /** `If-None-Match` names the ETag we would send (`"<seq>"`, possibly among others, possibly weak): nothing moved. */
@@ -89,40 +84,4 @@ export function register(app: FastifyInstance, ctx: Ctx, deps: V1Deps): void {
     const input = checkReadTrip(req.body);
     await markSeen(ctx, trip, me, input.up_to_seq, input.message_id);
   }, 204));
-
-  // ---- the live connection (server-sent events): messages, reactions, typing, "the trip changed", "your home screen changed"
-  app.get('/app/v1/trips/:trip/live', async (req: any, reply: FastifyReply) => {
-    const tripId: string = req.params.trip;
-    const personId: string = req.personId;
-    await requireMember(ctx.pool, tripId, personId);
-    reply.hijack();
-    const res = reply.raw;
-    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', 'x-request-id': req.id, ...corsHeaders(deps.origins, req.headers.origin) });
-    const send = (type: string, data: unknown) => res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
-    send('hello', { trip_id: tripId });
-    const unsubscribe = ctx.live.subscribe(async (id: string, e: LiveEvent) => {
-      try {
-        // A home_changed notice is for one person, whichever trip it is about: it reaches them on any stream they hold.
-        if (e.kind === 'home_changed') {
-          if (e.person_id === personId) send('home_changed', {});
-          return;
-        }
-        if (id !== tripId) return;
-        if (e.kind === 'message') {
-          const m = (await ctx.pool.query<MessageRow>('select * from messages where message_id = $1', [e.message_id])).rows[0];
-          if (!m) return;
-          const r = (await ctx.pool.query<ReactionRow>('select message_id, person_id, emoji from reactions where message_id = $1 order by created_at', [m.message_id])).rows;
-          send('message', messageForApp(m, r));
-        } else if (e.kind === 'trip') {
-          send('trip', { seq: e.seq });
-          // Any trip change may move this member's needs_you count, and so the home card's line: cheap to say, cheap to re-read.
-          send('home_changed', {});
-        } else send('typing', { who: e.who, on: e.on, until: e.until });
-      } catch (err) {
-        console.error('live send failed', err);
-      }
-    });
-    const beat = setInterval(() => res.write(': ping\n\n'), 20_000);
-    req.raw.on('close', () => (clearInterval(beat), unsubscribe()));
-  });
 }

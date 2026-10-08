@@ -23,6 +23,7 @@ Not secret (set on the service):
 | `DB_POOL_MAX` | `10` |
 | `PUBLIC_BASE_URL` | the service's public address (invite links are `<it>/j/<code>`) |
 | `APP_ORIGINS` | the web app's exact address(es), if there is a browser app |
+| `SUPABASE_STORAGE_BUCKET` | `go-files`: the private Storage bucket for photos, voice notes and ticket PDFs (create it in Supabase → Storage, **private**) |
 
 Secret (pasted by a person in Railway → service → Variables → Raw Editor; never in git or chat):
 
@@ -31,8 +32,10 @@ Secret (pasted by a person in Railway → service → Variables → Raw Editor; 
 | `DATABASE_URL` | Supabase session pooler string with the database password |
 | `GO_SIGNING_SECRET` | the socket signing secret shared with the Go team |
 | `GO_SPEND_PRIVATE_KEY` | our Ed25519 spend key (one line with `\n`); the Go team holds its public half |
+| `SUPABASE_SECRET_KEY` | the project's secret key (`sb_secret_…`, Project Settings → API Keys): it signs Storage upload and download links. With it set, `STORAGE` defaults to `supabase`; without it the server keeps files in memory and warns at start |
 
 Left out on purpose:
+- `STORAGE`: `supabase` follows from `SUPABASE_SECRET_KEY`; `memory` is for laptops and tests.
 - `INSTANCE_NAME`: the default, `<hostname>-<pid>`, is unique per container, so two copies during a redeploy never
   clash.
 - `LOG_GO_TRAFFIC`: it writes to a local file, and the container's disk is not kept.

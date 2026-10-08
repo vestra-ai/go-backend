@@ -10,6 +10,8 @@ import { startJobs } from './jobs/votes.js';
 import { PgLive } from './live/live.js';
 import { OutboxSender } from './outbox/sender.js';
 import { createPush } from './push/web-push.js';
+import { MemoryStorage } from './storage/memory-storage.js';
+import { SupabaseStorage } from './storage/supabase-storage.js';
 import type { Ctx } from './context.js';
 import { migrate } from '../scripts/migrate.js';
 
@@ -22,11 +24,20 @@ const { push, publicKey: pushPublicKey } = createPush({ pool, keys: { publicKey:
 
 const live = new PgLive(pool);
 await live.listen();
+// Files: Supabase Storage (the private bucket, signed URLs) when the service key is set; otherwise the in-process fake,
+// which keeps uploads in memory and serves them itself (lost on restart: local use only).
+const publicBaseUrl = process.env.PUBLIC_BASE_URL ?? 'https://go.example';
+const storage = config.storage === 'supabase'
+  ? new SupabaseStorage({ supabaseUrl: config.supabaseUrl!, secretKey: config.supabaseSecretKey!, bucket: config.supabaseStorageBucket })
+  : new MemoryStorage(process.env.PUBLIC_BASE_URL ?? `http://localhost:${config.port}`);
+if (config.storage === 'memory') console.warn('[storage] STORAGE=memory: uploads live in memory and are lost on restart. Set SUPABASE_SECRET_KEY (and SUPABASE_URL) for Supabase Storage.');
+else console.log(`storage: supabase bucket ${config.supabaseStorageBucket}`);
 const ctx: Ctx = {
   pool,
   live,
   push,
-  publicBaseUrl: process.env.PUBLIC_BASE_URL ?? 'https://go.example',
+  storage,
+  publicBaseUrl,
   spendPrivateKey: config.goSpendPrivateKey,
 };
 
