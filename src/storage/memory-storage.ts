@@ -3,7 +3,7 @@
 // Tokens are random and expire like the real signed links, so a stale link fails here as it would there.
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import type { SignedUpload, Storage } from './storage.js';
+import { fetchForCopy, type Copied, type CopyLimits, type SignedUpload, type Storage } from './storage.js';
 
 interface Pending { path: string; mime: string; maxBytes: number; expiresAt: number }
 interface Stored { bytes: Buffer; mime: string }
@@ -41,10 +41,10 @@ export class MemoryStorage implements Storage {
     this.files.delete(path);
   }
 
-  async putFromUrl(url: string, path: string): Promise<void> {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`could not fetch ${url}: ${res.status}`);
-    this.files.set(path, { bytes: Buffer.from(await res.arrayBuffer()), mime: res.headers.get('content-type') ?? 'application/octet-stream' });
+  async putFromUrl(url: string, path: string, limits?: CopyLimits): Promise<Copied> {
+    const { bytes, mime } = await fetchForCopy(url, limits);
+    this.files.set(path, { bytes, mime });
+    return { mime, size_bytes: bytes.length };
   }
 
   /** Stores bytes straight away, as if they had been PUT (for tests). */

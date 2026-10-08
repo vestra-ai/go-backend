@@ -46,13 +46,31 @@ const stop = {
   properties: { name: { type: 'string', minLength: 1, maxLength: 80 }, code: { type: 'string', maxLength: 8 } },
 } as const;
 
-// Booking limits are the contract's (Booking, Journey, Place); `kind` is its BookingKind enumeration.
+const journey = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['mode', 'origin', 'destination', 'depart_at', 'arrive_at'],
+  properties: {
+    mode: { type: 'string', enum: ['flight', 'train', 'bus', 'cab'] },
+    origin: stop,
+    destination: stop,
+    depart_at: dateTime,
+    arrive_at: dateTime,
+    carrier_name: { type: 'string', maxLength: 60 },
+    carrier_code: { type: 'string', maxLength: 8 },
+    number: { type: 'string', maxLength: 20 },
+    logo_url: uri,
+    stops: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+  },
+} as const;
+
+// Booking limits are the contract's (Booking, Journey, Place) and the 1.1 overlay's (BookingDetail, Passenger; GO-CHANGES 1.7);
+// `kind` is its BookingKind enumeration. A repeat is covered by the Idempotency-Key header (no press key in the body).
 const addBooking = {
   type: 'object',
   additionalProperties: false,
   required: ['kind', 'title', 'vendor', 'ref', 'amount_minor', 'payer_person_id', 'for_person_ids'],
   properties: {
-    client_id: id,
     kind: { type: 'string', enum: ['stay', 'flight', 'train', 'bus', 'cab', 'table', 'activity', 'other'] },
     title: { type: 'string', minLength: 1, maxLength: 120 },
     vendor: { type: 'string', minLength: 1, maxLength: 80 },
@@ -63,21 +81,26 @@ const addBooking = {
     refundable_until: dateTime,
     starts_at: dateTime,
     ends_at: dateTime,
-    journey: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['mode', 'origin', 'destination', 'depart_at', 'arrive_at'],
-      properties: {
-        mode: { type: 'string', enum: ['flight', 'train', 'bus', 'cab'] },
-        origin: stop,
-        destination: stop,
-        depart_at: dateTime,
-        arrive_at: dateTime,
-        carrier_name: { type: 'string', maxLength: 60 },
-        carrier_code: { type: 'string', maxLength: 8 },
-        number: { type: 'string', maxLength: 20 },
-        logo_url: uri,
-        stops: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+    journey,
+    return_journey: journey,
+    details: {
+      type: 'array',
+      maxItems: 20,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['label', 'value'],
+        properties: { label: { type: 'string', minLength: 1, maxLength: 40 }, value: { type: 'string', minLength: 1, maxLength: 120 } },
+      },
+    },
+    passengers: {
+      type: 'array',
+      maxItems: 30,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['person_id'],
+        properties: { person_id: id, seat: { type: 'string', maxLength: 8 }, pnr: { type: 'string', maxLength: 20 } },
       },
     },
     place: {
@@ -109,10 +132,11 @@ const updateBooking = {
   },
 } as const;
 
+// POST …/bookings/:id/cancel-vote takes no fields (a repeat is covered by the Idempotency-Key header); the body is still strict.
 const cancelVote = {
   type: 'object',
   additionalProperties: false,
-  properties: { client_id: id },
+  properties: {},
 } as const;
 
 // The account profile (PATCH /me). A photo link must be an https URL (photo_upload_id comes with uploads, phase 2).
@@ -433,7 +457,6 @@ export interface OpenVoteBody {
 }
 
 export interface AddBookingBody {
-  client_id?: string;
   kind: string;
   title: string;
   vendor: string;
@@ -445,6 +468,9 @@ export interface AddBookingBody {
   starts_at?: string;
   ends_at?: string;
   journey?: Record<string, unknown>;
+  return_journey?: Record<string, unknown>;
+  details?: Array<{ label: string; value: string }>;
+  passengers?: Array<{ person_id: string; seat?: string; pnr?: string }>;
   place?: Record<string, unknown>;
   image_url?: string;
   decision_id?: string;
@@ -559,9 +585,7 @@ export interface AddDeviceBody {
   tz?: string;
 }
 
-export interface CancelVoteBody {
-  client_id?: string;
-}
+export type CancelVoteBody = Record<string, never>;
 
 export interface PostMessageBody {
   client_message_id: string;

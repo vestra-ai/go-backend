@@ -34,7 +34,9 @@ const eventsFor = (tripId: string, from = 0) => {
 };
 const types = (list: Array<Record<string, any>>) => list.map((e) => e.type as string);
 const tripSeq = async (tripId: string) => (await rows(h.pool, 'select seq from trips where trip_id = $1', [tripId]))[0].seq as number;
-const strip = async (who: Who, tripId: string) => (await api(who, 'GET', `/app/v1/trips/${tripId}/needs-you`)).body as any[];
+const strip = async (who: Who, tripId: string) => (await api(who, 'GET', `/app/v1/trips/${tripId}/needs-you`)).body.items as any[];
+/** The push the room sends about one message (app contract §8): the type, the trip, the text and where a tap lands. */
+const pushAbout = (type: string, tripId: string, title: string, body: string, messageId: string) => ({ type, trip_id: tripId, message_id: messageId, title, body, deep_link: `/trips/${tripId}/chat?msg=${messageId}`, tag: `${tripId}:${messageId}` });
 const liveFor = (tripId: string, from = 0) => h.live.events.slice(from).filter((e) => e.tripId === tripId).map((e) => e.event);
 const outboxCount = async (tripId: string) => (await rows(h.pool, 'select count(*)::int as n from outbox where trip_id = $1', [tripId]))[0].n as number;
 
@@ -103,7 +105,7 @@ describe('F1. Go answers a question (guide: "Go answers a question")', () => {
     const card = flightCard('c_flights_1');
     const r = await go('post_message', trip, { text: 'Priya, 2 non-stop flights under ₹6,200 on Friday:', reply_to: question, mentions: [priya.id], card }, 'rq_f1_reply');
     expect(r.seq).toBe((await tripSeq(trip)));
-    expect(h.push.sent).toEqual([{ to: [priya.id], n: { body: 'Priya, 2 non-stop flights under ₹6,200 on Friday:', data: { trip_id: trip, message_id: r.message_id } } }]);
+    expect(h.push.sent).toEqual([{ to: [priya.id], n: pushAbout('mention', trip, 'Goa F1', 'Priya, 2 non-stop flights under ₹6,200 on Friday:', r.message_id) }]);
     const live = liveFor(trip, liveMark);
     expect(live).toContainEqual({ kind: 'message', message_id: r.message_id, updated_seq: r.seq });
     expect(live).toContainEqual({ kind: 'typing', who: { kind: 'go' }, on: false });
@@ -200,7 +202,7 @@ describe('F2. A trip starts (guide: "A trip starts")', () => {
   });
 
   it('7-8. The vote is in both strips; both vote; it closes by itself and the decided line follows', async () => {
-    expect(await strip(priya, trip)).toContainEqual({ kind: 'vote', decision_id: decision, text: 'When can everyone go?' });
+    expect(await strip(priya, trip)).toContainEqual(expect.objectContaining({ item_id: `vote:${decision}:${priya.id}`, kind: 'vote', title: 'When can everyone go?', cta_label: 'Vote', target: expect.objectContaining({ decision_id: decision }) }));
     const mark = h.go.events.length;
     await api(rahul, 'PUT', `/app/v1/trips/${trip}/decisions/${decision}/vote`, { option_index: 0 });
     await api(priya, 'PUT', `/app/v1/trips/${trip}/decisions/${decision}/vote`, { option_index: 0 });
@@ -304,7 +306,7 @@ describe('F4. From a vote to a booking (guides: "From a vote to a booking", "Mon
     await h.flush();
     expect(eventsFor(trip, mark)[0]).toMatchObject({ type: 'mandate.set', data: { decision_id: villa, mandate: { payer_person_id: rahul.id, cap_minor: 5500000 } } });
     expect(eventsFor(trip, mark)[0]!.data.mandate.confirmed_at).toBeUndefined();
-    expect(await strip(rahul, trip)).toContainEqual({ kind: 'mandate', decision_id: villa, text: 'Yes, book it? Villa Sol, up to ₹55,000', question: 'Where do we stay?' });
+    expect(await strip(rahul, trip)).toContainEqual(expect.objectContaining({ item_id: `mandate:${villa}`, kind: 'mandate', title: 'Yes, book it? Villa Sol, up to ₹55,000', subtitle: 'Where do we stay?', cta_label: 'Yes, book it', target: expect.objectContaining({ decision_id: villa }) }));
     expect(await strip(priya, trip)).toEqual([]);
     await go('post_message', trip, { text: 'Rahul, shall I book Villa Sol?', card });
   });
@@ -359,8 +361,8 @@ describe('F4. From a vote to a booking (guides: "From a vote to a booking", "Mon
       payer_person_id: rahul.id, amount_minor: 5420000, currency: 'INR', merchant: 'ixigo: Villa Sol, Anjuna', purpose: 'Villa Sol, 3 nights', expires_at: approval.expires_at, state: 'waiting',
       actions: [{ action_id: 'approve', label: 'Approve', style: 'primary', only_for_person_ids: [rahul.id] }, { action_id: 'decline', label: 'Not now', style: 'secondary', only_for_person_ids: [rahul.id] }],
     } });
-    expect(h.push.sent).toEqual([{ to: [rahul.id], n: { body: 'Rahul, approve ₹54,200 for Villa Sol', data: { trip_id: trip, message_id: r.message_id } } }]);
-    expect(await strip(rahul, trip)).toContainEqual({ kind: 'card', card_id: 'c_villa_pay', message_id: r.message_id, text: 'Rahul, approve ₹54,200 for Villa Sol' });
+    expect(h.push.sent).toEqual([{ to: [rahul.id], n: pushAbout('card', trip, 'Goa F4', 'Rahul, approve ₹54,200 for Villa Sol', r.message_id) }]);
+    expect(await strip(rahul, trip)).toContainEqual({ item_id: 'card:c_villa_pay', kind: 'card', title: 'Rahul, approve ₹54,200 for Villa Sol', cta_label: 'Approve', since: expect.any(String), target: { card_id: 'c_villa_pay', message_id: r.message_id } });
   });
 
   it('8. Rahul taps Approve: Go answers with a vault link to open; the server passes it on and keeps nothing', async () => {
@@ -486,12 +488,12 @@ describe('F5. A phone call (guide: "A phone call")', () => {
     h.push.sent.length = 0;
     const text = 'Late check-in is fine. Rahul, Villa Sol offers ₹2,000 off if we pay the deposit this week. Shall we?';
     const m = await go('post_message', trip, { text, reply_to: ask, mentions: [rahul.id] });
-    expect(h.push.sent).toEqual([{ to: [rahul.id], n: { body: text, data: { trip_id: trip, message_id: m.message_id } } }]);
+    expect(h.push.sent).toEqual([{ to: [rahul.id], n: pushAbout('mention', trip, 'Goa F5', text, m.message_id) }]);
     const mark = h.go.events.length;
     const l = await go('add_record_line', trip, { kind: 'open', text: '₹2,000 off Villa Sol: pay the deposit this week?', proof: [{ message_id: call }], person_ids: [rahul.id], due_at: new Date(Date.now() + 5 * 86_400_000).toISOString() });
     await h.flush();
     expect(eventsFor(trip, mark).at(-1)).toMatchObject({ type: 'record.changed', data: { change: 'added', by: { kind: 'go' }, line: { kind: 'open' } } });
-    expect(await strip(rahul, trip)).toContainEqual({ kind: 'record', line_id: l.line_id, text: '₹2,000 off Villa Sol: pay the deposit this week?' });
+    expect(await strip(rahul, trip)).toContainEqual(expect.objectContaining({ item_id: `record_line:${l.line_id}`, kind: 'record_line', title: '₹2,000 off Villa Sol: pay the deposit this week?', subtitle: expect.stringMatching(/^due \d{4}-\d{2}-\d{2}$/), target: { line_id: l.line_id } }));
   });
 });
 

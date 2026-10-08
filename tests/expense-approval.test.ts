@@ -14,7 +14,9 @@ beforeAll(async () => {
 afterAll(() => h.stop());
 
 const refusal = (r: { status: number; body: any }) => [r.status, r.body?.error?.code, r.body?.error?.field];
-const strip = async (who: string) => (await t.api(t.as(who), 'GET', `${trip}/needs-you`)).body as any[];
+// The expense items of the person's strip, in a short form (the strip also carries settle_up items once money is owed).
+const strip = async (who: string) =>
+  ((await t.api(t.as(who), 'GET', `${trip}/needs-you`)).body.items as any[]).filter((i) => i.kind === 'expense').map((i) => ({ kind: i.kind, expense_id: i.target.expense_id, text: i.title }));
 const changes = () => t.events('expense.changed');
 
 describe('scenario 21: Priya adds an expense split 4 ways', () => {
@@ -34,7 +36,7 @@ describe('scenario 21: Priya adds an expense split 4 ways', () => {
       [['p_rahul'], 'expense', 'Priya added Airport cab · your share ₹1,700. Approve?'],
     ]);
     expect([await strip('p_rahul'), await strip('p_priya'), await strip('p_arjun')]).toEqual([[{ kind: 'expense', expense_id: cab, text: 'Approve ₹1,700 · Airport cab' }], [], []]);
-    expect((await t.api(t.as('p_kabir'), 'GET', trip)).body.needs_you_count).toBe(1);
+    expect((await t.api(t.as('p_kabir'), 'GET', trip)).body.needs_you_count).toBe(2); // the approval, and the settle-up with Priya it already creates
     expect((await t.api(t.as('p_kabir'), 'GET', `${trip}/expenses?status=pending`)).body.items.map((x: any) => x.expense_id)).toEqual([cab]);
     const money = (await t.api(t.as('p_rahul'), 'GET', `${trip}/money`)).body;
     expect([money.spent_minor, money.me.spent_minor, money.me.by_category, money.me.i_owe]).toEqual([
@@ -139,7 +141,7 @@ describe("Go's add_expense", () => {
     const r = await go({ paid_by_person_id: 'p_rahul', amount_minor: 40000, note: 'Villa Sol', split_person_ids: ['p_rahul', 'p_priya'], approval_id: 'ap_villa' });
     expect(r.error).toBeUndefined();
     expect(await expenseOf(r.result.expense_id)).toMatchObject({ status: 'approved', confirmations: [{ person_id: 'p_priya', state: 'approved' }] });
-    expect(h.push.sent).toEqual([{ to: ['p_priya'], n: { body: 'You owe Rahul ₹200 for Villa Sol', data: { trip_id: 't_goa' } } }]);
+    expect(h.push.sent).toEqual([{ to: ['p_priya'], n: { type: 'owe', trip_id: 't_goa', title: 'Goa 🌴', body: 'You owe Rahul ₹200 for Villa Sol', deep_link: '/trips/t_goa/expenses', tag: 't_goa:owe:p_rahul' } }]);
   });
 });
 
@@ -156,11 +158,11 @@ describe('with features.expense_approval off', () => {
     off.push.sent.length = 0;
     const r = await a.api(a.as('p_rahul'), 'POST', `${trip}/expenses`, { amount_minor: 1000, note: 'Tea', category: 'food', split_person_ids: ['p_rahul', 'p_priya'] });
     expect([r.status, r.body.status, r.body.confirmations.map((c: any) => c.state)]).toEqual([201, 'approved', ['approved']]);
-    expect(off.push.sent).toEqual([{ to: ['p_priya'], n: { body: 'You owe Rahul ₹5 for Tea', data: { trip_id: 't_goa' } } }]);
+    expect(off.push.sent).toEqual([{ to: ['p_priya'], n: { type: 'owe', trip_id: 't_goa', title: 'Goa 🌴', body: 'You owe Rahul ₹5 for Tea', deep_link: '/trips/t_goa/expenses', tag: 't_goa:owe:p_rahul' } }]);
     expect(refusal(await a.api(a.as('p_priya'), 'POST', `${trip}/expenses/${r.body.expense_id}/approve`)).slice(0, 2)).toEqual([409, 'conflict']);
     expect(refusal(await a.api(a.as('p_priya'), 'POST', `${trip}/expenses/${r.body.expense_id}/dispute`)).slice(0, 2)).toEqual([409, 'conflict']);
     const g = await off.go.call('add_expense', { request_id: 'rq_off_1', trip_id: 't_goa', paid_by_person_id: 'p_rahul', amount_minor: 1000, currency: 'INR', note: 'Coffee', category: 'food', split_person_ids: ['p_rahul', 'p_kabir'] });
     expect((await off.go.call('read_trip', { trip_id: 't_goa' })).result.expenses.find((x: any) => x.expense_id === g.result.expense_id).status).toBe('approved');
-    expect((await a.api(a.as('p_priya'), 'GET', `${trip}/needs-you`)).body).toEqual([]);
+    expect((await a.api(a.as('p_priya'), 'GET', `${trip}/needs-you`)).body.items.filter((i: any) => i.kind === 'expense')).toEqual([]);
   });
 });

@@ -7,6 +7,7 @@ import { withTx } from '../db/pool.js';
 import { Forbidden, joinTrip, newInviteCode, type JoinAnswers } from './actions.js';
 import { conflict, notFound } from './errors.js';
 import { compact, type PersonRow } from './mappers.js';
+import { sendPush } from '../push/send.js';
 import { activePeople, inviteUrl } from './snapshot.js';
 import type { Place } from './types.js';
 
@@ -89,7 +90,15 @@ export type Landing = 'chat' | 'trip_home';
 export async function acceptInvite(ctx: Ctx, code: string, personId: string, answers: JoinAnswers = {}): Promise<{ trip_id: string; seq: number; landing: Landing }> {
   const joined = await joinTrip(ctx, code, personId, answers);
   const talking = await ctx.pool.query(`select 1 from messages where trip_id = $1 and deleted = false and author_kind in ('go', 'person') limit 1`, [joined.trip_id]);
+  if (!joined.already) await pushJoined(ctx, joined.trip_id, personId);
   return { trip_id: joined.trip_id, seq: joined.seq, landing: talking.rowCount ? 'chat' : 'trip_home' };
+}
+
+/** "Priya joined Goa 🌴" to the organizer (app contract §8, `joined`), unless the joiner is the organizer. Best effort. */
+async function pushJoined(ctx: Ctx, tripId: string, joinerId: string): Promise<void> {
+  const t = (await ctx.pool.query('select t.title, t.organizer_person_id, p.name from trips t join people p on p.person_id = $2 where t.trip_id = $1', [tripId, joinerId])).rows[0];
+  if (!t || t.organizer_person_id === joinerId) return;
+  await sendPush(ctx, tripId, [t.organizer_person_id], { type: 'joined', body: `${t.name} joined ${t.title}`, id: joinerId }).catch((err) => console.error('joined push failed:', err instanceof Error ? err.name : 'error'));
 }
 
 /**

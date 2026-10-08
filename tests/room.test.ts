@@ -95,7 +95,7 @@ describe('post_message', () => {
     expect(toPriya[0]!.n.body).toBe('Priya, here are three flights.');
     expect(toRahul).toHaveLength(1);
     expect(toRahul[0]!.n.body).toBe('Heads up'); // the card's fallback_text
-    expect(toRahul[0]!.n.data.trip_id).toBe('t_goa');
+    expect([toPriya[0]!.n.type, toRahul[0]!.n.type, toRahul[0]!.n.trip_id, toRahul[0]!.n.title]).toEqual(['mention', 'card', 't_goa', 'Goa 🌴']);
   });
 
   it('shows the message live and hides "Go is typing..."', () => {

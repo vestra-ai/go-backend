@@ -1,7 +1,8 @@
 // What people do with votes and bookings that Go does on their behalf elsewhere. Each action is one transaction:
 // the change, its event for Go and the trip's next change number commit together, and the person must be in the
-// trip inside that same transaction. Creates run once per (person, client_id) when the app sends that press key; the
-// Idempotency-Key header (src/api/idempotency.ts) covers them otherwise.
+// trip inside that same transaction. A person-opened vote runs once per (person, client_id) when the app sends that
+// press key; bookings and cancellation votes have no press key, the Idempotency-Key header (src/api/idempotency.ts)
+// covers them.
 import type { Ctx } from '../context.js';
 import { newId } from '../db/ids.js';
 import { onceIfKeyed } from '../db/once.js';
@@ -64,12 +65,16 @@ const endsBeforeStarts = (starts: Date | null, ends: Date | null) => !!starts &&
  * A member adds a booking they made. It is stored as confirmed, in the trip's currency, with no approval and no
  * expense. Go hears `booking.changed` (added, by the person) and then the booked line in the record as its own change,
  * as on Go's path. Where the booking names a vote that has already been decided, that decided line becomes the booked line.
+ * The 1.1 fields (`details`, `return_journey`, `passengers`) are stored as sent; each passenger must be a covered person.
  */
 export async function addPersonBooking(ctx: Ctx, tripId: string, personId: string, input: AddBookingBody) {
-  return onceIfKeyed(ctx.pool, tripId, input.client_id && `app:booking:${personId}:${input.client_id}`, async (db, after) => {
+  return withTx(ctx.pool, async (db, after) => {
     await requireMember(db, tripId, personId);
     const currency = (await db.query('select currency from trips where trip_id = $1', [tripId])).rows[0]!.currency as string;
     await assertPeopleInTrip(db, tripId, [input.payer_person_id, ...input.for_person_ids], 'payer_person_id/for_person_ids');
+    const covered = new Set(input.for_person_ids);
+    const stranger = (input.passengers ?? []).findIndex((p) => !covered.has(p.person_id));
+    if (stranger >= 0) throw invalid(`passengers[${stranger}].person_id must be one of for_person_ids`, `passengers[${stranger}].person_id`);
     const refundableUntil = input.refundable_until ? instant(input.refundable_until, 'refundable_until') : null;
     const startsAt = input.starts_at ? instant(input.starts_at, 'starts_at') : null;
     const endsAt = input.ends_at ? instant(input.ends_at, 'ends_at') : null;
@@ -84,13 +89,14 @@ export async function addPersonBooking(ctx: Ctx, tripId: string, personId: strin
     const decided = input.decision_id
       ? (await db.query<RecordLineRow>(`select * from record_lines where trip_id = $1 and decision_id = $2 and kind = 'decided' for update`, [tripId, input.decision_id])).rows[0]
       : undefined;
+    const json = (v: unknown) => (v === undefined ? null : JSON.stringify(v));
     const booking = (await db.query<BookingRow>(
       `insert into bookings (booking_id, trip_id, kind, title, vendor, ref, amount_minor, currency, payer_person_id, for_person_ids,
-                             refundable_until, starts_at, ends_at, journey, place, image_url, decision_id, added_by_person_id)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) returning *`,
+                             refundable_until, starts_at, ends_at, journey, place, image_url, decision_id, added_by_person_id, details, return_journey, passengers)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) returning *`,
       [newId('b'), tripId, input.kind, input.title, input.vendor, input.ref, input.amount_minor, currency, input.payer_person_id, JSON.stringify(input.for_person_ids),
        refundableUntil?.toISOString() ?? null, startsAt?.toISOString() ?? null, endsAt?.toISOString() ?? null,
-       input.journey ? JSON.stringify(input.journey) : null, input.place ? JSON.stringify(input.place) : null, input.image_url ?? null, input.decision_id ?? null, personId],
+       json(input.journey), json(input.place), input.image_url ?? null, input.decision_id ?? null, personId, json(input.details), json(input.return_journey), json(input.passengers)],
     )).rows[0]!;
     const seq = await change(db, tripId, 'booking.changed', { booking: bookingOf(booking), change: 'added', by: by(personId) });
     const line = decided
@@ -157,8 +163,8 @@ export const CANCEL_VOTE_HOURS = 24;
  * server-side link to the booking (never sent to Go). Whether the booking is cancelled is decided when the vote closes
  * (see `closeDecision`). Cancelling records the group's decision only: nothing is cancelled with the vendor.
  */
-export async function proposeCancelBooking(ctx: Ctx, tripId: string, personId: string, bookingId: string, input: CancelVoteBody) {
-  return onceIfKeyed(ctx.pool, tripId, input.client_id && `app:cancel:${personId}:${input.client_id}`, async (db, after) => {
+export async function proposeCancelBooking(ctx: Ctx, tripId: string, personId: string, bookingId: string, _input: CancelVoteBody) {
+  return withTx(ctx.pool, async (db, after) => {
     await requireMember(db, tripId, personId);
     const booking = await lockBooking(db, tripId, bookingId);
     if (!booking) throw notFound(`booking ${bookingId} does not exist in trip ${tripId}`);

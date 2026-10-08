@@ -99,7 +99,7 @@ describe('taking a vote back (features.vote_retract)', () => {
     await h.flush();
     expect(votedEvents(did).at(-1)!.data).toEqual({ decision_id: did, person_id: 'p_rahul', retracted: true, voted: 1, of: 5, tally: [1, 0] });
     expect(check('Event', votedEvents(did).at(-1)!)).toMatchObject({ ok: true });
-    expect((await t.api(as('p_rahul'), 'GET', '/app/v1/trips/t_goa/needs-you')).body).toContainEqual(expect.objectContaining({ kind: 'vote', decision_id: did })); // it needs him again
+    expect((await t.api(as('p_rahul'), 'GET', '/app/v1/trips/t_goa/needs-you')).body.items).toContainEqual(expect.objectContaining({ kind: 'vote', item_id: `vote:${did}:p_rahul` })); // it needs him again
     await t.api(as('p_priya'), 'POST', `/app/v1/trips/t_goa/decisions/${did}/close`);
     expect((await t.api(as('p_priya'), 'DELETE', `/app/v1/trips/t_goa/decisions/${did}/vote`)).status).toBe(409);
   });
