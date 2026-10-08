@@ -2,7 +2,7 @@
 // provider issues the same kind of token as Google sign-in; our server cannot tell them apart).
 //   pnpm supabase:token                  user 1: SUPABASE_TEST_EMAIL / SUPABASE_TEST_PASSWORD from .env
 //   pnpm supabase:token --user 2         user 2: SUPABASE_TEST_EMAIL_2 / SUPABASE_TEST_PASSWORD_2
-//   pnpm supabase:token --me <server>    also calls GET <server>/app/me with it
+//   pnpm supabase:token --me <server>    also calls GET <server>/app/v1/me with it
 // Create the test users in Supabase: Authentication → Users → Add user → Create new user, with Auto Confirm.
 // The token lasts about an hour. Never commit it; never use test users in the real app.
 import { loadEnv } from './dev-real.js';
@@ -34,6 +34,6 @@ console.log(j.access_token);
 
 const server = arg('me');
 if (server) {
-  const me = await fetch(`${server.replace(/\/+$/, '')}/app/me`, { headers: { authorization: `Bearer ${j.access_token}` } });
-  console.error(`GET ${server}/app/me → ${me.status} ${await me.text()}`);
+  const me = await fetch(`${server.replace(/\/+$/, '')}/app/v1/me`, { headers: { authorization: `Bearer ${j.access_token}` } });
+  console.error(`GET ${server}/app/v1/me → ${me.status} ${await me.text()}`);
 }

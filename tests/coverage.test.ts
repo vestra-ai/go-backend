@@ -1,7 +1,6 @@
 // Contract rules the review found working but untested (docs/REVIEW.md): each is now proved here.
 import { createServer } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { signSession } from '../src/api/auth.js';
 import { RECONNECT_BACKOFF_SECONDS } from '../src/contract/index.js';
 import { change } from '../src/db/write-change.js';
 import { GoSocket, SocketCallError } from '../src/go/go-socket.js';
@@ -116,13 +115,13 @@ describe('events and errors not covered elsewhere', () => {
   afterAll(() => h.stop());
   let n = 0;
   const call = (method: string, params: Record<string, unknown>) => h.go.call(method, { request_id: `rq_cov_${++n}`, trip_id: 't_goa', ...params });
-  // Seeded people have no session yet: sign one the way the app's sign-in does.
-  const auth = (id: string) => ({ authorization: `Bearer ${signSession(id, h.sessionSecret)}` });
+  // Seeded people sign in through the fake Supabase Auth, as the app does.
+  const auth = async (id: string) => ({ authorization: `Bearer ${await h.token(id)}` });
 
   it('a person closing a vote early sends decision.closed with reason closed_by_person', async () => {
     const o = (await call('open_vote', { question: 'Brunch?', kind: 'choice', anonymous: false, options: [{ label: 'A' }, { label: 'B' }] })).result;
     await h.pool.query("insert into votes (decision_id, person_id, option_index) values ($1, 'p_rahul', 1)", [o.decision_id]);
-    const r = await h.app.inject({ method: 'POST', url: `/app/trips/t_goa/decisions/${o.decision_id}/close`, headers: auth('p_priya') });
+    const r = await h.app.inject({ method: 'POST', url: `/app/v1/trips/t_goa/decisions/${o.decision_id}/close`, headers: await auth('p_priya') });
     expect(r.statusCode).toBe(200);
     await h.flush();
     expect(h.go.events.find((e) => e.type === 'decision.closed' && e.data.decision.decision_id === o.decision_id)!.data).toMatchObject({ reason: 'closed_by_person', decision: { result_index: 1 } });
@@ -150,7 +149,7 @@ describe('events and errors not covered elsewhere', () => {
   it('a person\'s typing goes to the room live, never to Go', async () => {
     const mark = h.live.events.length;
     const before = h.go.frames.length;
-    const r = await h.app.inject({ method: 'POST', url: '/app/trips/t_goa/typing', payload: { on: true }, headers: auth('p_meher') });
+    const r = await h.app.inject({ method: 'POST', url: '/app/v1/trips/t_goa/typing', payload: { on: true }, headers: await auth('p_meher') });
     expect(r.statusCode).toBe(200);
     expect(h.live.events.slice(mark).map((e) => e.event)).toContainEqual(expect.objectContaining({ kind: 'typing', who: { kind: 'person', person_id: 'p_meher' }, on: true }));
     expect(h.go.frames.length).toBe(before);

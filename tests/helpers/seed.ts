@@ -1,6 +1,16 @@
+import { createHash } from 'node:crypto';
 import type pg from 'pg';
 
 export interface SeedPerson { id: string; name: string; role?: 'organizer' | 'member'; upi?: string; paused?: boolean; budget?: [number, number] }
+
+/**
+ * The Supabase user id a seeded (or any named) person signs in as: fixed by the person id, so the fake Supabase Auth
+ * can mint a token for `p_rahul` and the server finds the same row (people.auth_user_id).
+ */
+export function uuidFor(personId: string): string {
+  const hex = createHash('sha256').update(`go-test-user:${personId}`).digest('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
 
 /** A trip with its people, the way the app's "create trip" and "join" routes leave it (without their events). */
 export async function seedTrip(
@@ -21,9 +31,10 @@ export async function seedTrip(
   );
   let n = 0;
   for (const p of people) {
-    await pool.query('insert into people (person_id, name, upi_id, phone, email) values ($1, $2, $3, $4, $5) on conflict do nothing', [
-      p.id, p.name, p.upi ?? null, `+91${p.id}`, `${p.id}@mail.test`,
-    ]);
+    await pool.query(
+      `insert into people (person_id, name, upi_id, phone, email, auth_user_id, auth_provider) values ($1, $2, $3, $4, $5, $6, 'google') on conflict do nothing`,
+      [p.id, p.name, p.upi ?? null, `+91${p.id}`, `${p.id}@mail.test`, uuidFor(p.id)],
+    );
     await pool.query(
       `insert into trip_people (trip_id, person_id, role, joined_at, go_paused, budget_min_minor, budget_max_minor)
        values ($1, $2, $3, now() + make_interval(secs => $4), $5, $6, $7)`,

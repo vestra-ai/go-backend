@@ -12,22 +12,22 @@ afterAll(() => h.stop());
 it('one journey from the web app\'s origin: decide a vote, add a booking against it, update it, then the group cancels it; every change took the next number with one valid event, and Go\'s trip read matches', async () => {
   const t = appApi(h);
   const answers: Array<{ status: number; headers: Record<string, any> }> = [];
-  const call = async (who: string, method: 'GET' | 'POST' | 'PATCH', url: string, body?: unknown) => {
+  const call = async (who: string, method: 'GET' | 'POST' | 'PUT' | 'PATCH', url: string, body?: unknown) => {
     const r = await t.api(t.as(who), method, url, body, { origin: PWA });
     answers.push(r);
     return r;
   };
-  const opened = await call('p_priya', 'POST', '/app/trips/t_goa/decisions', {
+  const opened = await call('p_priya', 'POST', '/app/v1/trips/t_goa/decisions', {
     client_id: 'v1', question: 'Where do we stay?', kind: 'choice', anonymous: false, options: [{ label: 'Villa Sol', price_minor: 5420000 }, { label: 'Casa Azul', price_minor: 6180000 }],
   });
-  for (const who of EVERYONE) await call(who, 'POST', `/app/trips/t_goa/decisions/${opened.body.decision_id}/vote`, { option_index: 0 });
-  const booked = await call('p_arjun', 'POST', '/app/trips/t_goa/bookings', {
+  for (const who of EVERYONE) await call(who, 'PUT', `/app/v1/trips/t_goa/decisions/${opened.body.decision_id}/vote`, { option_index: 0 });
+  const booked = await call('p_arjun', 'POST', '/app/v1/trips/t_goa/bookings', {
     client_id: 'b1', kind: 'stay', title: 'Villa Sol, 3 nights', vendor: 'ixigo', ref: 'IXG-1', amount_minor: 5420000, payer_person_id: 'p_rahul', for_person_ids: EVERYONE, decision_id: opened.body.decision_id,
   });
-  await call('p_meher', 'PATCH', `/app/trips/t_goa/bookings/${booked.body.booking_id}`, { ref: 'IXG-2', starts_at: '2026-11-06T08:00:00Z' });
-  const proposed = await call('p_priya', 'POST', `/app/trips/t_goa/bookings/${booked.body.booking_id}/cancel-vote`, { client_id: 'c1' });
-  for (const who of ['p_rahul', 'p_priya', 'p_arjun']) await call(who, 'POST', `/app/trips/t_goa/decisions/${proposed.body.decision_id}/vote`, { option_index: 0 });
-  await call('p_kabir', 'POST', `/app/trips/t_goa/decisions/${proposed.body.decision_id}/close`);
+  await call('p_meher', 'PATCH', `/app/v1/trips/t_goa/bookings/${booked.body.booking_id}`, { ref: 'IXG-2', starts_at: '2026-11-06T08:00:00Z' });
+  const proposed = await call('p_priya', 'POST', `/app/v1/trips/t_goa/bookings/${booked.body.booking_id}/cancel-vote`, { client_id: 'c1' });
+  for (const who of ['p_rahul', 'p_priya', 'p_arjun']) await call(who, 'PUT', `/app/v1/trips/t_goa/decisions/${proposed.body.decision_id}/vote`, { option_index: 0 });
+  await call('p_kabir', 'POST', `/app/v1/trips/t_goa/decisions/${proposed.body.decision_id}/close`);
   await h.flush();
 
   const events = await rows(h.pool, 'select body from outbox where trip_id = $1 order by seq', ['t_goa']);

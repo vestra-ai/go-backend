@@ -83,7 +83,7 @@ later invalidates every browser's subscription).
 ## Try it locally, with nothing to set up
 
 ```bash
-pnpm dev:stack    # a temporary Postgres + a fake Go + the real server on :8080 (Ctrl-C stops all of it)
+pnpm dev:stack    # a temporary Postgres + a fake Go + a fake Supabase Auth on :54331 + the real server on :8080 (Ctrl-C stops all of it)
 pnpm postman      # in another terminal: runs the Postman collection's "Run in order" folder against it
 ```
 
@@ -96,13 +96,14 @@ Postman) act as Go for the rest: `POST http://localhost:8090/sim/<method>` with 
 
 The app signs in with Supabase Auth and sends Supabase's access token on every call; the server checks it locally and
 creates the person on their first sign-in. Set `SUPABASE_URL` (sign-in becomes `AUTH_MODE=supabase`). Without it the
-server uses dev tokens from `POST /app/people`, for local testing only. Everything is ready and tested against a fake
-Supabase Auth:
+server uses dev tokens from `POST /app/v1/dev/sign-in`, for local testing only. Everything is ready and tested against a
+fake Supabase Auth:
 
 ```bash
-pnpm dev:stack:supabase    # like dev:stack, but signing in like production (tokens from a fake Supabase Auth on :54331)
+pnpm dev:stack             # signs in like production: GET http://127.0.0.1:54331/mint?name=Priya gives a Supabase-style token
+pnpm dev:stack:dev         # like dev:stack, but with the server's own dev tokens (POST /app/v1/dev/sign-in)
 pnpm check:supabase        # once the real project is in .env: keys, Google, database, TLS, locks, RLS, all read-only
-pnpm dev:login             # a "Sign in with Google" page on :3000 that shows the real token and calls GET /app/me
+pnpm dev:login             # a "Sign in with Google" page on :3000 that shows the real token and calls GET /app/v1/me
 pnpm supabase:rehearse     # with Docker: the server against the official local Supabase (real Auth, Postgres, Data API)
 pnpm supabase:token        # a real Supabase token for a test user (email/password), until Google is on
 ```

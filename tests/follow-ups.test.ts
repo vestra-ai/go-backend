@@ -24,10 +24,10 @@ describe('the app can tell a cancellation vote from an ordinary one; Go cannot',
   it('marks the vote with the booking it is about in the app\'s trip read and needs-you strip, and nowhere else', async () => {
     const bid = await f.addBooking('t_goa', { title: 'Villa Sol' });
     const cancel = (await f.propose(bid)).body.decision_id as string;
-    const ordinary = (await t.api(t.as('p_priya'), 'POST', '/app/trips/t_goa/decisions', { client_id: 'plain', question: 'Where to eat?', kind: 'yesno', anonymous: false, options: [{ label: 'Yes' }, { label: 'No' }] })).body.decision_id as string;
-    const trip = (await t.api(t.as('p_kabir'), 'GET', '/app/trips/t_goa')).body;
+    const ordinary = (await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_goa/decisions', { client_id: 'plain', question: 'Where to eat?', kind: 'yesno', anonymous: false, options: [{ label: 'Yes' }, { label: 'No' }] })).body.decision_id as string;
+    const trip = (await t.api(t.as('p_kabir'), 'GET', '/app/v1/trips/t_goa')).body;
     const marks = Object.fromEntries(trip.decisions.map((d: any) => [d.decision_id, d.cancels_booking_id]));
-    const strip = (await t.api(t.as('p_kabir'), 'GET', '/app/trips/t_goa/needs-you')).body.filter((x: any) => x.kind === 'vote');
+    const strip = (await t.api(t.as('p_kabir'), 'GET', '/app/v1/trips/t_goa/needs-you')).body.filter((x: any) => x.kind === 'vote');
     expect([marks[cancel], 'cancels_booking_id' in trip.decisions.find((d: any) => d.decision_id === ordinary), strip.find((x: any) => x.decision_id === cancel).cancels_booking_id, 'cancels_booking_id' in strip.find((x: any) => x.decision_id === ordinary)]).toEqual([bid, false, bid, false]);
     await h.flush();
     const goSees = JSON.stringify([h.go.events, (await h.go.call('read_trip', { trip_id: 't_goa' })).result]); // the events and the read Go gets
@@ -37,9 +37,9 @@ describe('the app can tell a cancellation vote from an ordinary one; Go cannot',
 
 describe('leaving a trip', () => {
   it('sends the departure and then, only if the leaver had a budget answer, the moved band naming nobody (the first event is the answer being set; the last person.left is the leaver with no answer: no budget event follows)', async () => {
-    await t.api(t.as('p_kabir'), 'PUT', '/app/trips/t_leave/me/budget', { min_minor: 1234500, max_minor: 2345600 });
-    await t.api(t.as('p_kabir'), 'POST', '/app/trips/t_leave/leave');
-    await t.api(t.as('p_meher'), 'POST', '/app/trips/t_leave/leave'); // never answered
+    await t.api(t.as('p_kabir'), 'PUT', '/app/v1/trips/t_leave/me/budget', { min_minor: 1234500, max_minor: 2345600 });
+    await t.api(t.as('p_kabir'), 'POST', '/app/v1/trips/t_leave/leave');
+    await t.api(t.as('p_meher'), 'POST', '/app/v1/trips/t_leave/leave'); // never answered
     await h.flush();
     const after = goEvents('t_leave').map((e) => [e.seq, e.type, e.data]);
     const left = after.filter((e) => e[1] === 'person.left' || (e[1] === 'trip.updated' && e[2].by.kind === 'system'));
@@ -62,7 +62,7 @@ describe('dates and itinerary sizes Postgres or a frame could not take', () => {
   });
 
   it('creating a trip refuses a year-0000 date, a date that does not exist, and dates the wrong way round, all with 422', async () => {
-    const create = (dates: unknown) => t.api(t.as('p_rahul'), 'POST', '/app/trips', { title: 'Dates', dates });
+    const create = (dates: unknown) => t.api(t.as('p_rahul'), 'POST', '/app/v1/trips', { title: 'Dates', dates });
     expect(refusal(await create({ start: '0000-01-01', end: '0000-01-02' }))).toEqual([422, 'invalid']);
     expect(refusal(await create({ start: '2026-02-30', end: '2026-03-02' }))).toEqual([422, 'invalid']);
     expect(refusal(await create({ start: '2026-11-09', end: '2026-11-06' }))).toEqual([422, 'invalid']);
@@ -70,7 +70,7 @@ describe('dates and itinerary sizes Postgres or a frame could not take', () => {
   });
 
   it('creating a trip also refuses a start that is not text and a valid start with an end date that does not exist', async () => {
-    const create = (dates: unknown) => t.api(t.as('p_rahul'), 'POST', '/app/trips', { title: 'Dates', dates });
+    const create = (dates: unknown) => t.api(t.as('p_rahul'), 'POST', '/app/v1/trips', { title: 'Dates', dates });
     expect(refusal(await create({ start: ['2026-11-06'], end: ['2026-11-09'] }))).toEqual([422, 'invalid']);
     expect(refusal(await create({ start: '2026-02-01', end: '2026-02-30' }))).toEqual([422, 'invalid']);
   });
@@ -79,9 +79,9 @@ describe('dates and itinerary sizes Postgres or a frame could not take', () => {
 describe('amounts in notifications', () => {
   it('are written in the currency\'s own units: rupees as before, yen without a fraction, dinars with three digits', async () => {
     expect([formatMoney(113334, 'INR'), formatMoney(68000, 'INR'), formatMoney(5000, 'JPY'), formatMoney(5000, 'KWD'), formatMoney(5001, 'KWD')].map((x) => x.replace(/\u00a0/g, ' '))).toEqual(['₹1,133.34', '₹680', 'JP¥5,000', 'KWD 5', 'KWD 5.001']);
-    await t.api(t.as('p_rahul'), 'POST', '/app/trips/t_yen/expenses', { paid_by_person_id: 'p_rahul', amount_minor: 5000, note: 'Ramen', category: 'food', split_person_ids: ['p_rahul', 'p_priya'] });
+    await t.api(t.as('p_rahul'), 'POST', '/app/v1/trips/t_yen/expenses', { paid_by_person_id: 'p_rahul', amount_minor: 5000, note: 'Ramen', category: 'food', split_person_ids: ['p_rahul', 'p_priya'] });
     const before = h.push.sent.length;
-    await t.api(t.as('p_rahul'), 'POST', '/app/trips/t_yen/settle-up/nudges', { person_id: 'p_priya' });
+    await t.api(t.as('p_rahul'), 'POST', '/app/v1/trips/t_yen/transfers/nudge', { from_person_id: 'p_priya' });
     expect(h.push.sent.slice(before).map((s) => s.n.body)).toEqual(['Rahul reminded you: you owe JP¥2,500']);
   });
 });

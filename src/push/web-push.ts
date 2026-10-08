@@ -169,19 +169,19 @@ export interface PushKeys {
 /**
  * The sender the server runs with. Without all three settings (a partial set counts as absent), or with keys the library refuses, it
  * warns (naming the settings, never their values) and falls back to the log-only sender; `publicKey` is then null and
- * `GET /app/push/key` answers 503.
+ * `GET /app/v1/config` says `web_push: false` with no `vapid_public_key`.
  */
 export function createPush(opts: { pool: pg.Pool; keys: PushKeys; log?: (message: string) => void; warn?: (message: string) => void }): { push: Push; publicKey: string | null } {
   const warn = opts.warn ?? ((m) => console.warn(m));
   const { publicKey, privateKey, subject } = opts.keys;
   if (!publicKey || !privateKey || !subject) {
-    warn('push: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT are not all set: notifications are only written to the log, and GET /app/push/key answers 503');
+    warn('push: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT are not all set: notifications are only written to the log, and GET /app/v1/config turns web_push off');
     return { push: new LogPush(), publicKey: null };
   }
   try {
     webpush.setVapidDetails(subject, publicKey, privateKey); // refuses keys that are not valid VAPID keys
   } catch {
-    warn('push: the VAPID settings are not valid: notifications are only written to the log, and GET /app/push/key answers 503');
+    warn('push: the VAPID settings are not valid: notifications are only written to the log, and GET /app/v1/config turns web_push off');
     return { push: new LogPush(), publicKey: null };
   }
   return { push: new WebPushSender({ pool: opts.pool, vapid: { publicKey, privateKey, subject }, log: opts.log }), publicKey };

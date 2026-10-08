@@ -14,7 +14,7 @@ export interface Config {
   vapidSubject?: string;
   /** Postgres connections per instance. The outbox uses at most a third of them, so Go's requests always find one. */
   dbPoolMax: number;
-  /** `supabase`: the app sends Supabase access tokens. `dev`: our own tokens from POST /app/people (never in production). */
+  /** `supabase`: the app sends Supabase access tokens. `dev`: our own tokens from POST /app/v1/dev/sign-in (never in production). */
   authMode: 'supabase' | 'dev';
   /** The Supabase project URL, such as https://abcd.supabase.co. Needed for `supabase` sign-in. */
   supabaseUrl?: string;
@@ -22,7 +22,41 @@ export interface Config {
   supabaseJwtSecret?: string;
   /** A PEM file with the CA that signed the database's certificate (Supabase: Database settings → SSL). */
   databaseCaCert?: string;
+  /** Feature flags set in the environment (FEATURE_<NAME>=1|0). Anything not set takes its default (see FEATURE_DEFAULTS). */
+  features: Partial<Features>;
 }
+
+/**
+ * What `GET /app/v1/config` tells the app it may show. Each Go-dependent feature is built behind its flag and flips on the
+ * day Go ships that item. `web_push` is on when the VAPID keys are set, unless the environment says otherwise.
+ */
+export interface Features {
+  web_push: boolean;
+  checkin: boolean;
+  visa: boolean;
+  calls: boolean;
+  vote_retract: boolean;
+  vote_flexible: boolean;
+  claim: boolean;
+  expense_approval: boolean;
+}
+
+export const FEATURE_DEFAULTS: Omit<Features, 'web_push'> = { checkin: false, visa: false, calls: false, vote_retract: false, vote_flexible: false, claim: false, expense_approval: true };
+
+/** The flags the environment sets explicitly: FEATURE_CHECKIN=1, FEATURE_WEB_PUSH=0, ... Anything else is left to its default. */
+export function featureOverrides(env: NodeJS.ProcessEnv = process.env): Partial<Features> {
+  const out: Partial<Features> = {};
+  for (const name of ['web_push', ...Object.keys(FEATURE_DEFAULTS)] as Array<keyof Features>) {
+    const v = env[`FEATURE_${name.toUpperCase()}`];
+    if (v === undefined || v === '') continue;
+    if (v !== '1' && v !== '0') throw new Error(`FEATURE_${name.toUpperCase()} must be 1 or 0, not ${v}`);
+    out[name] = v === '1';
+  }
+  return out;
+}
+
+/** The flags as served: the defaults, `web_push` from whether push keys exist, then the environment's overrides. */
+export const resolveFeatures = (overrides: Partial<Features>, pushConfigured: boolean): Features => ({ ...FEATURE_DEFAULTS, web_push: pushConfigured, ...overrides });
 
 function need(name: string): string {
   const v = process.env[name];
@@ -49,6 +83,7 @@ export function loadConfig(): Config {
     dbPoolMax: Math.max(4, Number(process.env.DB_POOL_MAX ?? 30)),
     ...authConfig(),
     databaseCaCert: process.env.DATABASE_CA_CERT || undefined,
+    features: featureOverrides(),
   };
 }
 

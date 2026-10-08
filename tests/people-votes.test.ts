@@ -21,23 +21,23 @@ const vote = { client_id: 'c1', question: 'Where do we stay?', kind: 'choice', a
 
 describe('a member opens a vote', () => {
   it('Go hears it by that person, others see it in their strip, it closes when all vote, and no push is sent', async () => {
-    const r = await t.api(priya(), 'POST', '/app/trips/t_goa/decisions', vote);
+    const r = await t.api(priya(), 'POST', '/app/v1/trips/t_goa/decisions', vote);
     expect([r.status, Object.keys(r.body).sort()]).toEqual([201, ['decision_id', 'seq']]);
     await h.flush();
     const opened = t.events('decision.opened').find((e) => e.data.decision.decision_id === r.body.decision_id)!;
     expect(check('Event', opened)).toMatchObject({ ok: true });
     expect(opened.data).toMatchObject({ by: { kind: 'person', person_id: 'p_priya' }, decision: { opened_by_person_id: 'p_priya', of: 5, voted: 0, status: 'open', options: [{ label: 'Villa Sol', price_minor: 1200000, currency: 'INR' }, { label: 'Beach hut' }] } });
     expect(opened.data.decision.options[1]).not.toHaveProperty('currency');
-    expect((await t.api(t.as('p_kabir'), 'GET', '/app/trips/t_goa/needs-you')).body).toContainEqual({ kind: 'vote', decision_id: r.body.decision_id, text: 'Where do we stay?' });
+    expect((await t.api(t.as('p_kabir'), 'GET', '/app/v1/trips/t_goa/needs-you')).body).toContainEqual({ kind: 'vote', decision_id: r.body.decision_id, text: 'Where do we stay?' });
     expect(h.live.events).toContainEqual({ tripId: 't_goa', event: { kind: 'trip', seq: r.body.seq } });
-    for (const p of ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir']) await t.api(t.as(p), 'POST', `/app/trips/t_goa/decisions/${r.body.decision_id}/vote`, { option_index: 0 });
+    for (const p of ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir']) await t.api(t.as(p), 'PUT', `/app/v1/trips/t_goa/decisions/${r.body.decision_id}/vote`, { option_index: 0 });
     await h.flush();
     expect(t.events('decision.closed').find((e) => e.data.decision.decision_id === r.body.decision_id)!.data).toMatchObject({ reason: 'everyone_voted', decision: { result_index: 0 } });
     expect(h.push.sent).toEqual([]);
   });
 
   it('refuses an unsigned caller, someone outside the trip, an unknown field and a closing time in the past', async () => {
-    const post = (who: any, body: unknown) => t.api(who, 'POST', '/app/trips/t_goa/decisions', body);
+    const post = (who: any, body: unknown) => t.api(who, 'POST', '/app/v1/trips/t_goa/decisions', body);
     const refused = async (who: any, body: unknown) => { const r = await post(who, body); return [r.status, r.body.error.code]; };
     expect(await refused(null, vote)).toEqual([401, 'unauthorized']);
     expect(await refused(t.as('p_stranger'), vote)).toEqual([403, 'forbidden']);
@@ -46,7 +46,7 @@ describe('a member opens a vote', () => {
   });
 
   it('the same client id twice, in sequence and three at once, makes one vote with one event', async () => {
-    const press = (question: string) => t.api(priya(), 'POST', '/app/trips/t_goa/decisions', { ...vote, client_id: `press-${question}`, question });
+    const press = (question: string) => t.api(priya(), 'POST', '/app/v1/trips/t_goa/decisions', { ...vote, client_id: `press-${question}`, question });
     const first = await press('Same press');
     const second = await press('Same press');
     expect([second.status, second.body]).toEqual([201, first.body]);
@@ -59,7 +59,7 @@ describe('a member opens a vote', () => {
   });
 
   it('refuses text the database cannot store and times it cannot read with 422, and accepts a far offset as the same instant', async () => {
-    const post = (patch: Record<string, unknown>) => t.api(priya(), 'POST', '/app/trips/t_goa/decisions', { ...vote, client_id: `odd-${Math.random()}`, ...patch });
+    const post = (patch: Record<string, unknown>) => t.api(priya(), 'POST', '/app/v1/trips/t_goa/decisions', { ...vote, client_id: `odd-${Math.random()}`, ...patch });
     const refused = async (patch: Record<string, unknown>) => { const r = await post(patch); return [r.status, r.body.error.code]; };
     expect(await refused({ question: 'a\u0000b' })).toEqual([422, 'invalid']);
     expect(await refused({ options: [{ label: '\ud800' }, { label: 'b' }] })).toEqual([422, 'invalid']);
@@ -70,7 +70,7 @@ describe('a member opens a vote', () => {
   });
 
   it('a closing time that falls outside years 1 to 9999 once its offset is applied is refused with 422; the last instant of 9999 is accepted', async () => {
-    const post = (closes_at: string) => t.api(priya(), 'POST', '/app/trips/t_goa/decisions', { ...vote, client_id: `year-${closes_at}`, closes_at });
+    const post = (closes_at: string) => t.api(priya(), 'POST', '/app/v1/trips/t_goa/decisions', { ...vote, client_id: `year-${closes_at}`, closes_at });
     const over = await post('9999-12-31T23:30:00-01:00'); // year 10000 in UTC
     expect([over.status, over.body.error.code]).toEqual([422, 'invalid']);
     expect((await post('9999-12-31T23:30:00Z')).status).toBe(201);
@@ -140,7 +140,7 @@ describe('cancelling a booking by group vote', () => {
     expect(await outcome(late, pl)).toEqual(['confirmed', 0, 'closed', null]);
     const off = await f.addBooking();
     const po = (await f.propose(off)).body.decision_id;
-    await t.api(t.as('p_rahul'), 'POST', `/app/trips/t_goa/decisions/${po}/cancel`);
+    await t.api(t.as('p_rahul'), 'POST', `/app/v1/trips/t_goa/decisions/${po}/cancel`);
     expect(await outcome(off, po)).toEqual(['confirmed', 0, 'cancelled', null]);
   });
 
@@ -196,7 +196,7 @@ describe('cancelling a booking by group vote', () => {
     await seedTrip(h.pool, 't_other', [{ id: 'p_orgx', name: 'Orgx', role: 'organizer' }]);
     await h.pool.query(`insert into bookings (booking_id, trip_id, kind, title, vendor, ref, amount_minor, currency, payer_person_id) values ('b_elsewhere', 't_other', 'stay', 'Villa', 'V', 'R', 1, 'INR', 'p_orgx')`);
     const bid = await f.addBooking();
-    const post = (who: any, id: string, body: unknown) => t.api(who, 'POST', `/app/trips/t_goa/bookings/${id}/cancel-vote`, body);
+    const post = (who: any, id: string, body: unknown) => t.api(who, 'POST', `/app/v1/trips/t_goa/bookings/${id}/cancel-vote`, body);
     expect(refused(await post(null, bid, { client_id: 'x' }))).toEqual([401, 'unauthorized']);
     expect(refused(await post(t.as('p_stranger'), bid, { client_id: 'x' }))).toEqual([403, 'forbidden']);
     expect(refused(await post(t.as('p_priya'), bid, { client_id: 'x', extra: 1 }))).toEqual([422, 'invalid']);
@@ -218,13 +218,13 @@ describe('cancelling a booking by group vote', () => {
     await seedTrip(h.pool, 't_leave2');
     const a = await f.addBooking('t_leave1');
     const pa = (await f.propose(a, 't_leave1', 'p_priya')).body.decision_id;
-    await t.api(t.as('p_priya'), 'POST', '/app/trips/t_leave1/leave');
+    await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_leave1/leave');
     for (const who of ['p_rahul', 'p_arjun', 'p_meher']) await f.castVote(pa, who, 0, 't_leave1');
     await f.closeEarly(pa, 't_leave1');
     const b = await f.addBooking('t_leave2');
     const pb = (await f.propose(b, 't_leave2', 'p_priya')).body.decision_id;
     await f.castVote(pb, 'p_kabir', 0, 't_leave2');
-    await t.api(t.as('p_kabir'), 'POST', '/app/trips/t_leave2/leave');
+    await t.api(t.as('p_kabir'), 'POST', '/app/v1/trips/t_leave2/leave');
     for (const who of ['p_rahul', 'p_arjun']) await f.castVote(pb, who, 0, 't_leave2');
     await f.closeEarly(pb, 't_leave2');
     await h.flush();

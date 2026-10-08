@@ -89,22 +89,22 @@ const signUp = async (fullName: string) => {
 try {
   console.log('\n2. Real Supabase tokens reach our server');
   const priya = await signUp('Priya Rehearsal');
-  const me = await call(priya.access, 'GET', '/app/me');
+  const me = await call(priya.access, 'GET', '/app/v1/me');
   expect(me.status === 200 && me.body.name === 'Priya Rehearsal', 'a fresh Supabase session signs Priya in; her person is created from the profile', JSON.stringify(me));
-  const again = await call(priya.access, 'GET', '/app/me');
+  const again = await call(priya.access, 'GET', '/app/v1/me');
   expect(again.body?.person_id === me.body?.person_id, 'the same token again is the same person');
 
   const refreshed = (await (await fetch(`${SB}/auth/v1/token?grant_type=refresh_token`, { method: 'POST', headers: { apikey: KEY, 'content-type': 'application/json' }, body: JSON.stringify({ refresh_token: priya.refresh }) })).json()) as { access_token?: string };
-  const afterRefresh = await call(refreshed.access_token ?? '', 'GET', '/app/me');
+  const afterRefresh = await call(refreshed.access_token ?? '', 'GET', '/app/v1/me');
   expect(afterRefresh.body?.person_id === me.body?.person_id, 'after a refresh (a new access token) she is still the same person');
 
   console.log('\n3. The app works end to end with Supabase sign-in');
   const kabir = await signUp('Kabir Rehearsal');
-  const trip = await call(priya.access, 'POST', '/app/trips', { title: 'Rehearsal trip' });
+  const trip = await call(priya.access, 'POST', '/app/v1/trips', { title: 'Rehearsal trip' });
   expect(trip.status === 201, 'Priya creates a trip', JSON.stringify(trip.body));
-  const joined = await call(kabir.access, 'POST', `/app/join/${trip.body.invite_url.split('/j/')[1]}`, { from_city: 'Pune' });
+  const joined = await call(kabir.access, 'POST', `/app/v1/invites/${trip.body.invite_url.split('/j/')[1]}/accept`, { from_city: 'Pune' });
   expect(joined.body?.already === false, 'Kabir joins with his own Supabase token');
-  const msg = await call(kabir.access, 'POST', `/app/trips/${trip.body.trip_id}/messages`, { client_id: 'rh-1', text: '@Go hello from the rehearsal' });
+  const msg = await call(kabir.access, 'POST', `/app/v1/trips/${trip.body.trip_id}/messages`, { client_id: 'rh-1', text: '@Go hello from the rehearsal' });
   expect(msg.status === 200, 'Kabir talks to Go');
   const t0 = Date.now();
   while (go.replies.length === 0 && Date.now() - t0 < 10_000) await new Promise((r) => setTimeout(r, 100));
@@ -114,11 +114,11 @@ try {
   expect(!JSON.stringify(go.events).includes('@example.test'), 'no email address ever reached Go');
 
   console.log('\n4. Bad tokens are refused');
-  expect((await call(KEY.startsWith('ey') ? KEY : status.ANON_KEY!, 'GET', '/app/me')).status === 401, "the project's anon key is not a sign-in (401)");
+  expect((await call(KEY.startsWith('ey') ? KEY : status.ANON_KEY!, 'GET', '/app/v1/me')).status === 401, "the project's anon key is not a sign-in (401)");
   const [h, , s] = priya.access.split('.');
   const forged = Buffer.from(JSON.stringify({ sub: kabir.userId, role: 'authenticated', aud: 'authenticated', iss: `${SB}/auth/v1`, exp: 9_999_999_999 })).toString('base64url');
-  expect((await call(`${h}.${forged}.${s}`, 'GET', '/app/me')).status === 401, 'a token with changed claims (401)');
-  expect((await call(null, 'POST', '/app/people', { name: 'x' })).status === 404, 'POST /app/people does not exist (404)');
+  expect((await call(`${h}.${forged}.${s}`, 'GET', '/app/v1/me')).status === 401, 'a token with changed claims (401)');
+  expect((await call(null, 'POST', '/app/v1/dev/sign-in', { name: 'x' })).status === 404, 'POST /app/v1/dev/sign-in does not exist (404)');
 
   console.log("\n5. Supabase's public Data API cannot see our tables");
   // As any visitor would call it (just the publishable key), and as a signed-in person would (plus their token).

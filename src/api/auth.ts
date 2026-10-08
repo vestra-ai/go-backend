@@ -8,7 +8,7 @@ import { newId } from '../db/ids.js';
 // - `supabase` (production): the app signs in with Supabase Auth (Google) and sends Supabase's access token on every
 //   call. This server never issues tokens and never sees Google's: it only checks Supabase's signature, the issuer, the
 //   audience and the expiry, then finds (or, the first time, creates) the person linked to that Supabase user.
-// - `dev` (tests, the dev stack, Postman's "Run in order"): our own small signed tokens from POST /app/people.
+// - `dev` (local runs only): our own small signed tokens from POST /app/v1/dev/sign-in.
 
 export type AuthResult = { personId: string } | { error: 'missing' | 'expired' | 'invalid' };
 
@@ -71,6 +71,8 @@ interface SupabaseClaims extends JWTPayload {
   role?: string;
   email?: string;
   is_anonymous?: boolean;
+  /** `provider` is how the user signed in: `google`, or `email` for the project's test users. */
+  app_metadata?: { provider?: string; [k: string]: unknown };
   user_metadata?: { full_name?: string; name?: string; avatar_url?: string; picture?: string; [k: string]: unknown };
 }
 
@@ -128,11 +130,12 @@ export class SupabaseAuth implements Authenticator {
       const email = typeof claims.email === 'string' && claims.email.length <= 320 ? claims.email : null;
       const name = firstText(meta.full_name, meta.name, email?.split('@')[0]) ?? 'Traveller';
       const photo = httpsUrl(meta.avatar_url) ?? httpsUrl(meta.picture);
+      const provider = firstText(claims.app_metadata?.provider)?.slice(0, 40) ?? 'email';
       // Two first requests at the same moment create one person: the second insert does nothing and reads the first.
       const created = await this.opts.pool.query(
-        `insert into people (person_id, name, photo_url, email, auth_user_id) values ($1, $2, $3, $4, $5)
+        `insert into people (person_id, name, photo_url, email, auth_user_id, auth_provider) values ($1, $2, $3, $4, $5, $6)
          on conflict (auth_user_id) do nothing returning person_id`,
-        [newId('p'), name.slice(0, 80), photo, email, userId],
+        [newId('p'), name.slice(0, 80), photo, email, userId, provider],
       );
       personId = created.rows[0]?.person_id ?? (await this.opts.pool.query('select person_id from people where auth_user_id = $1', [userId])).rows[0].person_id;
     }

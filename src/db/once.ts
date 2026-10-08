@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import { conflict } from '../domain/errors.js';
-import type { AfterCommit } from './pool.js';
+import { withTx, type AfterCommit } from './pool.js';
 
 const READ = 'select answer from go_requests where trip_id = $1 and request_id = $2';
 
@@ -43,4 +43,12 @@ export async function once<T extends object>(
   } finally {
     db.release();
   }
+}
+
+/**
+ * `once` when the caller has a repeat key (the app's `client_id` press key), a plain transaction when it has none: the
+ * app's writes without a press key are covered by the Idempotency-Key header instead (src/api/idempotency.ts).
+ */
+export function onceIfKeyed<T extends object>(pool: pg.Pool, tripId: string, key: string | undefined | '', work: (db: pg.PoolClient, after: AfterCommit) => Promise<T>): Promise<T> {
+  return key ? once(pool, tripId, key, work) : withTx(pool, work);
 }

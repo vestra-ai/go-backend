@@ -4,7 +4,6 @@ import { randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { migrate } from '../scripts/migrate.js';
-import { signSession } from '../src/api/auth.js';
 import { rows, startHarness, type Harness } from './helpers/harness.js';
 
 let h: Harness;
@@ -20,22 +19,24 @@ const ok = async (method: string, params: Record<string, unknown>) => {
   return f.result;
 };
 const goErr = async (method: string, params: Record<string, unknown>) => (await h.go.call(method, { request_id: rq(), trip_id: T, ...params })).error;
-const token = (id: string) => signSession(id, h.sessionSecret);
+const token = (id: string) => h.token(id);
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-const api = async (who: string | null, method: Method, url: string, payload?: unknown, headers: Record<string, string> = {}) => {
-  const r = await h.app.inject({ method, url, payload: payload as any, headers: { ...(who ? { authorization: `Bearer ${token(who)}` } : {}), ...headers } });
+/** `who` is a seeded person's id, or a person signed in with `h.signIn` (whose token is their own). */
+const api = async (who: string | { token: string } | null, method: Method, url: string, payload?: unknown, headers: Record<string, string> = {}) => {
+  const bearer = typeof who === 'string' ? await token(who) : who?.token;
+  const r = await h.app.inject({ method, url, payload: payload as any, headers: { ...(bearer ? { authorization: `Bearer ${bearer}` } : {}), ...headers } });
   return { status: r.statusCode, body: r.body ? JSON.parse(r.body) : null, headers: r.headers };
 };
 const events = (type: string) => h.go.events.filter((e) => e.type === type);
-const msg = (who: string, client_id: string, text: string) => api(who, 'POST', `/app/trips/${T}/messages`, { client_id, text });
+const msg = (who: string, client_id: string, text: string) => api(who, 'POST', `/app/v1/trips/${T}/messages`, { client_id, text });
 
 describe('A1: a person\'s message without client_id', () => {
-  it('is refused with 400 instead of being silently dropped as a "repeat"', async () => {
-    const first = await api('p_rahul', 'POST', `/app/trips/${T}/messages`, { text: 'first' });
-    const second = await api('p_rahul', 'POST', `/app/trips/${T}/messages`, { text: 'second' });
-    expect(first.status).toBe(400);
-    expect(second.status).toBe(400);
-    expect(first.body.error.code).toBe('invalid');
+  it('is refused with 422 (unless an Idempotency-Key stands in for it) instead of being silently dropped as a "repeat"', async () => {
+    const first = await api('p_rahul', 'POST', `/app/v1/trips/${T}/messages`, { text: 'first' });
+    const second = await api('p_rahul', 'POST', `/app/v1/trips/${T}/messages`, { text: 'second' });
+    expect(first.status).toBe(422);
+    expect(second.status).toBe(422);
+    expect(first.body.error).toMatchObject({ code: 'invalid', field: 'client_id' });
     expect((await rows(h.pool, "select count(*)::int as n from messages where text in ('first','second')"))[0].n).toBe(0);
   });
 
@@ -48,24 +49,24 @@ describe('A1: a person\'s message without client_id', () => {
   });
 });
 
-describe('A2: bad app input answers 400 or 422 with the standard error, never 500', () => {
+describe('A2: bad app input answers 422 with the standard error (400 only for unreadable JSON), never 500', () => {
   const bad: Array<[string, Method, string, unknown, number]> = [
-    ['text over 4000 characters', 'POST', `/app/trips/${T}/messages`, { client_id: 'fx_long', text: 'x'.repeat(4001) }, 400],
-    ['an empty JSON object for a message', 'POST', `/app/trips/${T}/messages`, {}, 400],
-    ['an attachment of the wrong shape', 'POST', `/app/trips/${T}/messages`, { client_id: 'fx_att', text: 'pic', attachments: [{ kind: 'video' }] }, 422],
-    ['an emoji longer than 16 characters', 'POST', `/app/trips/${T}/messages/m_any/reactions`, { emoji: '👍'.repeat(17) }, 400],
-    ['a vote with no option', 'POST', `/app/trips/${T}/decisions/d_any/vote`, {}, 400],
-    ['an expense of zero', 'POST', `/app/trips/${T}/expenses`, { paid_by_person_id: 'p_rahul', amount_minor: 0, note: 'x', category: 'food', split_person_ids: ['p_rahul'] }, 400],
-    ['an expense with no amount', 'POST', `/app/trips/${T}/expenses`, { paid_by_person_id: 'p_rahul', note: 'x', category: 'food', split_person_ids: ['p_rahul'] }, 400],
-    ['an expense with an empty split', 'POST', `/app/trips/${T}/expenses`, { paid_by_person_id: 'p_rahul', amount_minor: 100, note: 'x', category: 'food', split_person_ids: [] }, 400],
-    ['an expense with an unknown category', 'POST', `/app/trips/${T}/expenses`, { paid_by_person_id: 'p_rahul', amount_minor: 100, note: 'x', category: 'banana', split_person_ids: ['p_rahul'] }, 422],
-    ['an expense note over 120 characters', 'POST', `/app/trips/${T}/expenses`, { paid_by_person_id: 'p_rahul', amount_minor: 100, note: 'x'.repeat(121), category: 'food', split_person_ids: ['p_rahul'] }, 400],
-    ['a card tap with an action id the contract refuses', 'POST', `/app/trips/${T}/card-taps`, { card_id: 'c_any', action_id: 'Pick' }, 400],
-    ['a card tap with no card', 'POST', `/app/trips/${T}/card-taps`, { action_id: 'pick' }, 400],
-    ['pausing Go with no answer', 'POST', `/app/trips/${T}/go-paused`, {}, 400],
-    ['typing with no on/off', 'POST', `/app/trips/${T}/typing`, {}, 400],
-    ['a vault link to a page that does not exist', 'POST', '/app/me/vault-link', { start: 'bogus' }, 400],
-    ['carry-over with no value', 'PUT', '/app/me/carry-over', {}, 400],
+    ['text over 4000 characters', 'POST', `/app/v1/trips/${T}/messages`, { client_id: 'fx_long', text: 'x'.repeat(4001) }, 422],
+    ['an empty JSON object for a message', 'POST', `/app/v1/trips/${T}/messages`, {}, 422],
+    ['an attachment of the wrong shape', 'POST', `/app/v1/trips/${T}/messages`, { client_id: 'fx_att', text: 'pic', attachments: [{ kind: 'video' }] }, 422],
+    ['an emoji longer than 16 characters', 'POST', `/app/v1/trips/${T}/messages/m_any/reactions`, { emoji: '👍'.repeat(17) }, 422],
+    ['a vote with no option', 'PUT', `/app/v1/trips/${T}/decisions/d_any/vote`, {}, 422],
+    ['an expense of zero', 'POST', `/app/v1/trips/${T}/expenses`, { paid_by_person_id: 'p_rahul', amount_minor: 0, note: 'x', category: 'food', split_person_ids: ['p_rahul'] }, 422],
+    ['an expense with no amount', 'POST', `/app/v1/trips/${T}/expenses`, { paid_by_person_id: 'p_rahul', note: 'x', category: 'food', split_person_ids: ['p_rahul'] }, 422],
+    ['an expense with an empty split', 'POST', `/app/v1/trips/${T}/expenses`, { paid_by_person_id: 'p_rahul', amount_minor: 100, note: 'x', category: 'food', split_person_ids: [] }, 422],
+    ['an expense with an unknown category', 'POST', `/app/v1/trips/${T}/expenses`, { paid_by_person_id: 'p_rahul', amount_minor: 100, note: 'x', category: 'banana', split_person_ids: ['p_rahul'] }, 422],
+    ['an expense note over 120 characters', 'POST', `/app/v1/trips/${T}/expenses`, { paid_by_person_id: 'p_rahul', amount_minor: 100, note: 'x'.repeat(121), category: 'food', split_person_ids: ['p_rahul'] }, 422],
+    ['a card press with an action id the contract refuses', 'POST', `/app/v1/trips/${T}/cards/c_any/actions`, { action_id: 'Pick' }, 422],
+    ['a card press with no action', 'POST', `/app/v1/trips/${T}/cards/c_any/actions`, {}, 422],
+    ['pausing Go with no answer', 'PATCH', `/app/v1/trips/${T}/me`, {}, 422],
+    ['typing with no on/off', 'POST', `/app/v1/trips/${T}/typing`, {}, 422],
+    ['a vault link to a page that does not exist', 'POST', '/app/v1/me/vault-link', { start: 'bogus' }, 422],
+    ['carry-over with no value', 'PATCH', '/app/v1/me/go', {}, 422],
   ];
   for (const [what, method, url, body, status] of bad) {
     it(`${what}: ${status}`, async () => {
@@ -75,42 +76,43 @@ describe('A2: bad app input answers 400 or 422 with the standard error, never 50
     });
   }
 
-  it('join answers over the contract limits: 400', async () => {
-    const stranger = (await api(null, 'POST', '/app/people', { name: 'New' })).body.person_id;
-    expect((await api(stranger, 'POST', '/app/join/inv_t_goa', { know: Array.from({ length: 21 }, (_, i) => `k${i}`) })).status).toBe(400);
-    expect((await api(stranger, 'POST', '/app/join/inv_t_goa', { from_city: 'x'.repeat(61) })).status).toBe(400);
-    expect((await api(stranger, 'POST', '/app/join/inv_t_goa', { budget: {} })).status).toBe(400);
+  it('join answers over the contract limits: 422, naming the field', async () => {
+    const stranger = await h.signIn('New');
+    const over = await api(stranger, 'POST', '/app/v1/invites/inv_t_goa/accept', { know: Array.from({ length: 21 }, (_, i) => `k${i}`) });
+    expect([over.status, over.body.error.field]).toEqual([422, 'know']);
+    expect((await api(stranger, 'POST', '/app/v1/invites/inv_t_goa/accept', { from_city: 'x'.repeat(61) })).status).toBe(422);
+    expect((await api(stranger, 'POST', '/app/v1/invites/inv_t_goa/accept', { budget: {} })).status).toBe(422);
   });
 
-  it('unreadable JSON and an empty JSON body: 400, not 500', async () => {
-    const broken = await api('p_rahul', 'POST', `/app/trips/${T}/messages`, '{"client_id": "x", ', { 'content-type': 'application/json' });
+  it('unreadable JSON is 400 bad_request; an empty JSON body is 422 (a field is missing), not 500', async () => {
+    const broken = await api('p_rahul', 'POST', `/app/v1/trips/${T}/messages`, '{"client_id": "x", ', { 'content-type': 'application/json' });
     expect(broken.status).toBe(400);
-    expect(broken.body.error.code).toBe('invalid');
-    const empty = await h.app.inject({ method: 'POST', url: `/app/trips/${T}/messages`, payload: '', headers: { authorization: `Bearer ${token('p_rahul')}`, 'content-type': 'application/json' } });
-    expect(empty.statusCode).toBe(400);
+    expect(broken.body.error.code).toBe('bad_request');
+    const empty = await h.app.inject({ method: 'POST', url: `/app/v1/trips/${T}/messages`, payload: '', headers: { authorization: `Bearer ${await token('p_rahul')}`, 'content-type': 'application/json' } });
+    expect(empty.statusCode).toBe(422);
   });
 
-  it('a bad after_seq or limit on the message list: 400', async () => {
-    expect((await api('p_rahul', 'GET', `/app/trips/${T}/messages?after_seq=abc`)).status).toBe(400);
-    expect((await api('p_rahul', 'GET', `/app/trips/${T}/messages?limit=500`)).status).toBe(400);
-    expect((await api('p_rahul', 'GET', `/app/trips/${T}/messages?after_seq=0&limit=2`)).status).toBe(200);
+  it('a bad after_seq or limit on the message list: 422', async () => {
+    expect((await api('p_rahul', 'GET', `/app/v1/trips/${T}/messages?after_seq=abc`)).status).toBe(422);
+    expect((await api('p_rahul', 'GET', `/app/v1/trips/${T}/messages?limit=500`)).status).toBe(422);
+    expect((await api('p_rahul', 'GET', `/app/v1/trips/${T}/messages?after_seq=0&limit=2`)).status).toBe(200);
   });
 
   it('PATCH with no text is refused and the message keeps its words', async () => {
     const m = await msg('p_priya', 'fx_keep', 'keep these words');
-    const r = await api('p_priya', 'PATCH', `/app/trips/${T}/messages/${m.body.message_id}`, {});
-    expect(r.status).toBe(400);
+    const r = await api('p_priya', 'PATCH', `/app/v1/trips/${T}/messages/${m.body.message_id}`, {});
+    expect(r.status).toBe(422);
     expect((await rows(h.pool, 'select text from messages where message_id = $1', [m.body.message_id]))[0].text).toBe('keep these words');
   });
 
-  it('an unknown route answers 404 in the standard error shape', async () => {
-    const r = await api('p_rahul', 'GET', '/app/nope');
+  it('an unknown route answers 404 in the standard error shape, with the request id', async () => {
+    const r = await api('p_rahul', 'GET', '/app/v1/nope');
     expect(r.status).toBe(404);
-    expect(r.body).toEqual({ error: { code: 'not_found', message: 'no route GET /app/nope' } });
+    expect(r.body).toEqual({ error: { code: 'not_found', message: 'no route GET /app/v1/nope', field: null, retry_after_seconds: null, request_id: r.headers['x-request-id'] } });
   });
 
   it('a POST with no body at all still works for routes that need none', async () => {
-    const r = await h.app.inject({ method: 'POST', url: `/app/trips/${T}/seen`, headers: { authorization: `Bearer ${token('p_rahul')}` } });
+    const r = await h.app.inject({ method: 'POST', url: `/app/v1/trips/${T}/read`, headers: { authorization: `Bearer ${await token('p_rahul')}` } });
     expect(r.statusCode).toBe(200);
   });
 });
@@ -140,16 +142,17 @@ describe('A3: an update that sends only fields the contract does not know', () =
 describe('A4: the "you owe" push comes from money.transfers', () => {
   it('someone in credit for the whole trip is not pushed, even when they are in the new split', async () => {
     // A new small trip so the balances are easy to follow.
-    const [a, b] = (await Promise.all(['Asha', 'Ben'].map(async (name) => (await api(null, 'POST', '/app/people', { name })).body.person_id))) as [string, string];
-    const t = (await api(a, 'POST', '/app/trips', { title: 'Owe test' })).body;
-    await api(b, 'POST', `/app/join/${t.invite_url.split('/j/')[1]}`, {});
+    const [asha, ben] = await Promise.all(['Asha', 'Ben'].map((name) => h.signIn(name)));
+    const [a, b] = [asha!.id, ben!.id];
+    const t = (await api(asha!, 'POST', '/app/v1/trips', { title: 'Owe test' })).body;
+    await api(ben!, 'POST', `/app/v1/invites/${t.invite_url.split('/j/')[1]}/accept`, {});
     // Asha pays ₹1,000 for both: Ben owes Asha ₹500.
     h.push.sent.length = 0;
-    await api(a, 'POST', `/app/trips/${t.trip_id}/expenses`, { paid_by_person_id: a, amount_minor: 100000, note: 'Dinner', category: 'food', split_person_ids: [a, b] });
+    await api(asha!, 'POST', `/app/v1/trips/${t.trip_id}/expenses`, { paid_by_person_id: a, amount_minor: 100000, note: 'Dinner', category: 'food', split_person_ids: [a, b] });
     expect(h.push.sent).toEqual([{ to: [b], n: { body: 'You owe Asha ₹500 for Dinner', data: { trip_id: t.trip_id } } }]);
     // Ben pays ₹200 for both: Asha's share is ₹100, but she is still owed ₹400 overall, so she gets no push.
     h.push.sent.length = 0;
-    await api(b, 'POST', `/app/trips/${t.trip_id}/expenses`, { paid_by_person_id: b, amount_minor: 20000, note: 'Coffee', category: 'food', split_person_ids: [a, b] });
+    await api(ben!, 'POST', `/app/v1/trips/${t.trip_id}/expenses`, { paid_by_person_id: b, amount_minor: 20000, note: 'Coffee', category: 'food', split_person_ids: [a, b] });
     expect(h.push.sent).toEqual([]);
   });
 });
@@ -160,7 +163,7 @@ describe('A5: a booking after a person undid the decided line', () => {
     for (const p of ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir']) await h.pool.query('insert into votes (decision_id, person_id, option_index) values ($1,$2,0)', [d.decision_id, p]);
     await ok('close_vote', { decision_id: d.decision_id });
     const [decided] = await rows(h.pool, "select line_id from record_lines where decision_id = $1 and kind = 'decided'", [d.decision_id]);
-    expect((await api('p_priya', 'POST', `/app/trips/${T}/record/${decided.line_id}/undo`)).status).toBe(200);
+    expect((await api('p_priya', 'POST', `/app/v1/trips/${T}/record/${decided.line_id}/undo`)).status).toBe(200);
     const b = await ok('add_booking', { kind: 'stay', title: 'Villa Sol, 3 nights', vendor: 'ixigo', ref: 'IXG-1', amount_minor: 5420000, currency: 'INR', payer_person_id: 'p_rahul', for_person_ids: ['p_rahul'], decision_id: d.decision_id });
     const lines = await rows(h.pool, 'select line_id, kind, status, booking_id from record_lines where decision_id = $1 order by created_at', [d.decision_id]);
     expect(lines).toEqual([
@@ -190,38 +193,38 @@ describe('A6: two different requests for the same thing at the same moment', () 
 
 describe('A7: someone with a budget answer leaves', () => {
   it('sends trip.updated ["budget"] by the system after person.left, so Go knows the band moved', async () => {
-    const p = (await api(null, 'POST', '/app/people', { name: 'Budgeter' })).body.person_id;
-    await api(p, 'POST', '/app/join/inv_t_goa', { budget: { min_minor: 900000 } });
+    const budgeter = await h.signIn('Budgeter');
+    await api(budgeter, 'POST', '/app/v1/invites/inv_t_goa/accept', { budget: { min_minor: 900000 } });
     const before = (await h.go.call('read_trip', { trip_id: T })).result.budget;
     expect(before.lowest.min_minor).toBe(900000);
-    await api(p, 'POST', `/app/trips/${T}/leave`);
+    await api(budgeter, 'POST', `/app/v1/trips/${T}/leave`);
     await h.flush();
     const left = events('person.left').at(-1)!;
     const updated = events('trip.updated').at(-1)!;
-    expect(left.data).toEqual({ person_id: p });
+    expect(left.data).toEqual({ person_id: budgeter.id });
     expect(updated).toMatchObject({ seq: left.seq + 1, data: { by: { kind: 'system' }, changed: ['budget'] } });
     const after = (await h.go.call('read_trip', { trip_id: T })).result.budget;
     expect(after.answered).toBe(before.answered - 1);
   });
 
   it('someone with no budget answer leaving sends no budget event', async () => {
-    const p = (await api(null, 'POST', '/app/people', { name: 'NoBudget' })).body.person_id;
-    await api(p, 'POST', '/app/join/inv_t_goa', {});
-    await api(p, 'POST', `/app/trips/${T}/leave`);
+    const p = await h.signIn('NoBudget');
+    await api(p, 'POST', '/app/v1/invites/inv_t_goa/accept', {});
+    await api(p, 'POST', `/app/v1/trips/${T}/leave`);
     await h.flush();
-    expect(h.go.events.at(-1)).toMatchObject({ type: 'person.left', data: { person_id: p } });
+    expect(h.go.events.at(-1)).toMatchObject({ type: 'person.left', data: { person_id: p.id } });
   });
 });
 
 describe('A8: not-found answers carry the not_found code', () => {
   it('a tap on a card that does not exist: 404 not_found', async () => {
-    const r = await api('p_rahul', 'POST', `/app/trips/${T}/card-taps`, { card_id: 'c_missing', action_id: 'pick' });
+    const r = await api('p_rahul', 'POST', `/app/v1/trips/${T}/cards/c_missing/actions`, { action_id: 'pick' });
     expect(r).toMatchObject({ status: 404, body: { error: { code: 'not_found' } } });
   });
 
   it('Go answering 404 for a fact it does not have: 404 not_found to the app', async () => {
     h.go.answers.delete_fact = () => ({ error: { code: 404, message: 'no fact f_x', data: { code: 'not_found' } } });
-    const r = await api('p_rahul', 'DELETE', '/app/me/facts/f_x');
+    const r = await api('p_rahul', 'DELETE', '/app/v1/me/go/facts/f_x');
     expect(r).toMatchObject({ status: 404, body: { error: { code: 'not_found' } } });
     h.go.answers.delete_fact = () => ({ result: { ok: true } });
   });
@@ -229,7 +232,7 @@ describe('A8: not-found answers carry the not_found code', () => {
 
 describe('A9: an expense for a booking in another trip', () => {
   it('is refused with 422', async () => {
-    const r = await api('p_rahul', 'POST', `/app/trips/${T}/expenses`, { paid_by_person_id: 'p_rahul', amount_minor: 100, note: 'x', category: 'stay', split_person_ids: ['p_rahul'], booking_id: 'b_elsewhere' });
+    const r = await api('p_rahul', 'POST', `/app/v1/trips/${T}/expenses`, { paid_by_person_id: 'p_rahul', amount_minor: 100, note: 'x', category: 'stay', split_person_ids: ['p_rahul'], booking_id: 'b_elsewhere' });
     expect(r).toMatchObject({ status: 422, body: { error: { code: 'invalid' } } });
   });
 });
@@ -245,7 +248,7 @@ describe('B11: two instances starting at the same moment', () => {
     const a = new pg.Pool({ connectionString: `${base}/${name}` });
     const b = new pg.Pool({ connectionString: `${base}/${name}` });
     const [ra, rb] = await Promise.all([migrate(a), migrate(b)]);
-    expect([...ra, ...rb]).toEqual(['001_core.sql', '002_people_actions.sql', '003_supabase.sql']); // each file is applied once, by whichever instance got the lock first
+    expect([...ra, ...rb]).toEqual(['001_core.sql', '002_people_actions.sql', '003_supabase.sql', '004_v1_conventions.sql']); // each file is applied once, by whichever instance got the lock first
     await a.end();
     await b.end();
   });
@@ -267,11 +270,11 @@ describe('B13: frames that are not JSON-RPC', () => {
 });
 
 describe('R2 (real Go): an empty body with content-type: application/json', () => {
-  it('is read as no body: a POST that needs none works, and a route that needs fields still says 400', async () => {
-    const headers = { authorization: `Bearer ${token('p_rahul')}`, 'content-type': 'application/json' };
-    expect((await h.app.inject({ method: 'POST', url: `/app/trips/${T}/seen`, payload: '', headers })).statusCode).toBe(200);
-    const msg = await h.app.inject({ method: 'POST', url: `/app/trips/${T}/messages`, payload: '', headers });
-    expect(msg.statusCode).toBe(400);
+  it('is read as no body: a POST that needs none works, and a route that needs fields still says 422', async () => {
+    const headers = { authorization: `Bearer ${await token('p_rahul')}`, 'content-type': 'application/json' };
+    expect((await h.app.inject({ method: 'POST', url: `/app/v1/trips/${T}/read`, payload: '', headers })).statusCode).toBe(200);
+    const msg = await h.app.inject({ method: 'POST', url: `/app/v1/trips/${T}/messages`, payload: '', headers });
+    expect(msg.statusCode).toBe(422);
     expect(JSON.parse(msg.body).error.message).toMatch(/client_id/);
   });
 });
@@ -280,22 +283,22 @@ describe('R1 (real Go): forget me', () => {
   it('sends no person.updated when there were no join answers to clear', async () => {
     await h.flush();
     const before = h.go.events.length;
-    expect((await api('p_meher', 'POST', '/app/me/forget', { trip_id: T })).status).toBe(200);
+    expect((await api('p_meher', 'DELETE', `/app/v1/me/go?trip_id=${T}`)).status).toBe(200);
     await h.flush();
     expect(h.go.events.slice(before).filter((e) => e.type === 'person.updated')).toEqual([]);
   });
 
   it('clears the answers in a trip the person has left, without an event, by trip or everywhere', async () => {
-    const p = (await api(null, 'POST', '/app/people', { name: 'Leaver' })).body.person_id;
-    await api(p, 'POST', '/app/join/inv_t_goa', { from_city: 'Pune', know: ['Nuts'] });
-    await api(p, 'POST', `/app/trips/${T}/leave`);
+    const p = await h.signIn('Leaver');
+    await api(p, 'POST', '/app/v1/invites/inv_t_goa/accept', { from_city: 'Pune', know: ['Nuts'] });
+    await api(p, 'POST', `/app/v1/trips/${T}/leave`);
     await h.flush();
     const before = h.go.events.length;
-    expect((await api(p, 'POST', '/app/me/forget', { trip_id: T })).status).toBe(200); // was 403
-    expect((await rows(h.pool, 'select from_city, know from trip_people where trip_id = $1 and person_id = $2', [T, p]))[0]).toEqual({ from_city: null, know: [] });
+    expect((await api(p, 'DELETE', `/app/v1/me/go?trip_id=${T}`)).status).toBe(200); // was 403
+    expect((await rows(h.pool, 'select from_city, know from trip_people where trip_id = $1 and person_id = $2', [T, p.id]))[0]).toEqual({ from_city: null, know: [] });
     await h.flush();
     expect(h.go.events.length).toBe(before);
-    expect((await api(p, 'POST', '/app/me/forget', { trip_id: 't_never' })).status).toBe(403);
+    expect((await api(p, 'DELETE', `/app/v1/me/go?trip_id=${'t_never'}`)).status).toBe(403);
   });
 });
 

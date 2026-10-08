@@ -3,12 +3,14 @@ import { readFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import pg from 'pg';
 import { afterAll, beforeAll, expect, it } from 'vitest';
+import { FakeSupabaseAuth } from './helpers/fake-supabase-auth.js';
 import { MockGo } from './helpers/mock-go.js';
 
 const spend = JSON.parse(readFileSync(new URL('../contract/test-vectors/spend-approval.json', import.meta.url), 'utf8'));
 const freePort = () => new Promise<number>((resolve) => { const s = createServer(); s.listen(0, () => { const p = (s.address() as any).port; s.close(() => resolve(p)); }); });
 
 let go: MockGo;
+const auth = new FakeSupabaseAuth();
 let proc: ChildProcess;
 let port: number;
 let out = '';
@@ -16,6 +18,7 @@ let out = '';
 beforeAll(async () => {
   go = new MockGo();
   const base = await go.listen();
+  await auth.start();
   const admin = new pg.Client({ connectionString: `${process.env.TEST_PG_URL}/postgres` });
   await admin.connect();
   await admin.query('create database e2e');
@@ -31,6 +34,8 @@ beforeAll(async () => {
       INSTANCE_NAME: 'e2e-1',
       PORT: String(port),
       APP_SESSION_SECRET: 'e2e-secret',
+      AUTH_MODE: 'supabase',
+      SUPABASE_URL: auth.url,
     },
   });
   proc.stdout!.on('data', (d) => (out += d));
@@ -45,6 +50,7 @@ beforeAll(async () => {
 afterAll(async () => {
   proc.kill('SIGKILL');
   await go.close();
+  await auth.close();
 });
 
 it('starts: migrates, opens the signed socket as its own instance, and serves the app API', async () => {
@@ -52,13 +58,21 @@ it('starts: migrates, opens the signed socket as its own instance, and serves th
   expect(go.targets[0]).toBe('/v1/socket?instance=e2e-1');
   const health = await (await fetch(`http://127.0.0.1:${port}/health`)).json();
   expect(health).toEqual({ ok: true, go: true });
+  expect(await (await fetch(`http://127.0.0.1:${port}/app/v1/health`)).json()).toEqual({ ok: true, go: true });
+  const config = await fetch(`http://127.0.0.1:${port}/app/v1/config`);
+  expect(config.headers.get('x-request-id')).toMatch(/^[0-9a-f]{12}$/);
+  expect(await config.json()).toEqual({
+    contract: '1.0.0', min_client_version: '1.0.0', currency_default: 'INR', vapid_public_key: null,
+    features: { web_push: false, checkin: false, visa: false, calls: false, vote_retract: false, vote_flexible: false, claim: false, expense_approval: true },
+  });
 });
 
 it('a new trip reaches Go as trip.created, and Go can read it back', async () => {
   const api = (path: string, init: RequestInit & { token?: string } = {}) =>
     fetch(`http://127.0.0.1:${port}${path}`, { ...init, headers: { 'content-type': 'application/json', ...(init.token ? { authorization: `Bearer ${init.token}` } : {}) } }).then(async (r) => ({ status: r.status, body: await r.json() }));
-  const p = await api('/app/people', { method: 'POST', body: JSON.stringify({ name: 'Rahul' }) });
-  const t = await api('/app/trips', { method: 'POST', body: JSON.stringify({ title: 'Goa 🌴' }), token: p.body.token });
+  const token = await auth.mint({ name: 'Rahul', email: 'rahul@gmail.com' });
+  expect((await api('/app/v1/me', { token })).body).toMatchObject({ name: 'Rahul', email: 'rahul@gmail.com', auth_provider: 'google' });
+  const t = await api('/app/v1/trips', { method: 'POST', body: JSON.stringify({ title: 'Goa 🌴' }), token });
   expect(t.status).toBe(201);
   const end = Date.now() + 5000;
   while (go.events.length === 0 && Date.now() < end) await new Promise((r) => setTimeout(r, 50));

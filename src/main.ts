@@ -66,8 +66,8 @@ const sessionSecret = process.env.APP_SESSION_SECRET ?? randomBytes(32).toString
 const auth = config.authMode === 'supabase'
   ? new SupabaseAuth({ supabaseUrl: config.supabaseUrl!, pool, jwtSecret: config.supabaseJwtSecret })
   : new DevAuth(sessionSecret);
-console.log(`sign-in: ${config.authMode}${config.authMode === 'supabase' ? ` (${config.supabaseUrl})` : ' tokens from POST /app/people'}`);
-const app = buildApp({ ctx, go, sessionSecret, auth, origins: config.appOrigins, pushPublicKey: pushPublicKey ?? undefined });
+console.log(`sign-in: ${config.authMode}${config.authMode === 'supabase' ? ` (${config.supabaseUrl})` : ' tokens from POST /app/v1/dev/sign-in'}`);
+const app = buildApp({ ctx, go, sessionSecret, auth, origins: config.appOrigins, pushPublicKey: pushPublicKey ?? undefined, features: config.features });
 await app.listen({ port: config.port, host: '0.0.0.0' });
 console.log(`server ${config.instance} listening on :${config.port}`);
 

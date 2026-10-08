@@ -5,7 +5,7 @@ import type pg from 'pg';
 import type { Ctx } from '../context.js';
 import { check } from '../contract/index.js';
 import { newId } from '../db/ids.js';
-import { once } from '../db/once.js';
+import { onceIfKeyed } from '../db/once.js';
 import { withTx } from '../db/pool.js';
 import { change, emit, nextSeq } from '../db/write-change.js';
 import { conflict, invalid, notFound } from './errors.js';
@@ -32,6 +32,8 @@ export interface NewPerson {
   phone?: string;
   email?: string;
   upi_id?: string;
+  /** How they signed in: `dev` for dev tokens (Supabase sign-ins are created in src/api/auth.ts). */
+  auth_provider?: string;
 }
 
 /**
@@ -45,8 +47,8 @@ export async function lockPersonForRead(db: pg.PoolClient, personId: string): Pr
 
 export async function createPerson(ctx: Ctx, input: NewPerson): Promise<{ person_id: string }> {
   const person_id = newId('p');
-  await ctx.pool.query('insert into people (person_id, name, photo_url, phone, email, upi_id) values ($1, $2, $3, $4, $5, $6)', [
-    person_id, input.name, input.photo_url ?? null, input.phone ?? null, input.email ?? null, input.upi_id ?? null,
+  await ctx.pool.query('insert into people (person_id, name, photo_url, phone, email, upi_id, auth_provider) values ($1, $2, $3, $4, $5, $6, $7)', [
+    person_id, input.name, input.photo_url ?? null, input.phone ?? null, input.email ?? null, input.upi_id ?? null, input.auth_provider ?? null,
   ]);
   return { person_id };
 }
@@ -198,7 +200,7 @@ export function mentionsGo(text: string | undefined, repliesToGo: boolean, about
 }
 
 export interface NewMessage {
-  client_id: string; // the app's own id for this press, so a retry does not post twice
+  client_id?: string; // the app's own id for this press, so a retry does not post twice (or the Idempotency-Key header)
   text?: string;
   attachments?: unknown[];
   reply_to?: string;
@@ -207,7 +209,7 @@ export interface NewMessage {
 }
 
 export async function postPersonMessage(ctx: Ctx, tripId: string, personId: string, input: NewMessage) {
-  return once(ctx.pool, tripId, `app:msg:${personId}:${input.client_id}`, async (db, after) => {
+  return onceIfKeyed(ctx.pool, tripId, input.client_id && `app:msg:${personId}:${input.client_id}`, async (db, after) => {
     const member = await requireMember(db, tripId, personId);
     if (!input.text && !(input.attachments?.length)) throw invalid('text or an attachment is required');
     for (const [i, a] of (input.attachments ?? []).entries()) {
@@ -455,8 +457,12 @@ export async function pushOwed(ctx: Ctx, tripId: string, expense: ExpenseRow): P
 
 // ---------------------------------------------------------------- seen, needs you
 
-export async function markSeen(ctx: Ctx, tripId: string, personId: string): Promise<void> {
-  await ctx.pool.query('update trip_people set last_seen_at = now() where trip_id = $1 and person_id = $2', [tripId, personId]);
+/** The person opened or left the room. `upToSeq`, when the app sends it, is the last change number they have read (it never moves back). */
+export async function markSeen(ctx: Ctx, tripId: string, personId: string, upToSeq?: number): Promise<void> {
+  await ctx.pool.query(
+    'update trip_people set last_seen_at = now(), last_read_seq = greatest(last_read_seq, coalesce($3::bigint, last_read_seq)) where trip_id = $1 and person_id = $2',
+    [tripId, personId, upToSeq ?? null],
+  );
 }
 
 /** The "needs you" strip: what this person has to do in this trip, worked out from our own rows. */

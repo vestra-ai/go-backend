@@ -21,22 +21,22 @@ afterAll(async () => {
 
 describe('browser access', () => {
   it('a listed origin gets the headers on a preflight (no sign-in), a real call and an error', async () => {
-    const pre = await t.api(null, 'OPTIONS', '/app/trips/t_goa/messages', undefined, { origin: PWA, 'access-control-request-method': 'POST', 'access-control-request-headers': 'authorization' });
+    const pre = await t.api(null, 'OPTIONS', '/app/v1/trips/t_goa/messages', undefined, { origin: PWA, 'access-control-request-method': 'POST', 'access-control-request-headers': 'authorization' });
     expect(pre.status).toBe(204);
     expect(pre.headers).toMatchObject({
-      'access-control-allow-origin': PWA, 'access-control-max-age': '600', 'access-control-expose-headers': 'Retry-After', vary: 'Origin',
-      'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE',
+      'access-control-allow-origin': PWA, 'access-control-max-age': '600', 'access-control-expose-headers': 'Retry-After, X-Request-Id, Idempotent-Replayed', vary: 'Origin',
+      'access-control-allow-headers': 'authorization, content-type, idempotency-key', 'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE',
     });
-    const ok = await t.api(t.as('p_rahul'), 'GET', '/app/trips/t_goa', undefined, { origin: PWA });
+    const ok = await t.api(t.as('p_rahul'), 'GET', '/app/v1/trips/t_goa', undefined, { origin: PWA });
     expect(ok.status).toBe(200);
-    expect(ok.headers).toMatchObject({ 'access-control-allow-origin': PWA, 'access-control-expose-headers': 'Retry-After', vary: 'Origin' });
-    const refused = await t.api(null, 'GET', '/app/trips/t_goa', undefined, { origin: PWA });
+    expect(ok.headers).toMatchObject({ 'access-control-allow-origin': PWA, 'access-control-expose-headers': 'Retry-After, X-Request-Id, Idempotent-Replayed', vary: 'Origin' });
+    const refused = await t.api(null, 'GET', '/app/v1/trips/t_goa', undefined, { origin: PWA });
     expect(refused.status).toBe(401);
     expect(refused.headers).toMatchObject({ 'access-control-allow-origin': PWA, vary: 'Origin' });
   });
 
   it('an unlisted origin, and a server with no origins configured, get no access headers but still vary on origin', async () => {
-    const stranger = await t.api(null, 'OPTIONS', '/app/trips/t_goa/messages', undefined, { origin: 'https://evil.example', 'access-control-request-method': 'POST' });
+    const stranger = await t.api(null, 'OPTIONS', '/app/v1/trips/t_goa/messages', undefined, { origin: 'https://evil.example', 'access-control-request-method': 'POST' });
     expect(stranger.headers['access-control-allow-origin']).toBeUndefined();
     expect(stranger.headers['access-control-allow-methods']).toBeUndefined();
     expect(stranger.headers.vary).toBe('Origin');
@@ -47,8 +47,8 @@ describe('browser access', () => {
 
   it('the live stream, and its 401 and 403 refusals, carry the headers', async () => {
     await h.app.listen({ port: 0, host: '127.0.0.1' });
-    const url = `http://127.0.0.1:${(h.app.server.address() as any).port}/app/trips/t_goa/live`;
-    const get = (who: ReturnType<typeof t.as> | null) => fetch(url, { headers: { origin: PWA, ...(who ? { authorization: `Bearer ${who.token}` } : {}) } });
+    const url = `http://127.0.0.1:${(h.app.server.address() as any).port}/app/v1/trips/t_goa/live`;
+    const get = async (who: ReturnType<typeof t.as> | null) => fetch(url, { headers: { origin: PWA, ...(who ? { authorization: `Bearer ${await who.token}` } : {}) } });
     const stream = await get(t.as('p_rahul'));
     expect(stream.headers.get('content-type')).toBe('text/event-stream');
     expect([stream.headers.get('access-control-allow-origin'), stream.headers.get('vary')]).toEqual([PWA, 'Origin']);
@@ -61,36 +61,37 @@ describe('browser access', () => {
 });
 
 describe('request errors', () => {
-  it('malformed and empty JSON and a broken address answer 4xx "invalid", not 500; a missing name still answers 400 "invalid"', async () => {
-    const send = (payload: string) => h.app.inject({ method: 'POST', url: '/app/people', payload, headers: { 'content-type': 'application/json' } });
-    const malformed = await send('{"name": ');
+  it('malformed JSON and a broken address answer 400 "bad_request"; a body that breaks a rule answers 422 "invalid" naming the field; never 500', async () => {
+    const who = t.as('p_rahul');
+    const send = async (payload: string) => h.app.inject({ method: 'POST', url: '/app/v1/trips', payload, headers: { 'content-type': 'application/json', authorization: `Bearer ${await who.token}` } });
+    const malformed = await send('{"title": ');
     expect(malformed.statusCode).toBe(400);
-    expect(JSON.parse(malformed.body).error.code).toBe('invalid');
+    expect(JSON.parse(malformed.body).error).toEqual({ code: 'bad_request', message: expect.any(String), field: null, retry_after_seconds: null, request_id: malformed.headers['x-request-id'] });
     const empty = await send('');
-    expect(empty.statusCode).toBe(400);
-    expect(JSON.parse(empty.body).error.code).toBe('invalid');
-    const noName = await t.api(null, 'POST', '/app/people', {});
-    expect([noName.status, noName.body.error.code]).toEqual([400, 'invalid']);
+    expect(empty.statusCode).toBe(422); // read as no body: the title is missing
+    expect(JSON.parse(empty.body).error).toMatchObject({ code: 'invalid', field: 'title' });
+    const noTitle = await t.api(who, 'POST', '/app/v1/trips', {});
+    expect([noTitle.status, noTitle.body.error.code, noTitle.body.error.field]).toEqual([422, 'invalid', 'title']);
     // An address with broken percent-encoding is answered by the framework itself: same shape, and the headers for a listed origin.
-    const badUrl = await t.api(null, 'GET', '/app/join/%zz', undefined, { origin: PWA });
-    expect([badUrl.status, badUrl.body.error.code, badUrl.headers['access-control-allow-origin'], badUrl.headers.vary]).toEqual([400, 'invalid', PWA, 'Origin']);
+    const badUrl = await t.api(null, 'GET', '/app/v1/invites/%zz', undefined, { origin: PWA });
+    expect([badUrl.status, badUrl.body.error.code, badUrl.headers['access-control-allow-origin'], badUrl.headers.vary, typeof badUrl.headers['x-request-id']]).toEqual([400, 'bad_request', PWA, 'Origin', 'string']);
   });
 });
 
 describe('the newer routes and unknown paths in the merged server', () => {
   it('a strict route answers 422 for no body or empty JSON and 400 for unreadable JSON', async () => {
-    const send = (payload: string | undefined, headers: Record<string, string>) =>
-      h.app.inject({ method: 'POST', url: '/app/trips/t_goa/decisions', payload, headers: { authorization: `Bearer ${t.as('p_rahul').token}`, ...headers } });
+    const send = async (payload: string | undefined, headers: Record<string, string>) =>
+      h.app.inject({ method: 'POST', url: '/app/v1/trips/t_goa/decisions', payload, headers: { authorization: `Bearer ${await t.as('p_rahul').token}`, ...headers } });
     expect((await send(undefined, {})).statusCode).toBe(422);
     expect((await send('', { 'content-type': 'application/json' })).statusCode).toBe(422);
     const bad = await send('{"question": ', { 'content-type': 'application/json' });
-    expect([bad.statusCode, JSON.parse(bad.body).error.code]).toEqual([400, 'invalid']);
+    expect([bad.statusCode, JSON.parse(bad.body).error.code]).toEqual([400, 'bad_request']);
   });
 
   it('an unknown path answers 404 in the standard shape and a listed origin still gets its headers, including on a preflight', async () => {
-    const missing = await t.api(null, 'GET', '/app/no-such-route', undefined, { origin: PWA });
+    const missing = await t.api(null, 'GET', '/app/v1/no-such-route', undefined, { origin: PWA });
     expect([missing.status, missing.body.error.code, missing.headers['access-control-allow-origin']]).toEqual([404, 'not_found', PWA]);
-    const pre = await t.api(null, 'OPTIONS', '/app/no-such-route', undefined, { origin: PWA, 'access-control-request-method': 'POST' });
+    const pre = await t.api(null, 'OPTIONS', '/app/v1/no-such-route', undefined, { origin: PWA, 'access-control-request-method': 'POST' });
     expect([pre.status, pre.headers['access-control-allow-origin']]).toEqual([204, PWA]);
   });
 });

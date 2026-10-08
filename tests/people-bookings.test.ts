@@ -19,8 +19,8 @@ let n = 0;
 const booking = (over: Record<string, unknown> = {}) => ({
   client_id: `bk-${++n}`, kind: 'stay', title: `Villa ${n}`, vendor: 'ixigo', ref: 'IXG-1', amount_minor: 5420000, payer_person_id: 'p_rahul', for_person_ids: EVERYONE, ...over,
 });
-const add = (body: unknown, who: any = arjun()) => t.api(who, 'POST', '/app/trips/t_goa/bookings', body);
-const patch = (bid: string, body: unknown, who: any = arjun()) => t.api(who, 'PATCH', `/app/trips/t_goa/bookings/${bid}`, body);
+const add = (body: unknown, who: any = arjun()) => t.api(who, 'POST', '/app/v1/trips/t_goa/bookings', body);
+const patch = (bid: string, body: unknown, who: any = arjun()) => t.api(who, 'PATCH', `/app/v1/trips/t_goa/bookings/${bid}`, body);
 /** [status, error code] of a refused call. */
 const refusal = (r: { status: number; body: any }) => [r.status, r.body.error.code];
 const vote = (over: Record<string, unknown> = {}) => ({
@@ -28,8 +28,8 @@ const vote = (over: Record<string, unknown> = {}) => ({
 });
 /** Opens a vote as a member, and has all five vote for the first option so it closes with a result. */
 const closedVote = async (over: Record<string, unknown> = {}) => {
-  const opened = await t.api(t.as('p_priya'), 'POST', '/app/trips/t_goa/decisions', vote(over));
-  for (const p of EVERYONE) await t.api(t.as(p), 'POST', `/app/trips/t_goa/decisions/${opened.body.decision_id}/vote`, { option_index: 0 });
+  const opened = await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_goa/decisions', vote(over));
+  for (const p of EVERYONE) await t.api(t.as(p), 'PUT', `/app/v1/trips/t_goa/decisions/${opened.body.decision_id}/vote`, { option_index: 0 });
   return opened.body.decision_id as string;
 };
 const journey = {
@@ -67,9 +67,9 @@ describe('adding a booking', () => {
   });
 
   it('refuses a decision_id that is an open vote, a cancelled vote, a cancellation vote, or another trip\'s vote', async () => {
-    const open = (await t.api(t.as('p_priya'), 'POST', '/app/trips/t_goa/decisions', vote())).body.decision_id;
-    const cancelled = (await t.api(t.as('p_priya'), 'POST', '/app/trips/t_goa/decisions', vote())).body.decision_id;
-    await t.api(t.as('p_priya'), 'POST', `/app/trips/t_goa/decisions/${cancelled}/cancel`);
+    const open = (await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_goa/decisions', vote())).body.decision_id;
+    const cancelled = (await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_goa/decisions', vote())).body.decision_id;
+    await t.api(t.as('p_priya'), 'POST', `/app/v1/trips/t_goa/decisions/${cancelled}/cancel`);
     // No code can open a cancellation vote yet, so this one is written straight into the table, closed, with the link set.
     await h.pool.query(
       `insert into decisions (decision_id, trip_id, question, kind, options, of_count, status, cancels_booking_id, closed_at)
@@ -82,7 +82,7 @@ describe('adding a booking', () => {
   it('accepts a closed vote and Go\'s spend approval for it still goes through; refuses ends before starts and an image that is not a URL', async () => {
     const decision_id = await closedVote();
     await h.go.call('set_mandate', { request_id: 'rq_m1', trip_id: 't_goa', decision_id, choice_index: 0, cap_minor: 5600000, currency: 'INR', refundable_only: false, payer_person_id: 'p_rahul' });
-    await t.api(t.as('p_rahul'), 'POST', `/app/trips/t_goa/decisions/${decision_id}/mandate/confirm`);
+    await t.api(t.as('p_rahul'), 'POST', `/app/v1/trips/t_goa/decisions/${decision_id}/mandate/confirm`);
     const r = await add(booking({ decision_id }));
     const approval = await h.go.call('request_spend_approval', { request_id: 'rq_s1', trip_id: 't_goa', decision_id, amount_minor: 5420000, currency: 'INR', merchant: 'ixigo: Villa Sol', purpose: 'Villa Sol' });
     expect([r.status, approval.result.status]).toEqual([201, 'approved']);

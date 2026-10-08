@@ -34,31 +34,31 @@ it('the whole feature in one walk from the web app\'s origin: every change takes
     if (r.status >= 300 || r.headers['access-control-allow-origin'] !== PWA) statuses.push(`${method} ${url}: ${r.status}`);
     return r;
   };
-  const trip = '/app/trips/t_goa';
+  const trip = '/app/v1/trips/t_goa';
   const endpointOf = new Map<string, string>();
   for (const who of EVERYONE) {
     const endpoint = `https://fcm.googleapis.com/fcm/send/${who}`;
     endpointOf.set(endpoint, who);
-    await call(who, 'PUT', '/app/push/subscription', { endpoint, keys: browserKeys() });
+    await call(who, 'POST', '/app/v1/me/devices', { platform: 'web_push', web_push: { endpoint, keys: browserKeys() } });
   }
   // a vote, decided; a booking against it, updated; the group cancels it
   const vote = await call('p_priya', 'POST', `${trip}/decisions`, { client_id: 'v1', question: 'Where do we stay?', kind: 'choice', anonymous: false, options: [{ label: 'Villa Sol', price_minor: 5420000 }, { label: 'Casa Azul' }] });
-  for (const who of EVERYONE) await call(who, 'POST', `${trip}/decisions/${vote.body.decision_id}/vote`, { option_index: 0 });
+  for (const who of EVERYONE) await call(who, 'PUT', `${trip}/decisions/${vote.body.decision_id}/vote`, { option_index: 0 });
   const booking = await call('p_arjun', 'POST', `${trip}/bookings`, { client_id: 'b1', kind: 'stay', title: 'Villa Sol', vendor: 'ixigo', ref: 'IXG-1', amount_minor: 5420000, payer_person_id: 'p_rahul', for_person_ids: EVERYONE, decision_id: vote.body.decision_id });
   await call('p_meher', 'PATCH', `${trip}/bookings/${booking.body.booking_id}`, { ref: 'IXG-2' });
   const cancel = await call('p_priya', 'POST', `${trip}/bookings/${booking.body.booking_id}/cancel-vote`, { client_id: 'c1' });
-  for (const who of ['p_rahul', 'p_priya', 'p_arjun']) await call(who, 'POST', `${trip}/decisions/${cancel.body.decision_id}/vote`, { option_index: 0 });
+  for (const who of ['p_rahul', 'p_priya', 'p_arjun']) await call(who, 'PUT', `${trip}/decisions/${cancel.body.decision_id}/vote`, { option_index: 0 });
   await call('p_kabir', 'POST', `${trip}/decisions/${cancel.body.decision_id}/close`);
   // people change their own details, answers, budget and the trip
-  await call('p_rahul', 'PATCH', '/app/me', { name: 'Rahul K' });
-  await call('p_priya', 'PATCH', '/app/me', { upi_id: 'priya@okbank' });
-  await call('p_arjun', 'PATCH', `${trip}/me`, { from_city: 'Delhi', know: ['Window seat'] });
+  await call('p_rahul', 'PATCH', '/app/v1/me', { name: 'Rahul K' });
+  await call('p_priya', 'PATCH', '/app/v1/me', { upi_id: 'priya@okbank' });
+  await call('p_arjun', 'PUT', `${trip}/me/join-answers`, { from_city: 'Delhi', know: ['Window seat'] });
   await call('p_kabir', 'PUT', `${trip}/me/budget`, { min_minor: 1234567, max_minor: 2345678 });
   await call('p_meher', 'PATCH', trip, { title: 'Goa, again', status: 'booked' });
   // money: an expense, whom Priya owes (with Rahul's UPI id), and a reminder
   await call('p_rahul', 'POST', `${trip}/expenses`, { paid_by_person_id: 'p_rahul', amount_minor: 100000, note: 'Dinner', category: 'food', split_person_ids: EVERYONE });
   const settle = await call('p_priya', 'GET', `${trip}/settle-up`);
-  await call('p_rahul', 'POST', `${trip}/settle-up/nudges`, { person_id: 'p_priya' });
+  await call('p_rahul', 'POST', `${trip}/transfers/nudge`, { from_person_id: 'p_priya' });
   await h.flush();
   await sender.drain();
 

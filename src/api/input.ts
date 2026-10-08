@@ -42,13 +42,21 @@ function unacceptable(root: unknown): string | null {
   return null;
 }
 
-/** Names the field and the rule, never the value: a UPI id or a budget answer must not travel in an error message. */
-function describe(e: ErrorObject): string {
+/** The field an Ajv error is about, as a dotted path (`options.0.label`), or null when it is the whole body. */
+export function fieldOf(e: ErrorObject): string | null {
   const path = e.instancePath.split('/').filter(Boolean).join('.');
+  if (e.keyword === 'required') return [path, (e.params as { missingProperty: string }).missingProperty].filter(Boolean).join('.');
+  if (e.keyword === 'additionalProperties') return [path, (e.params as { additionalProperty: string }).additionalProperty].filter(Boolean).join('.');
+  return path || null;
+}
+
+/** Names the field and the rule, never the value: a UPI id or a budget answer must not travel in an error message. */
+export function describe(e: ErrorObject): string {
+  const field = fieldOf(e);
   let message: string;
-  if (e.keyword === 'required') message = `${[path, (e.params as { missingProperty: string }).missingProperty].filter(Boolean).join('.')} is required`;
-  else if (e.keyword === 'additionalProperties') message = `${[path, (e.params as { additionalProperty: string }).additionalProperty].filter(Boolean).join('.')} is not a known field`;
-  else message = `${path || 'body'} ${e.message ?? 'is invalid'}`;
+  if (e.keyword === 'required') message = `${field} is required`;
+  else if (e.keyword === 'additionalProperties') message = `${field} is not a known field`;
+  else message = `${field ?? 'body'} ${e.message ?? 'is invalid'}`;
   return message.slice(0, 300);
 }
 
@@ -62,7 +70,7 @@ export function bodyChecker<T>(schema: object): (body: unknown) => T {
     if (body === null || typeof body !== 'object' || Array.isArray(body)) throw invalid('body must be a JSON object');
     const refused = unacceptable(body);
     if (refused) throw invalid(refused);
-    if (!validate(body)) throw invalid(describe(validate.errors![0]!));
+    if (!validate(body)) throw invalid(describe(validate.errors![0]!), fieldOf(validate.errors![0]!));
     return body as T;
   };
 }

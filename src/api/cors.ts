@@ -2,7 +2,10 @@
 // preflight) and by the live stream, which writes its own headers. No wildcard: only the exact origins listed.
 
 const METHODS = 'GET, POST, PUT, PATCH, DELETE';
-const HEADERS = 'authorization, content-type';
+/** What a browser may send beyond the headers it always allows: the sign-in token, the body type and the repeat key. */
+const HEADERS = 'authorization, content-type, idempotency-key';
+/** What a browser may read back: the wait on a 429, the request id to quote in a bug report, and the replay mark. */
+export const EXPOSED_HEADERS = 'Retry-After, X-Request-Id, Idempotent-Replayed';
 const PREFLIGHT_MAX_AGE_SECONDS = 600;
 
 /**
@@ -14,7 +17,7 @@ export function corsHeaders(allowed: readonly string[], origin: string | undefin
   const out: Record<string, string> = { vary: 'Origin' };
   if (!origin || !allowed.includes(origin)) return out;
   out['access-control-allow-origin'] = origin;
-  out['access-control-expose-headers'] = 'Retry-After';
+  out['access-control-expose-headers'] = EXPOSED_HEADERS;
   if (preflight) {
     out['access-control-allow-methods'] = METHODS;
     out['access-control-allow-headers'] = HEADERS;

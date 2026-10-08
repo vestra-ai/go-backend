@@ -2,6 +2,7 @@ import type { Ctx } from '../context.js';
 import { withTx } from '../db/pool.js';
 import { SocketCallError } from '../go/go-socket.js';
 import { closeDecision } from '../domain/voting.js';
+import { sweepIdempotency } from './idempotency.js';
 
 /** Closes every open vote whose time has run out (reason `time`). Safe to run on every instance at once. */
 export async function closeDueVotes(ctx: Ctx): Promise<number> {
@@ -53,6 +54,7 @@ export function startJobs(ctx: Ctx, log: (m: string, e?: unknown) => void = cons
     } catch (err) {
       log('vote job failed', err);
     }
+    await sweepIdempotency(ctx).catch((err) => log('idempotency sweep failed', err));
   };
   const timer = setInterval(run, everyMs);
   return () => clearInterval(timer);

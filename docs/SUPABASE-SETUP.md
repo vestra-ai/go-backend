@@ -71,9 +71,9 @@ exist only for local testing and are refused when `NODE_ENV=production`.
 ## Try it now, locally (no account needed)
 
 ```bash
-pnpm dev:stack:supabase    # temporary Postgres + fake Go + the server in AUTH_MODE=supabase + a fake Supabase Auth on :54331
+pnpm dev:stack             # temporary Postgres + fake Go + the server in AUTH_MODE=supabase + a fake Supabase Auth on :54331
 curl 'http://127.0.0.1:54331/mint?name=Priya&email=priya@gmail.com'              # a Supabase-style access token
-curl localhost:8080/app/me -H "authorization: Bearer <access_token>"              # Priya, created on first sign-in
+curl localhost:8080/app/v1/me -H "authorization: Bearer <access_token>"           # Priya, created on first sign-in
 ```
 
 `pnpm dev:auth` runs the fake Supabase Auth on its own, for any server started with

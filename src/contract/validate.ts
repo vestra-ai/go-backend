@@ -5,6 +5,9 @@ import addFormats from 'ajv-formats';
 const root = new URL('../../contract/', import.meta.url);
 const openapi = JSON.parse(readFileSync(new URL('go.json', root), 'utf8'));
 const table = JSON.parse(readFileSync(new URL('methods.json', root), 'utf8'));
+/** The 1.1 proposals (docs/GO-CHANGES.md), laid over 1.0 additively. Replaced by the official go.json when it is published. */
+const extensions = JSON.parse(readFileSync(new URL('extensions-1.1.json', root), 'utf8')) as { contract: string; schemas: Record<string, unknown>; methods: MethodInfo[] };
+export const CONTRACT_EXTENSIONS_VERSION: string = extensions.contract;
 
 /**
  * Null and missing mean the same thing in this contract, so a field that "may be empty" is written
@@ -26,7 +29,27 @@ function simplify(node: unknown): unknown {
   return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, simplify(v)]));
 }
 
-const schemas = simplify(openapi.components.schemas) as Record<string, unknown>;
+const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * Lays an extension over a schema and only ever widens it: a new property is added, an enum gains values, a oneOf gains
+ * branches, nested objects are merged the same way. What the base already says (types, limits, formats, `required`)
+ * stays as it is, so every frame that was valid under the base is still valid, and nothing becomes required.
+ */
+export function mergeAdditive(base: unknown, patch: unknown): unknown {
+  if (Array.isArray(base) && Array.isArray(patch)) return [...base, ...patch.filter((p) => !base.some((b) => same(b, p)))];
+  if (!isObject(base) || !isObject(patch)) return base;
+  const out: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(patch)) {
+    if (key === 'required') continue; // never tighten
+    if (!(key in base)) out[key] = value;
+    else if (key === 'enum' || key === 'oneOf' || key === 'anyOf' || isObject(base[key])) out[key] = mergeAdditive(base[key], value);
+  }
+  return out;
+}
+
+const schemas = mergeAdditive(simplify(openapi.components.schemas), extensions.schemas) as Record<string, unknown>;
 
 const ajv = new Ajv2020({ strict: false, allErrors: false, discriminator: true });
 addFormats.default(ajv);
@@ -88,7 +111,7 @@ export interface MethodInfo {
 }
 
 export const METHODS: Record<string, MethodInfo> = Object.fromEntries(
-  (table.methods as MethodInfo[]).map((m) => [m.name, m]),
+  [...(table.methods as MethodInfo[]), ...extensions.methods.filter((m) => !(table.methods as MethodInfo[]).some((t) => t.name === m.name))].map((m) => [m.name, m]),
 );
 
 /** `parseParams('post_message', params)`: the params checked against the method's params schema. */

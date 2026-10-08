@@ -40,9 +40,9 @@ it("closes every table to Supabase's API roles, including tables made later", as
   const canRead = async (role: string, table: string) => (await pool!.query(`select has_table_privilege($1, $2, 'select') as ok`, [role, `public.${table}`])).rows[0].ok as boolean;
   expect(await canRead('anon', 'people')).toBe(true); // the danger 003 removes
 
-  expect(await migrate(pool)).toEqual(['003_supabase.sql']);
+  expect(await migrate(pool)).toEqual(['003_supabase.sql', '004_v1_conventions.sql']);
   for (const role of ['anon', 'authenticated']) {
-    for (const table of ['people', 'trips', 'messages', 'outbox', 'spend_approvals', 'push_subscriptions', 'schema_migrations']) {
+    for (const table of ['people', 'trips', 'messages', 'outbox', 'spend_approvals', 'push_subscriptions', 'schema_migrations', 'idempotency_keys', 'invite_marks', 'live_tickets']) {
       expect(await canRead(role, table), `${role} on ${table}`).toBe(false);
     }
   }

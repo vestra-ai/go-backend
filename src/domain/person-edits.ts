@@ -13,36 +13,48 @@ import { assertDate, assertItinerarySize } from './limits.js';
 import { personForGo } from './mappers.js';
 import { activePeople } from './snapshot.js';
 
-interface PersonRecord { person_id: string; name: string; photo_url: string | null; upi_id: string | null }
+interface PersonRecord {
+  person_id: string; name: string; photo_url: string | null; upi_id: string | null;
+  email: string | null; auth_provider: string | null; from_city_default: string | null; notifications_enabled: boolean; created_at: Date;
+}
+const PERSON_COLUMNS = 'person_id, name, photo_url, upi_id, email, auth_provider, from_city_default, notifications_enabled, created_at';
 
-/** The person's own values. The UPI id goes only to its owner (and, in settle-up, to those who owe them). */
-const own = (r: PersonRecord) => ({ person_id: r.person_id, name: r.name, photo_url: r.photo_url, upi_id: r.upi_id });
+/** The person's own values (the app's `Me`). The UPI id and the email go only to their owner (the UPI id also, in settle-up, to those who owe them). */
+const own = (r: PersonRecord) => ({
+  person_id: r.person_id, name: r.name, photo_url: r.photo_url, upi_id: r.upi_id, email: r.email, auth_provider: r.auth_provider,
+  from_city: r.from_city_default, notifications_enabled: r.notifications_enabled, created_at: r.created_at.toISOString(),
+});
 
 export async function getMyProfile(ctx: Ctx, personId: string) {
-  const { rows } = await ctx.pool.query<PersonRecord>('select person_id, name, photo_url, upi_id from people where person_id = $1', [personId]);
+  const { rows } = await ctx.pool.query<PersonRecord>(`select ${PERSON_COLUMNS} from people where person_id = $1`, [personId]);
   if (!rows[0]) throw notFound(`person ${personId} does not exist`);
   return own(rows[0]);
 }
 
 /**
- * Edits the person's name, photo link and UPI id. One transaction locks the person's row first, writes, and then tells
- * every trip the person is in now (in ascending trip id, so two edits by people who share trips cannot cross): one
- * `person.updated` each, with `changed` drawn from name, photo_url and has_upi (has_upi only when it flips). A new UPI id
- * that replaces another changes nothing Go can see, so it sends nothing. Go never receives the UPI text.
- * `seq` is the last change number written, or null when nothing was sent.
+ * Edits the person's name, photo link, UPI id, default "travelling from" and notifications switch. One transaction locks the
+ * person's row first, writes, and then tells every trip the person is in now (in ascending trip id, so two edits by people who
+ * share trips cannot cross): one `person.updated` each, with `changed` drawn from name, photo_url and has_upi (has_upi only when
+ * it flips). A new UPI id that replaces another, the default city and the switch change nothing Go can see, so they send
+ * nothing. Go never receives the UPI text or the email. `seq` is the last change number written, or null when nothing was sent.
  */
 export async function updateMyProfile(ctx: Ctx, personId: string, input: PatchMeBody) {
   return withTx(ctx.pool, async (db, after) => {
-    const cur = (await db.query<PersonRecord>('select person_id, name, photo_url, upi_id from people where person_id = $1 for no key update', [personId])).rows[0];
+    const cur = (await db.query<PersonRecord>(`select ${PERSON_COLUMNS} from people where person_id = $1 for no key update`, [personId])).rows[0];
     if (!cur) throw notFound(`person ${personId} does not exist`);
     const next: PersonRecord = {
       ...cur,
       name: input.name ?? cur.name,
       photo_url: input.photo_url === undefined ? cur.photo_url : input.photo_url,
       upi_id: input.upi_id === undefined ? cur.upi_id : input.upi_id,
+      from_city_default: input.from_city === undefined ? cur.from_city_default : input.from_city,
+      notifications_enabled: input.notifications_enabled ?? cur.notifications_enabled,
     };
-    if (next.name === cur.name && next.photo_url === cur.photo_url && next.upi_id === cur.upi_id) return { ...own(cur), seq: null };
-    await db.query('update people set name = $2, photo_url = $3, upi_id = $4 where person_id = $1', [personId, next.name, next.photo_url, next.upi_id]);
+    const same = (['name', 'photo_url', 'upi_id', 'from_city_default', 'notifications_enabled'] as const).every((f) => next[f] === cur[f]);
+    if (same) return { ...own(cur), seq: null };
+    await db.query('update people set name = $2, photo_url = $3, upi_id = $4, from_city_default = $5, notifications_enabled = $6 where person_id = $1', [
+      personId, next.name, next.photo_url, next.upi_id, next.from_city_default, next.notifications_enabled,
+    ]);
     const changed = [
       ...(next.name !== cur.name ? ['name'] : []),
       ...(next.photo_url !== cur.photo_url ? ['photo_url'] : []),

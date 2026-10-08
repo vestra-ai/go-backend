@@ -30,17 +30,19 @@ await admin.connect();
 await admin.query('create database go');
 await admin.end();
 
-// 2. The fake Go.
-// 2b. With --supabase-auth: sign-in with Supabase-style access tokens from a fake Supabase Auth on :54331
-// (GET http://127.0.0.1:54331/mint?name=Priya gives one), exactly as the app will sign in with the real Supabase.
-const supabaseAuth = process.argv.includes('--supabase-auth') ? new FakeSupabaseAuth() : null;
+// 2. Sign-in: Supabase-style access tokens from a fake Supabase Auth on :54331 (GET http://127.0.0.1:54331/mint?name=Priya
+// gives one), exactly as the app signs in with the real Supabase. With --dev-auth: the server's own dev tokens instead
+// (POST /app/v1/dev/sign-in).
+const supabaseAuth = process.argv.includes('--dev-auth') ? null : new FakeSupabaseAuth();
 const authUrl = supabaseAuth ? await supabaseAuth.start(Number(process.env.DEV_AUTH_PORT ?? 54331), { mint: true }) : null;
+
+// 3. The fake Go.
 
 const go = new MockGo();
 go.fakeGo = true;
 const goBase = await go.listen();
 
-// 3. The real server.
+// 4. The real server.
 const server = spawn(process.execPath, ['--import', 'tsx', 'src/main.ts'], {
   env: {
     ...process.env,
@@ -71,7 +73,7 @@ while (!started) {
 }
 await go.untilConnected(10_000);
 
-// 4. "Act as Go": POST /sim/<method> sends Go's request to the server and answers with the server's answer.
+// 5. "Act as Go": POST /sim/<method> sends Go's request to the server and answers with the server's answer.
 // A `typing` call is sent as a notification (it has no answer). GET /sim/state shows what the fake Go has seen.
 const json = (res: import('node:http').ServerResponse, status: number, body: unknown) => {
   res.writeHead(status, { 'content-type': 'application/json' });
@@ -104,15 +106,15 @@ await new Promise<void>((r) => sim.listen(SIM_PORT, r));
 
 console.log(`
   Go Server dev stack is up.
-    App API      http://localhost:${PORT}        (the real server; Postman's {{baseUrl}})
+    App API      http://localhost:${PORT}/app/v1  (the real server; Postman's {{baseUrl}} is http://localhost:${PORT})
     Act as Go    http://localhost:${SIM_PORT}/sim    (POST /sim/<method>, GET /sim/state; Postman's {{simUrl}})
     Postgres     postgres://postgres:postgres@localhost:${PG_PORT}/go  (temporary)
   The fake Go answers every message that names it (@Go): typing, ✅, then a reply with a card.
 ${authUrl
   ? `  Sign-in      Supabase-style tokens from a fake Supabase Auth: GET ${authUrl}/mint?name=Priya&email=priya@gmail.com
-               (send the access_token as Authorization: Bearer …; POST /app/people is off, as in production)
+               (send the access_token as Authorization: Bearer …; POST /app/v1/dev/sign-in is off, as in production)
 `
-  : '  Sign-in      dev tokens: POST /app/people (add --supabase-auth to sign in like production)\n'}  Ctrl-C stops everything.
+  : '  Sign-in      dev tokens: POST /app/v1/dev/sign-in {name} (the default stack signs in like production)\n'}  Ctrl-C stops everything.
 `);
 
 let stopping = false;

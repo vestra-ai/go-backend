@@ -59,10 +59,11 @@ afterAll(async () => {
   await admin.end();
 });
 
-it('starts with push keys and an origin set and without the warning, serves the key, answers a preflight for the origin, and shuts down cleanly on SIGTERM', async () => {
-  const key = await fetch(`http://127.0.0.1:${port}/app/push/key`, { headers: { origin: PWA } });
-  const pre = await fetch(`http://127.0.0.1:${port}/app/trips/t_x/messages`, { method: 'OPTIONS', headers: { origin: PWA, 'access-control-request-method': 'POST' } });
-  expect([out.includes('VAPID'), key.status, await key.json(), key.headers.get('access-control-allow-origin'), pre.status, pre.headers.get('access-control-allow-origin')]).toEqual([false, 200, { public_key: vapid.publicKey }, PWA, 204, PWA]);
+it('starts with push keys and an origin set and without the warning, serves the key in the config, answers a preflight for the origin, and shuts down cleanly on SIGTERM', async () => {
+  const config = await fetch(`http://127.0.0.1:${port}/app/v1/config`, { headers: { origin: PWA } });
+  const pre = await fetch(`http://127.0.0.1:${port}/app/v1/trips/t_x/messages`, { method: 'OPTIONS', headers: { origin: PWA, 'access-control-request-method': 'POST' } });
+  const body = await config.json();
+  expect([out.includes('VAPID'), config.status, body.vapid_public_key, body.features.web_push, config.headers.get('access-control-allow-origin'), pre.status, pre.headers.get('access-control-allow-origin')]).toEqual([false, 200, vapid.publicKey, true, PWA, 204, PWA]);
   const exited = new Promise<number | null>((r) => proc.on('exit', (code) => r(code)));
   proc.kill('SIGTERM');
   expect(await exited).toBe(0);

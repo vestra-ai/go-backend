@@ -7,10 +7,15 @@ import type { Notification, Push } from '../../src/push/push.js';
 import { goRequestHandlers } from '../../src/requests/index.js';
 import { OutboxSender } from '../../src/outbox/sender.js';
 import { buildApp } from '../../src/api/app.js';
-import type { Authenticator } from '../../src/api/auth.js';
+import { DevAuth, SupabaseAuth, signSession, type Authenticator } from '../../src/api/auth.js';
+import type { Features } from '../../src/config.js';
 import { freshDb } from './db.js';
+import { FakeSupabaseAuth, type FakeUser } from './fake-supabase-auth.js';
 import { MockGo } from './mock-go.js';
-import { seedTrip } from './seed.js';
+import { seedTrip, uuidFor } from './seed.js';
+
+/** The app's API lives under /app/v1: `v1('/trips/t_goa')`. */
+export const v1 = (path: string) => `/app/v1${path}`;
 
 export class RecordingLive implements Live {
   events: Array<{ tripId: string; event: LiveEvent }> = [];
@@ -35,8 +40,26 @@ export class RecordingPush implements Push {
 const spend = JSON.parse(readFileSync(new URL('../../contract/test-vectors/spend-approval.json', import.meta.url), 'utf8'));
 export const SPEND_PUBLIC_KEY: string = spend.public_key_pem;
 
-/** The server wired to a real Postgres and a mock Go over a real, signed WebSocket. */
-export async function startHarness(opts: { seed?: boolean; origins?: string[]; makePush?: (pool: pg.Pool) => Push; pushPublicKey?: string; makeAuth?: (pool: pg.Pool) => Authenticator } = {}) {
+export interface HarnessOptions {
+  seed?: boolean;
+  origins?: string[];
+  makePush?: (pool: pg.Pool) => Push;
+  pushPublicKey?: string;
+  features?: Partial<Features>;
+  /**
+   * How people sign in. `supabase` (the default) runs a fake Supabase Auth and checks its tokens exactly as production
+   * checks the real ones; `dev` uses the server's own dev tokens (for the tests about dev sign-in).
+   */
+  auth?: 'supabase' | 'dev';
+  /** Your own authenticator (the Supabase sign-in tests build one with a legacy secret). */
+  makeAuth?: (pool: pg.Pool) => Authenticator;
+}
+
+/** A person's name from a test id: `p_rahul` → `Rahul`. */
+const nameFor = (personId: string) => personId.replace(/^p_/, '').replace(/^./, (c) => c.toUpperCase());
+
+/** The server wired to a real Postgres and a mock Go over a real, signed WebSocket; people sign in through a fake Supabase Auth. */
+export async function startHarness(opts: HarnessOptions = {}) {
   const { pool, close } = await freshDb();
   const live = new RecordingLive();
   const push = new RecordingPush();
@@ -53,7 +76,11 @@ export async function startHarness(opts: { seed?: boolean; origins?: string[]; m
   await go.untilConnected();
   if (opts.seed !== false) await seedTrip(pool);
   const sessionSecret = 'test-session-secret';
-  const app = buildApp({ ctx, go: socket, sessionSecret, auth: opts.makeAuth?.(pool), origins: opts.origins, pushPublicKey: opts.pushPublicKey });
+  const mode = opts.auth ?? 'supabase';
+  const fakeAuth = mode === 'supabase' && !opts.makeAuth ? new FakeSupabaseAuth() : null;
+  if (fakeAuth) await fakeAuth.start();
+  const auth: Authenticator = opts.makeAuth ? opts.makeAuth(pool) : fakeAuth ? new SupabaseAuth({ supabaseUrl: fakeAuth.url, pool }) : new DevAuth(sessionSecret);
+  const app = buildApp({ ctx, go: socket, sessionSecret, auth, origins: opts.origins, pushPublicKey: opts.pushPublicKey, features: opts.features });
   await app.ready();
   const sender = new OutboxSender({ pool, send: (e) => socket.request('send_event', e, { timeoutMs: 2500 }), ready: () => socket.connected });
   /** Sends every pending event to Go now, in order. */
@@ -66,13 +93,43 @@ export async function startHarness(opts: { seed?: boolean; origins?: string[]; m
       await new Promise((r) => setTimeout(r, 20));
     }
   };
+  const tokens = new Map<string, Promise<string>>();
+  /**
+   * A sign-in token for a person id: a Supabase-style token for the user the seed links to that id (a person who does not
+   * exist yet is created on first use, named after the id), or a dev token in `dev` mode.
+   */
+  const token = (personId: string): Promise<string> => {
+    let t = tokens.get(personId);
+    if (!t) {
+      t = fakeAuth ? fakeAuth.mint({ id: uuidFor(personId), name: nameFor(personId), email: `${personId}@mail.test` }) : Promise.resolve(signSession(personId, sessionSecret));
+      tokens.set(personId, t);
+    }
+    return t;
+  };
+  /** Signs a new person in the way the app does (a fresh Supabase user, created on the first request), or through dev sign-in. */
+  const signIn = async (name: string, user: Omit<FakeUser, 'name'> & { upi_id?: string; phone?: string } = {}): Promise<{ id: string; token: string; name: string }> => {
+    if (!fakeAuth) {
+      const r = await app.inject({ method: 'POST', url: v1('/dev/sign-in'), payload: { name, ...user } });
+      if (r.statusCode !== 201) throw new Error(`dev sign-in failed: ${r.body}`);
+      const { person_id, token: t } = JSON.parse(r.body);
+      return { id: person_id, token: t, name };
+    }
+    const { upi_id, phone: _phone, ...profile } = user;
+    const t = await fakeAuth.mint({ name, ...profile });
+    const me = await app.inject({ method: 'GET', url: v1('/me'), headers: { authorization: `Bearer ${t}` } });
+    if (me.statusCode !== 200) throw new Error(`sign-in failed: ${me.body}`);
+    const id: string = JSON.parse(me.body).person_id;
+    if (upi_id) await app.inject({ method: 'PATCH', url: v1('/me'), payload: { upi_id }, headers: { authorization: `Bearer ${t}` } });
+    return { id, token: t, name };
+  };
   return {
-    pool, ctx, go, socket, live, push, sender, flush, app, sessionSecret,
+    pool, ctx, go, socket, live, push, sender, flush, app, sessionSecret, fakeAuth, token, signIn,
     async stop() {
       sender.stop();
       socket.stop();
       await app.close();
       await go.close();
+      await fakeAuth?.close();
       await close();
     },
   };

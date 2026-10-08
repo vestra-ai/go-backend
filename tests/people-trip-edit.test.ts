@@ -16,7 +16,7 @@ beforeAll(async () => {
 afterAll(() => h.stop());
 
 const priya = () => t.as('p_priya'); // not the organizer
-const patch = (body: unknown, who: any = priya()) => t.api(who, 'PATCH', '/app/trips/t_goa', body);
+const patch = (body: unknown, who: any = priya()) => t.api(who, 'PATCH', '/app/v1/trips/t_goa', body);
 const refusal = (r: { status: number; body: any }) => [r.status, r.body?.error?.code];
 const personEdits = () => t.events('trip.updated').filter((e) => e.data.by.kind === 'person');
 
@@ -51,7 +51,7 @@ describe('a trip\'s details and status', () => {
   });
 
   it('refuses a day or item that breaks the contract, a __proto__ key that would skip that check, and a date in year 0000, all with 422', async () => {
-    const raw = (payload: string) => h.app.inject({ method: 'PATCH', url: '/app/trips/t_goa', headers: { authorization: `Bearer ${priya().token}`, 'content-type': 'application/json' }, payload });
+    const raw = async (payload: string) => h.app.inject({ method: 'PATCH', url: '/app/v1/trips/t_goa', headers: { authorization: `Bearer ${await priya().token}`, 'content-type': 'application/json' }, payload });
     const code = async (payload: string) => (await raw(payload)).statusCode;
     expect(await code(JSON.stringify({ itinerary: [{ date: '2026-11-07', items: [{ title: 'x', category: 'spa', status: 'idea' }] }] }))).toBe(422); // not a category
     expect(await code('{"itinerary":[{"__proto__":{"date":"2026-11-07","items":[]}}]}')).toBe(422); // a day that would pass by inheritance
@@ -64,7 +64,7 @@ describe('a trip\'s details and status', () => {
     const deep = (levels: number) => ({ date: '2026-11-07', items: [], note: JSON.parse('['.repeat(levels) + ']'.repeat(levels)) });
     expect(refusal(await patch({ itinerary: [{ date: '2026-11-07', items: [], note: 'a\u0000b' }] }))).toEqual([422, 'invalid']);
     expect(refusal(await patch({ itinerary: [deep(100)] }))).toEqual([422, 'invalid']);
-    const raw = await h.app.inject({ method: 'PATCH', url: '/app/trips/t_goa', headers: { authorization: `Bearer ${priya().token}`, 'content-type': 'application/json' }, payload: `{"itinerary":[{"date":"2026-11-07","items":[],"note":${'['.repeat(20000)}${']'.repeat(20000)}}]}` });
+    const raw = await h.app.inject({ method: 'PATCH', url: '/app/v1/trips/t_goa', headers: { authorization: `Bearer ${await priya().token}`, 'content-type': 'application/json' }, payload: `{"itinerary":[{"date":"2026-11-07","items":[],"note":${'['.repeat(20000)}${']'.repeat(20000)}}]}` });
     expect(raw.statusCode).toBeLessThan(500); // refused (422 or 400), never a crash
   });
 

@@ -74,10 +74,10 @@ export async function nudgePerson(ctx: Ctx, tripId: string, callerId: string, in
   const owes = await readOnly(ctx, async (db) => {
     const me = await db.query('select p.name from people p join trip_people tp on tp.person_id = p.person_id where tp.trip_id = $1 and tp.person_id = $2 and tp.left_at is null', [tripId, callerId]);
     if (!me.rows[0]) throw new Forbidden(`${callerId} is not in trip ${tripId}`);
-    const there = await db.query('select 1 from trip_people where trip_id = $1 and person_id = $2 and left_at is null', [tripId, input.person_id]);
+    const there = await db.query('select 1 from trip_people where trip_id = $1 and person_id = $2 and left_at is null', [tripId, input.from_person_id]);
     const snap = await buildSnapshot(db, tripId, ctx.publicBaseUrl);
-    const transfer = snap.money.transfers.find((t) => t.from_person_id === input.person_id && t.to_person_id === callerId);
-    if (!there.rowCount || !transfer) throw conflict(`${input.person_id} does not owe you money in this trip`);
+    const transfer = snap.money.transfers.find((t) => t.from_person_id === input.from_person_id && t.to_person_id === callerId);
+    if (!there.rowCount || !transfer) throw conflict(`${input.from_person_id} does not owe you money in this trip`);
     return { name: me.rows[0].name as string, amount: transfer.amount_minor, currency: transfer.currency };
   });
   const text = `${owes.name} reminded you: you owe ${formatMoney(owes.amount, owes.currency)}`.slice(0, 300); // built before the claim, so a formatting failure cannot use up the window
@@ -86,15 +86,15 @@ export async function nudgePerson(ctx: Ctx, tripId: string, callerId: string, in
      on conflict (trip_id, from_person_id, to_person_id) do update set last_sent_at = now()
        where nudges.last_sent_at <= now() - make_interval(hours => $4)
      returning last_sent_at`,
-    [tripId, callerId, input.person_id, NUDGE_WINDOW_HOURS],
+    [tripId, callerId, input.from_person_id, NUDGE_WINDOW_HOURS],
   );
   if (!claim.rows[0]) {
-    const last = (await ctx.pool.query('select last_sent_at from nudges where trip_id = $1 and from_person_id = $2 and to_person_id = $3', [tripId, callerId, input.person_id])).rows[0];
+    const last = (await ctx.pool.query('select last_sent_at from nudges where trip_id = $1 and from_person_id = $2 and to_person_id = $3', [tripId, callerId, input.from_person_id])).rows[0];
     const wait = last ? Math.max(1, Math.ceil((allowedAt(last.last_sent_at).getTime() - Date.now()) / 1000)) : NUDGE_WINDOW_HOURS * 3600;
-    throw rateLimited(`${input.person_id} was reminded recently: try again later`, wait);
+    throw rateLimited(`${input.from_person_id} was reminded recently: try again later`, wait);
   }
   try {
-    await ctx.push.send([input.person_id], { body: text, data: { trip_id: tripId } });
+    await ctx.push.send([input.from_person_id], { body: text, data: { trip_id: tripId } });
   } catch (err) {
     console.error('nudge delivery failed:', err instanceof Error ? err.name : 'error'); // best-effort: the caller is not told; nothing about the target or its address is logged
   }

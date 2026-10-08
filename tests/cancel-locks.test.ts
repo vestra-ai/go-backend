@@ -82,7 +82,7 @@ describe('lock order for closing a vote about a booking', () => {
 
   it('a vote-completing leaveTrip waits for the booking before it takes a change number', async () => {
     const { bid } = await passingVote('t_l11', [['p_rahul', 0], ['p_priya', 0], ['p_arjun', 0], ['p_meher', 1]]);
-    const seen = await holdAndObserve('t_l11', bid, () => t.api(t.as('p_kabir'), 'POST', '/app/trips/t_l11/leave'));
+    const seen = await holdAndObserve('t_l11', bid, () => t.api(t.as('p_kabir'), 'POST', '/app/v1/trips/t_l11/leave'));
     expect([seen, await f.bookingStatus(bid)]).toEqual([{ waited: true, free: true }, 'cancelled']);
   });
 

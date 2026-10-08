@@ -11,9 +11,9 @@ const id = { type: 'string', minLength: 1, maxLength: 64 } as const;
 const openVote = {
   type: 'object',
   additionalProperties: false,
-  required: ['client_id', 'question', 'kind', 'anonymous', 'options'],
+  required: ['question', 'kind', 'anonymous', 'options'],
   properties: {
-    client_id: id,
+    client_id: id, // the press's own key; optional when an Idempotency-Key header is sent (checked in the route)
     question: { type: 'string', minLength: 1, maxLength: 200 },
     kind: { type: 'string', enum: ['choice', 'yesno'] },
     anonymous: { type: 'boolean' },
@@ -50,7 +50,7 @@ const stop = {
 const addBooking = {
   type: 'object',
   additionalProperties: false,
-  required: ['client_id', 'kind', 'title', 'vendor', 'ref', 'amount_minor', 'payer_person_id', 'for_person_ids'],
+  required: ['kind', 'title', 'vendor', 'ref', 'amount_minor', 'payer_person_id', 'for_person_ids'],
   properties: {
     client_id: id,
     kind: { type: 'string', enum: ['stay', 'flight', 'train', 'bus', 'cab', 'table', 'activity', 'other'] },
@@ -112,11 +112,11 @@ const updateBooking = {
 const cancelVote = {
   type: 'object',
   additionalProperties: false,
-  required: ['client_id'],
   properties: { client_id: id },
 } as const;
 
 // The account profile. `upi_id` has a length limit only (no format rule): 1-100. A photo link must be an http(s) URL.
+// `from_city` is the default "travelling from" the app offers in new trips; `notifications_enabled` is the pushes switch.
 const patchMe = {
   type: 'object',
   additionalProperties: false,
@@ -124,6 +124,8 @@ const patchMe = {
     name: { type: 'string', minLength: 1, maxLength: 80 },
     photo_url: { type: ['string', 'null'], format: 'uri', pattern: '^https?://' },
     upi_id: { type: ['string', 'null'], minLength: 1, maxLength: 100 },
+    from_city: { type: ['string', 'null'], minLength: 1, maxLength: 60 },
+    notifications_enabled: { type: 'boolean' },
   },
 } as const;
 
@@ -168,49 +170,54 @@ const patchTrip = {
   },
 } as const;
 
+// A reminder to the person who owes the caller (POST /trips/:trip/transfers/nudge).
 const nudge = {
   type: 'object',
   additionalProperties: false,
-  required: ['person_id'],
-  properties: { person_id: id },
+  required: ['from_person_id'],
+  properties: { from_person_id: id },
 } as const;
 
-// A browser's push address and its two keys. The address must be an https address on a known push service (checked in the route);
-// 2048 characters is a technical bound (the address is an index key and a database index entry cannot be much larger; real addresses
-// are a few hundred). The keys are 256 characters at most (owner decision 6): real ones are far shorter.
-const putSubscription = {
+// A device for pushes (POST /me/devices): v1 accepts Web Push only (the product is the PWA). `web_push` is a browser's push address
+// and its two keys. The address must be an https address on a known push service (checked in the route); 2048 characters is a
+// technical bound (the address is an index key and a database index entry cannot be much larger; real addresses are a few hundred).
+// The keys are 256 characters at most (owner decision 6): real ones are far shorter.
+const addDevice = {
   type: 'object',
   additionalProperties: false,
-  required: ['endpoint', 'keys'],
+  required: ['platform', 'web_push'],
   properties: {
-    endpoint: { type: 'string', format: 'uri', maxLength: 2048 },
-    keys: {
+    platform: { type: 'string', enum: ['web_push'] },
+    web_push: {
       type: 'object',
       additionalProperties: false,
-      required: ['p256dh', 'auth'],
-      properties: { p256dh: { type: 'string', minLength: 1, maxLength: 256 }, auth: { type: 'string', minLength: 1, maxLength: 256 } },
+      required: ['endpoint', 'keys'],
+      properties: {
+        endpoint: { type: 'string', format: 'uri', maxLength: 2048 },
+        keys: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['p256dh', 'auth'],
+          properties: { p256dh: { type: 'string', minLength: 1, maxLength: 256 }, auth: { type: 'string', minLength: 1, maxLength: 256 } },
+        },
+      },
     },
+    locale: { type: 'string', maxLength: 35 },
+    tz: { type: 'string', maxLength: 64 },
   },
 } as const;
 
-const unsubscribe = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['endpoint'],
-  properties: { endpoint: { type: 'string', format: 'uri', maxLength: 2048 } },
-} as const;
-
 /** Every route's body definition, by name. */
-export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, patchTripMe, putBudget, patchTrip, nudge, putSubscription, unsubscribe } as const;
+export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, patchTripMe, putBudget, patchTrip, nudge, addDevice } as const;
 
 /** Nodes the walk in tests/bodies.test.ts does not enter: they are checked against the contract's own definitions elsewhere. */
 export const PASSTHROUGH: readonly string[] = ['patchTrip.itinerary[]'];
 
 /** The only places `null` is a valid value ("clear this field"): `<definition>.<dotted path>`. */
-export const CLEARABLE: readonly string[] = ['updateBooking.refundable_until', 'updateBooking.starts_at', 'updateBooking.ends_at', 'patchMe.photo_url', 'patchMe.upi_id', 'patchTripMe.from_city', 'patchTripMe.earliest_leave'];
+export const CLEARABLE: readonly string[] = ['updateBooking.refundable_until', 'updateBooking.starts_at', 'updateBooking.ends_at', 'patchMe.photo_url', 'patchMe.upi_id', 'patchMe.from_city', 'patchTripMe.from_city', 'patchTripMe.earliest_leave'];
 
 export interface OpenVoteBody {
-  client_id: string;
+  client_id?: string;
   question: string;
   kind: 'choice' | 'yesno';
   anonymous: boolean;
@@ -219,7 +226,7 @@ export interface OpenVoteBody {
 }
 
 export interface AddBookingBody {
-  client_id: string;
+  client_id?: string;
   kind: string;
   title: string;
   vendor: string;
@@ -247,6 +254,8 @@ export interface PatchMeBody {
   name?: string;
   photo_url?: string | null;
   upi_id?: string | null;
+  from_city?: string | null;
+  notifications_enabled?: boolean;
 }
 
 export interface PatchTripMeBody {
@@ -268,16 +277,18 @@ export interface PatchTripBody {
 }
 
 export interface NudgeBody {
-  person_id: string;
+  from_person_id: string;
 }
 
-export interface SubscriptionBody {
-  endpoint: string;
-  keys: { p256dh: string; auth: string };
+export interface AddDeviceBody {
+  platform: 'web_push';
+  web_push: { endpoint: string; keys: { p256dh: string; auth: string } };
+  locale?: string;
+  tz?: string;
 }
 
 export interface CancelVoteBody {
-  client_id: string;
+  client_id?: string;
 }
 
 export const checkOpenVote = bodyChecker<OpenVoteBody>(bodies.openVote);
@@ -289,5 +300,4 @@ export const checkPatchTripMe = bodyChecker<PatchTripMeBody>(bodies.patchTripMe)
 export const checkPutBudget = bodyChecker<PutBudgetBody>(bodies.putBudget);
 export const checkPatchTrip = bodyChecker<PatchTripBody>(bodies.patchTrip);
 export const checkNudge = bodyChecker<NudgeBody>(bodies.nudge);
-export const checkPutSubscription = bodyChecker<SubscriptionBody>(bodies.putSubscription);
-export const checkUnsubscribe = bodyChecker<{ endpoint: string }>(bodies.unsubscribe);
+export const checkAddDevice = bodyChecker<AddDeviceBody>(bodies.addDevice);

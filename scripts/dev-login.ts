@@ -1,5 +1,5 @@
 // A one-page "Sign in with Google" through Supabase, on http://localhost:3000, for trying real tokens by hand:
-// it shows the Supabase access token the app would get, and calls our server's GET /app/me with it.
+// it shows the Supabase access token the app would get, and calls our server's GET /app/v1/me with it.
 // Needs SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY in .env, http://localhost:3000 in Supabase's Redirect URLs, and
 // APP_ORIGINS=http://localhost:3000 on the server (so the browser may call it). Dev only. Ctrl-C stops it.
 import { createServer } from 'node:http';
@@ -24,7 +24,7 @@ const page = (supabaseUrl: string, key: string) => `<!doctype html>
 <p class="muted">Project ${supabaseUrl} · server ${server}</p>
 <button id="in">Sign in with Google</button>
 <form id="pw" style="display:inline"><input id="email" type="email" placeholder="test user email" autocomplete="username">
-<input id="password" type="password" placeholder="password" autocomplete="current-password"><button>Sign in with email</button></form><br><button id="me">Call GET /app/me</button><button id="copy">Copy token</button><button id="out">Sign out</button>
+<input id="password" type="password" placeholder="password" autocomplete="current-password"><button>Sign in with email</button></form><br><button id="me">Call GET /app/v1/me</button><button id="copy">Copy token</button><button id="out">Sign out</button>
 <h3>Session</h3><pre id="session">Not signed in.</pre>
 <h3>Server says</h3><pre id="server">-</pre>
 <script type="module">
@@ -51,7 +51,7 @@ const page = (supabaseUrl: string, key: string) => `<!doctype html>
     const { data: { session } } = await sb.auth.getSession();
     if (!session) return ($('server').textContent = 'Sign in first.');
     try {
-      const r = await fetch(${JSON.stringify(server)} + '/app/me', { headers: { authorization: 'Bearer ' + session.access_token } });
+      const r = await fetch(${JSON.stringify(server)} + '/app/v1/me', { headers: { authorization: 'Bearer ' + session.access_token } });
       $('server').textContent = r.status + ' ' + JSON.stringify(await r.json(), null, 2);
     } catch (e) { $('server').textContent = 'Could not reach the server (is APP_ORIGINS=' + location.origin + ' set?): ' + e.message; }
   };

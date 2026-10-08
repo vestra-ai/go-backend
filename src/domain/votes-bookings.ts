@@ -1,9 +1,10 @@
 // What people do with votes and bookings that Go does on their behalf elsewhere. Each action is one transaction:
 // the change, its event for Go and the trip's next change number commit together, and the person must be in the
-// trip inside that same transaction. Creates run once per (person, client_id).
+// trip inside that same transaction. Creates run once per (person, client_id) when the app sends that press key; the
+// Idempotency-Key header (src/api/idempotency.ts) covers them otherwise.
 import type { Ctx } from '../context.js';
 import { newId } from '../db/ids.js';
-import { once } from '../db/once.js';
+import { onceIfKeyed } from '../db/once.js';
 import { withTx } from '../db/pool.js';
 import { change, emit, nextSeq } from '../db/write-change.js';
 import type { AddBookingBody, CancelVoteBody, OpenVoteBody, UpdateBookingBody } from '../api/bodies.js';
@@ -28,7 +29,7 @@ export function instant(value: string, field: string): Date {
 
 /** A member opens a vote. Go hears `decision.opened` by that person; the server posts no card (Go does). */
 export async function openPersonVote(ctx: Ctx, tripId: string, personId: string, input: OpenVoteBody) {
-  return once(ctx.pool, tripId, `app:vote:${personId}:${input.client_id}`, async (db, after) => {
+  return onceIfKeyed(ctx.pool, tripId, input.client_id && `app:vote:${personId}:${input.client_id}`, async (db, after) => {
     await requireMember(db, tripId, personId);
     const closesAt = input.closes_at ? instant(input.closes_at, 'closes_at') : null;
     if (closesAt && closesAt.getTime() <= Date.now()) throw invalid('closes_at must be in the future');
@@ -53,7 +54,7 @@ const endsBeforeStarts = (starts: Date | null, ends: Date | null) => !!starts &&
  * as on Go's path. Where the booking names a vote that has already been decided, that decided line becomes the booked line.
  */
 export async function addPersonBooking(ctx: Ctx, tripId: string, personId: string, input: AddBookingBody) {
-  return once(ctx.pool, tripId, `app:booking:${personId}:${input.client_id}`, async (db, after) => {
+  return onceIfKeyed(ctx.pool, tripId, input.client_id && `app:booking:${personId}:${input.client_id}`, async (db, after) => {
     await requireMember(db, tripId, personId);
     const currency = (await db.query('select currency from trips where trip_id = $1', [tripId])).rows[0]!.currency as string;
     await assertPeopleInTrip(db, tripId, [input.payer_person_id, ...input.for_person_ids], 'payer_person_id/for_person_ids');
@@ -144,7 +145,7 @@ export const CANCEL_VOTE_HOURS = 24;
  * (see `closeDecision`). Cancelling records the group's decision only: nothing is cancelled with the vendor.
  */
 export async function proposeCancelBooking(ctx: Ctx, tripId: string, personId: string, bookingId: string, input: CancelVoteBody) {
-  return once(ctx.pool, tripId, `app:cancel:${personId}:${input.client_id}`, async (db, after) => {
+  return onceIfKeyed(ctx.pool, tripId, input.client_id && `app:cancel:${personId}:${input.client_id}`, async (db, after) => {
     await requireMember(db, tripId, personId);
     const booking = await lockBooking(db, tripId, bookingId);
     if (!booking) throw notFound(`booking ${bookingId} does not exist in trip ${tripId}`);
