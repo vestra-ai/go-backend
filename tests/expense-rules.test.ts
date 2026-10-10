@@ -87,7 +87,7 @@ describe('with a Go that speaks contract 1.0', () => {
   beforeAll(async () => void (old = await startHarness({ goContract: '1.0' })));
   afterAll(() => old.stop());
 
-  it('a fixed split takes its change number and sends no event; a payback sends one valid settlement.recorded', async () => {
+  it('a fixed split takes its change number and sends no event (its room line still goes as message.created); a payback sends one valid settlement.recorded', async () => {
     const o = appApi(old);
     const e = (await o.api(o.as('p_priya'), 'POST', `${trip}/expenses`, { amount_minor: 30000, note: 'Tea', category: 'food', split_person_ids: ['p_priya', 'p_arjun'] })).body;
     const fixed = await o.api(o.as('p_priya'), 'PATCH', `${trip}/expenses/${e.expense_id}`, { split_person_ids: ['p_priya', 'p_arjun', 'p_meher'] });
@@ -95,7 +95,14 @@ describe('with a Go that speaks contract 1.0', () => {
     await old.flush();
     const sent = old.go.events.filter((x) => x.trip_id === 't_goa').map((x) => [x.type, x.seq, (x.data as any).change]);
     expect([fixed.status, fixed.body.seq, paid.status]).toEqual([200, e.seq + 2, 201]); // +1 was the room's line for the new expense
-    expect(sent).toEqual([['expense.changed', e.seq, 'added'], ['settlement.recorded', paid.body.seq, undefined]]); // nothing for the fixed split
+    // Each room line is a system message, sent as message.created at its own number; nothing at the fixed split's number (e.seq + 2).
+    expect(sent).toEqual([
+      ['expense.changed', e.seq, 'added'], ['message.created', e.seq + 1, undefined],
+      ['message.created', e.seq + 3, undefined],
+      ['settlement.recorded', paid.body.seq, undefined], ['message.created', paid.body.seq + 1, undefined],
+    ]);
+    expect(old.go.events.filter((x) => x.type === 'message.created').every((x) => x.data.message.author.kind === 'system')).toBe(true);
+    expect(old.go.events.find((x) => x.type === 'settlement.recorded')!.data).toMatchObject({ settlement: { from_person_id: 'p_arjun', to_person_id: 'p_priya', amount_minor: 10000, status: 'confirmed' }, by: { kind: 'person', person_id: 'p_arjun' } });
     expect(old.go.refused).toEqual([]);
   });
 });

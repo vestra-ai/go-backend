@@ -8,7 +8,7 @@ import type { Ctx } from '../context.js';
 import { Forbidden, needsYouIn } from './actions.js';
 import { bookingsForPerson } from './bookings.js';
 import { invalid } from './errors.js';
-import { actorOf, compact } from './mappers.js';
+import { actorOf, compact, visibleSql } from './mappers.js';
 import { buildSnapshot } from './snapshot.js';
 import { stageOf, type Stage } from './stage.js';
 import type { Actor, Person, TripSnapshot } from './types.js';
@@ -22,7 +22,8 @@ export interface TripView extends TripSnapshot {
   };
   chat: {
     unread_count: number;
-    last_message?: { message_id: string; author: Actor; text_preview: string; sent_at: string };
+    /** `author.former` when the author is no longer in the trip (left, or deleted their account), as on a Message. */
+    last_message?: { message_id: string; author: Actor & { former?: true }; text_preview: string; sent_at: string };
     participants_preview: Array<{ kind: 'go' } | { kind: 'person'; person_id: string }>;
   };
   needs_you_count: number;
@@ -43,10 +44,10 @@ export function parseInclude(raw: string | undefined): Set<Includable> | undefin
 
 const PREVIEW_CHARS = 80;
 
-/** Messages posted after what the person has read, by others, still standing. The server's own pills are not unread. */
+/** Messages posted after what the person has read, by others, still standing, that are for them. The server's own pills are not unread. */
 export async function unreadCount(db: pg.Pool | pg.PoolClient, tripId: string, personId: string, lastReadSeq: number): Promise<number> {
   const { rows } = await db.query(
-    `select count(*)::int as n from messages where trip_id = $1 and seq > $2 and deleted = false and author_kind <> 'system' and author_person_id is distinct from $3`,
+    `select count(*)::int as n from messages where trip_id = $1 and seq > $2 and deleted = false and author_kind <> 'system' and author_person_id is distinct from $3 and ${visibleSql('$3')}`,
     [tripId, lastReadSeq, personId],
   );
   return rows[0].n as number;
@@ -62,15 +63,19 @@ export async function readTripView(ctx: Ctx, tripId: string, personId: string, i
     const links = await db.query('select decision_id, cancels_booking_id from decisions where trip_id = $1 and cancels_booking_id is not null', [tripId]);
     const unread = await unreadCount(db, tripId, personId, membership.last_read_seq);
     const last = (await db.query(
-      `select message_id, author_kind, author_person_id, text, card->>'fallback_text' as fallback, sent_at from messages
-        where trip_id = $1 and deleted = false and author_kind <> 'system' order by seq desc limit 1`,
-      [tripId],
+      `select message_id, author_kind, author_person_id, text, card->>'fallback_text' as fallback, sent_at,
+              author_person_id is not null and not exists (select 1 from trip_people tp join people p using (person_id)
+                where tp.trip_id = messages.trip_id and tp.person_id = messages.author_person_id and tp.left_at is null and p.deleted_at is null) as former
+         from messages
+        where trip_id = $1 and deleted = false and author_kind <> 'system' and ${visibleSql('$2')} order by seq desc limit 1`,
+      [tripId, personId],
     )).rows[0];
     // Who talks in the room: Go first when it ever posted, then people by their latest message. The server's pills are nobody.
+    // Both read only the messages that are for this person, like the room itself.
     const talkers = await db.query(
-      `select author_kind, author_person_id, max(seq) as last_seq from messages where trip_id = $1 and deleted = false and author_kind <> 'system'
+      `select author_kind, author_person_id, max(seq) as last_seq from messages where trip_id = $1 and deleted = false and author_kind <> 'system' and ${visibleSql('$2')}
         group by author_kind, author_person_id order by (author_kind = 'go') desc, last_seq desc limit 4`,
-      [tripId],
+      [tripId, personId],
     );
     const needs = (await needsYouIn(db, tripId, personId, ctx.features)).length;
     const bookings = await bookingsForPerson(db, snap.bookings, personId);
@@ -91,7 +96,7 @@ export async function readTripView(ctx: Ctx, tripId: string, personId: string, i
       chat: {
         unread_count: unread,
         ...(last
-          ? { last_message: { message_id: last.message_id, author: actorOf(last), text_preview: String(last.text ?? last.fallback ?? '').slice(0, PREVIEW_CHARS), sent_at: new Date(last.sent_at).toISOString() } }
+          ? { last_message: { message_id: last.message_id, author: last.former ? { ...actorOf(last), former: true } : actorOf(last), text_preview: String(last.text ?? last.fallback ?? '').slice(0, PREVIEW_CHARS), sent_at: new Date(last.sent_at).toISOString() } }
           : {}),
         participants_preview: talkers.rows.map((r) => (r.author_kind === 'go' ? { kind: 'go' as const } : { kind: 'person' as const, person_id: r.author_person_id as string })),
       },

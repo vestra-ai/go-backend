@@ -11,7 +11,7 @@ const FIELDS = ['title', 'destination', 'dates', 'vibe', 'stay', 'itinerary'] as
 const SENDABLE = [...FIELDS, 'budget_per_person_minor'] as const;
 
 export const updateTrip = (ctx: Ctx) => async (p: any, raw: Record<string, unknown>) =>
-  once(ctx.pool, p.trip_id, p.request_id, async (db, after) => {
+  once(ctx.pool, p.trip_id, p.request_id, async (db) => {
     await tripOf(db, p.trip_id);
     requireSomething(p, SENDABLE);
     // The trip row, held from here: the budget is compared with what is stored, so nothing may change it in between.
@@ -51,6 +51,6 @@ export const updateTrip = (ctx: Ctx) => async (p: any, raw: Record<string, unkno
     await db.query(`update trips set ${sets.join(', ')} where trip_id = $1`, values);
     const seq = await change(db, p.trip_id, 'trip.updated', { by: { kind: 'go' }, changed });
     const kinds: ChangeKind[] = ['trip', ...(changed.includes('itinerary') ? (['itinerary'] as const) : []), ...(budgetMoved ? (['budget'] as const) : [])];
-    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds }));
+    await ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds });
     return { seq };
   });

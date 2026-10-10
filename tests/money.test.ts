@@ -212,19 +212,63 @@ describe('votes', () => {
     });
 
     it('refuses a booking above the approved amount, for another vote, with a cancelled approval, or with an unknown one (409)', async () => {
+      // The villa vote is booked now, and a booked vote gets no second approval (paying again would charge twice), so
+      // these checks run on a second stay vote; the villa booking stays as it is for the expense tests below.
+      const casa = (await ok('open_vote', { question: 'Or the second stay?', kind: 'choice', anonymous: false, options: villaOptions })).decision_id;
+      for (const p of ['p_rahul', 'p_priya', 'p_arjun']) await vote(casa, p, 0);
+      await ok('close_vote', { decision_id: casa });
+      await ok('set_mandate', { decision_id: casa, choice_index: 0, cap_minor: 5500000, currency: 'INR', refundable_only: true, payer_person_id: 'p_rahul' });
+      await h.pool.query("update decisions set mandate = jsonb_set(mandate, '{confirmed_at}', to_jsonb(now()::text)) where decision_id = $1", [casa]);
       await h.pool.query("update spend_approvals set cancelled_at = now()");
-      const f = await ask();
+      const f = await ask({ decision_id: casa });
       expect(f.result.status).toBe('approved');
       const second = f.result.approval_id;
-      expect(await err('add_booking', { ...booking({ amount_minor: 5420001 }), approval_id: second })).toMatchObject({ code: 409 });
-      expect(await err('add_booking', { ...booking({ decision_id: undefined }), approval_id: second })).toMatchObject({ code: 409 });
-      expect(await err('add_booking', { ...booking(), approval_id: 'ap_unknown' })).toMatchObject({ code: 409 });
+      const onCasa = (over: Record<string, unknown> = {}) => booking({ decision_id: casa, ...over });
+      expect(await err('add_booking', { ...onCasa({ amount_minor: 5420001 }), approval_id: second })).toMatchObject({ code: 409 });
+      expect(await err('add_booking', { ...onCasa({ decision_id: undefined }), approval_id: second })).toMatchObject({ code: 409 });
+      expect(await err('add_booking', { ...onCasa({ decision_id: villa }), approval_id: second })).toMatchObject({ code: 409 });
+      expect(await err('add_booking', { ...onCasa(), approval_id: 'ap_unknown' })).toMatchObject({ code: 409 });
       expect(await ok('cancel_spend_approval', { approval_id: second, reason: 'other' })).toEqual({ ok: true });
-      expect(await err('add_booking', { ...booking(), approval_id: second })).toMatchObject({ code: 409 });
+      expect(await err('add_booking', { ...onCasa(), approval_id: second })).toMatchObject({ code: 409 });
       expect(await ok('cancel_spend_approval', { approval_id: second, reason: 'other' })).toEqual({ ok: true }); // safe to repeat
       expect(await err('cancel_spend_approval', { approval_id: 'ap_unknown', reason: 'other' })).toMatchObject({ code: 404 });
       // a cancelled approval no longer counts as outstanding
-      expect((await ask()).result.status).toBe('approved');
+      expect((await ask({ decision_id: casa })).result.status).toBe('approved');
+      await h.pool.query('update spend_approvals set cancelled_at = now() where decision_id = $1 and used_at is null', [casa]); // tidy for the tests below
+    });
+
+    it('a booked vote gets no second approval; once its booking is cancelled it can be approved again; a hand-added booking blocks too', async () => {
+      const stay = async (question: string) => {
+        const d = (await ok('open_vote', { question, kind: 'choice', anonymous: false, options: villaOptions })).decision_id;
+        for (const p of ['p_rahul', 'p_priya', 'p_arjun']) await vote(d, p, 0);
+        await ok('close_vote', { decision_id: d });
+        await ok('set_mandate', { decision_id: d, choice_index: 0, cap_minor: 5500000, currency: 'INR', refundable_only: true, payer_person_id: 'p_rahul' });
+        await h.pool.query("update decisions set mandate = jsonb_set(mandate, '{confirmed_at}', to_jsonb(now()::text)) where decision_id = $1", [d]);
+        return d as string;
+      };
+      // Go's booking, made with an approval
+      const d1 = await stay('Booked stay?');
+      const a1 = await ask({ decision_id: d1 });
+      expect(a1.result.status).toBe('approved');
+      const b1 = await ok('add_booking', { ...booking({ decision_id: d1, title: 'Booked stay', ref: 'BK-1' }), approval_id: a1.result.approval_id });
+      const denied = (await ask({ decision_id: d1 })).result;
+      expect(denied).toMatchObject({ status: 'denied', reason: 'approval_outstanding' });
+      expect(denied.detail).toMatch(/^this vote is already booked/);
+      expect(check('SpendApprovalResult', denied)).toMatchObject({ ok: true });
+      expect((await rows(h.pool, "select count(*)::int as n from spend_approvals where decision_id = $1", [d1]))[0].n).toBe(1); // nothing new issued
+      await ok('update_booking', { booking_id: b1.booking_id, status: 'cancelled' });
+      expect((await ask({ decision_id: d1 })).result.status).toBe('approved'); // a cancelled booking does not count
+      await h.pool.query('update spend_approvals set cancelled_at = now() where decision_id = $1 and used_at is null', [d1]);
+
+      // a booking recorded without an approval (as a person adding one would) for the vote blocks the same way
+      const d2 = await stay('Hand-booked stay?');
+      const b2 = await ok('add_booking', booking({ decision_id: d2, title: 'Hand-booked stay', ref: 'BK-2' }));
+      const denied2 = (await ask({ decision_id: d2 })).result;
+      expect(denied2).toMatchObject({ status: 'denied', reason: 'approval_outstanding' });
+      expect(denied2.detail).toMatch(/^this vote is already booked/);
+      await ok('update_booking', { booking_id: b2.booking_id, status: 'cancelled' });
+      expect((await ask({ decision_id: d2 })).result.status).toBe('approved');
+      await h.pool.query('update spend_approvals set cancelled_at = now() where decision_id = $1 and used_at is null', [d2]);
     });
 
     it('records a booking without an approval (a cab someone booked): no approval checks', async () => {
@@ -319,13 +363,18 @@ describe('the trip record and trip details', () => {
 });
 
 describe('change numbers over the whole flow', () => {
-  it('every change took the next number and has exactly one event, or is one of the server\'s own pills (no event): no gaps, no repeats', async () => {
+  it('every change took the next number and has exactly one event, the server\'s own pills included (as message.created): no gaps, no repeats', async () => {
     await h.flush();
-    const sent = await rows(h.pool, "select seq, status from outbox where trip_id = 't_goa' order by seq");
+    const sent = await rows(h.pool, "select seq, status, body->>'type' as type from outbox where trip_id = 't_goa' order by seq");
     expect(sent.every((r) => r.status === 'sent')).toBe(true);
+    const seqs = sent.map((r) => Number(r.seq));
+    const [{ seq: last }] = await rows(h.pool, "select seq from trips where trip_id = 't_goa'");
+    // 2 … the trip's change number, each once (change 1 is the seeded trip.created, which the seed writes without its event)
+    expect(seqs).toEqual(Array.from({ length: Number(last) - 1 }, (_, i) => i + 2));
     const pills = await rows(h.pool, "select seq from messages where trip_id = 't_goa' and author_kind = 'system'");
-    const seqs = [...sent.map((r) => r.seq), ...pills.map((r) => r.seq)].sort((a, b) => a - b);
-    for (let i = 1; i < seqs.length; i++) expect(seqs[i]).toBe(seqs[i - 1] + 1);
+    expect(pills.length).toBeGreaterThan(0);
+    const typeAt = new Map(sent.map((r) => [Number(r.seq), r.type]));
+    for (const p of pills) expect(typeAt.get(Number(p.seq)), `pill at ${p.seq}`).toBe('message.created');
     // and Go received them in that order
     const received = h.go.events.map((e) => e.seq);
     expect(received).toEqual([...received].sort((a, b) => a - b));

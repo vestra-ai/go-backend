@@ -2,7 +2,7 @@
 // Each would have failed before its fix.
 import { randomBytes } from 'node:crypto';
 import pg from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { migrate } from '../scripts/migrate.js';
 import { rows, startHarness, type Harness } from './helpers/harness.js';
 
@@ -197,12 +197,14 @@ describe('A6: two different requests for the same thing at the same moment', () 
 });
 
 describe('A7: leaving a trip sends no budget event', () => {
-  it('person.left is the last event of a leave: no trip.updated for the budget follows it', async () => {
+  it('a leave sends person.left and then its "left" pill as message.created: no trip.updated for the budget follows', async () => {
     const p = await h.signIn('NoBudget');
     await api(p, 'POST', '/app/v1/invites/inv_t_goa/accept', {});
     await api(p, 'POST', `/app/v1/trips/${T}/leave`);
     await h.flush();
-    expect(h.go.events.at(-1)).toMatchObject({ type: 'person.left', data: { person_id: p.id } });
+    const [left, pill] = h.go.events.slice(-2);
+    expect(left).toMatchObject({ type: 'person.left', data: { person_id: p.id } });
+    expect(pill).toMatchObject({ type: 'message.created', seq: left!.seq + 1, data: { message: { author: { kind: 'system' }, text: 'NoBudget left' } } });
   });
 });
 
@@ -305,5 +307,76 @@ describe('B16: cancelling an approval that already expired', () => {
     );
     expect(await ok('cancel_spend_approval', { approval_id: 'ap_expired01', reason: 'other' })).toEqual({ ok: true });
     expect((await rows(h.pool, "select cancelled_at from spend_approvals where approval_id = 'ap_expired01'"))[0].cancelled_at).toBeNull();
+  });
+});
+
+// Found on 10 Oct 2026, testing against production Go.
+
+describe('R3 (real Go): the read marker is clamped to the trip\'s latest change', () => {
+  it('an up_to_seq far ahead stores the trip\'s current seq, so the next message by someone else is unread', async () => {
+    const seq = (await rows(h.pool, 'select seq from trips where trip_id = $1', [T]))[0].seq as number;
+    expect((await api('p_priya', 'POST', `/app/v1/trips/${T}/read`, { up_to_seq: seq + 1000 })).status).toBe(204);
+    expect((await rows(h.pool, 'select last_read_seq from trip_people where trip_id = $1 and person_id = $2', [T, 'p_priya']))[0].last_read_seq).toBe(seq); // not seq + 1000
+    expect((await api('p_priya', 'GET', `/app/v1/trips/${T}`)).body.me).toMatchObject({ last_read_seq: seq, unread_count: 0 });
+    const m = await msg('p_rahul', 'r3-after-read', 'anyone up for dinner?');
+    expect(m.body.seq).toBeLessThan(seq + 1000); // the message lands below the marker the app sent
+    expect((await api('p_priya', 'GET', `/app/v1/trips/${T}`)).body.me).toMatchObject({ last_read_seq: seq, unread_count: 1 });
+  });
+});
+
+describe('R4 (real Go): Go has nothing to catch up on', () => {
+  it('an answer with no summary and no items is 204, even with force=1; with items it is 200', async () => {
+    const saved = h.go.answers.catch_up!;
+    h.go.answers.catch_up = () => ({ result: { summary: null, items: [] } });
+    try {
+      const asked = h.go.requests.filter((r) => r.method === 'catch_up').length;
+      const r = await api('p_meher', 'GET', `/app/v1/trips/${T}/catch-up?force=1`);
+      expect([r.status, r.body]).toEqual([204, null]);
+      expect(h.go.requests.filter((q) => q.method === 'catch_up').length).toBe(asked + 1); // Go was asked; its empty answer is "nothing"
+    } finally {
+      h.go.answers.catch_up = saved;
+    }
+    const r = await api('p_meher', 'GET', `/app/v1/trips/${T}/catch-up?force=1`);
+    expect([r.status, r.body]).toEqual([200, { summary: 'While you were away, Villa Sol won the vote.', items: [{ kind: 'decided', text: 'Villa Sol won, 4 to 1' }] }]);
+  });
+});
+
+describe('R5 (real Go): a reply written while Go is paused', () => {
+  it('reaches Go withheld with no reply_to (and no words, attachments or mentions); the room sees the reply', async () => {
+    const q = await msg('p_rahul', 'r5-question', 'who books the cab?');
+    expect((await api('p_arjun', 'PATCH', `/app/v1/trips/${T}/me`, { go_paused: true })).status).toBe(200);
+    try {
+      const reply = await api('p_arjun', 'POST', `/app/v1/trips/${T}/messages`, { client_message_id: 'r5-reply', text: 'me, @Rahul @Go', reply_to: q.body.message_id, mentions: ['p_rahul'] });
+      expect(reply.status).toBe(201);
+      await h.flush();
+      const sent = events('message.created').find((e) => e.data.message.message_id === reply.body.message_id)!.data.message;
+      expect(sent).toMatchObject({ withheld: true, attachments: [], mentions: [], mentions_go: false });
+      expect('reply_to' in sent).toBe(false);
+      expect(sent.text).toBeUndefined();
+      expect(JSON.stringify(sent)).not.toContain(q.body.message_id);
+      const viaGo = (await h.go.call('read_messages', { trip_id: T, after_seq: q.body.seq })).result.messages.find((x: any) => x.message_id === reply.body.message_id);
+      expect([viaGo.withheld, 'reply_to' in viaGo]).toEqual([true, false]);
+      const room = (await api('p_rahul', 'GET', `/app/v1/trips/${T}/messages?after_seq=${q.body.seq}`)).body.messages.find((x: any) => x.message_id === reply.body.message_id);
+      expect(room).toMatchObject({ text: 'me, @Rahul @Go', reply_to: q.body.message_id, mentions: ['p_rahul'], withheld: false });
+    } finally {
+      await api('p_arjun', 'PATCH', `/app/v1/trips/${T}/me`, { go_paused: false });
+    }
+  });
+});
+
+describe('R6 (real Go): Go answering 422 to one of our requests', () => {
+  it('is 502 go_unavailable to the app (not 503), and is logged as Go refusing our params', async () => {
+    const saved = h.go.answers.vault_link!;
+    h.go.answers.vault_link = () => ({ error: { code: 422, message: 'start: must be one of home, add_card, add_login', data: { code: 'invalid' } } });
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const r = await api('p_kabir', 'POST', '/app/v1/me/vault-link', { start: 'add_card' });
+      expect([r.status, r.body.error.code]).toEqual([502, 'go_unavailable']);
+      expect(h.go.requests.at(-1)?.method).toBe('vault_link');
+      expect(logged).toHaveBeenCalledWith('[go] vault_link refused by Go as invalid: start: must be one of home, add_card, add_login');
+    } finally {
+      logged.mockRestore();
+      h.go.answers.vault_link = saved;
+    }
   });
 });

@@ -7,7 +7,7 @@ import { needsYouIn, type NeedsYouItem } from './actions.js';
 import { peoplePreview, personLite, type PersonLite } from './invites.js';
 import { loadExpenses, loadSettlements } from './ledger.js';
 import type { BookingRow } from './mappers.js';
-import { compact } from './mappers.js';
+import { compact, visibleSql } from './mappers.js';
 import { moneyOf } from './money.js';
 import { activePeople } from './snapshot.js';
 import { attentionOf, stageOf, type Attention, type Stage } from './stage.js';
@@ -58,16 +58,16 @@ interface TripRow {
 }
 
 /** The cover photo of a destination: its `photo_url`, else the first of its labelled `photos` (rev 4, GO-CHANGES 6.2). */
-const coverOf = (d: (Place & { photos?: Array<{ url?: string }> }) | null): string | undefined => d?.photo_url ?? d?.photos?.[0]?.url ?? undefined;
+const coverOf = (d: Place | null): string | undefined => d?.photo_url ?? d?.photos?.[0]?.url ?? undefined;
 
 const datesOf = (t: { dates_start: string | null; dates_end: string | null }) => (t.dates_start && t.dates_end ? { start: t.dates_start, end: t.dates_end } : undefined);
 
-/** The latest `checklist` card in the trip with a row for this person still to do (status todo or started): its title. */
+/** The latest `checklist` card in the trip, on a message this person may see, with a row for them still to do (status todo or started): its title. */
 async function pendingChecklist(db: Db, tripId: string, personId: string): Promise<string | null> {
   const { rows } = await db.query(
     `select card->>'title' as title from messages, jsonb_array_elements(card->'rows') as r
       where trip_id = $1 and author_kind = 'go' and deleted = false and card->>'kind' = 'checklist'
-        and r->>'person_id' = $2 and r->>'status' in ('todo', 'started')
+        and r->>'person_id' = $2 and r->>'status' in ('todo', 'started') and ${visibleSql('$2')}
       order by seq desc limit 1`,
     [tripId, personId],
   );

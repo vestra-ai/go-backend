@@ -189,6 +189,11 @@ Every non-2xx answer has this body, and every answer (2xx too) carries `X-Reques
 - **An anonymous vote has no `votes` list**, only `voted`, `of`, `tally` (and `flexible_count`). The caller gets their own `my_vote`.
 - **When a person pauses Go, the room still sees their messages in full.** `withheld` is always `false` for the app.
 - **A private itinerary item** (`audience: "private"`) is returned only to the people in its `person_ids`.
+- **A message only some people can see.** When Go posts with `visible_to_person_ids`, only those people ever receive the
+  message: not in a messages page (either mode), not in a single-message answer, not in a live `message` or `card` frame
+  or the replay, not in `GET …/cards`, "needs you", the chat preview, unread counts or catch-up. To anyone else it does
+  not exist: reacting to it, replying to it, "Ask Go about this", editing or deleting it, `POST …/read` with its id and
+  a tap on its card answer as for an unknown message or card (`404`, or `422` where the route says so for an unknown id).
 - **Passport and ID data never pass through the Server** (the visa form is Go's vault page, §4.1 vault link).
 - System messages (`author.kind = "system"`) are not counted as unread. The money lines among them name amounts (§4.6):
   money in a trip is the whole group's business.
@@ -239,7 +244,7 @@ interface TripView extends TripSnapshot {               // the contract's TripSn
   me: { person: Person; last_read_seq: number; unread_count: number };
   // `budget` (from TripSnapshot) keeps the Go contract's shape; the app reads only `budget.per_person_minor` (absent when no budget is set)
   chat: { unread_count: number;                         // the same number as me.unread_count
-          last_message?: { message_id: Id; author: Actor; text_preview: string; sent_at: Iso };   // preview ≤ 80 chars; system pills excluded
+          last_message?: { message_id: Id; author: Actor; text_preview: string; sent_at: Iso };   // preview ≤ 80 chars; system pills excluded; author.former as on a Message (§4.6)
           participants_preview: Array<{ kind: "go" } | { kind: "person"; person_id: Id }> };      // up to 4: Go first if it ever posted, then people by latest message
   needs_you_count: number;
   can: { invite: boolean; manage_trip: boolean };       // invite is always true; manage_trip = organizer
@@ -288,6 +293,10 @@ type BookingForApp = Booking & {
   added_by_person_id?: Id;
 };
 // Message (contract) gains quick_replies? ([{ label, text? }], Go's chips) and, on an upload-backed attachment, upload_id; a voice note is a file attachment with duration_s.
+// In app reads a Message also has (§4.6):
+//   visible_to_person_ids?: Id[]      // only these people can see it (you are always one of them): show "Only you can see this" / "Only you and Rahul". Absent = everyone
+//   author: { kind: "person"; person_id: Id; former?: true }   // former: the author left the trip or deleted their account: draw "Former member", neutral avatar
+//   reactions: Array<{ emoji: string; person_id?: Id; former?: true }>   // the same mark on a reaction by such a person
 // A money line (a system message, §4.6) also carries, in app reads only:
 //   ledger: { kind: "expense_added" | "expense_changed" | "expense_removed" | "payback"; expense_id?: Id; settlement_id?: Id }
 
@@ -329,8 +338,8 @@ Every frame is a JSON object with a `type`. Unknown types, and frames that are n
 | `type` | When | Body |
 |---|---|---|
 | `hello` | right after connect | `{ "type":"hello", "person_id", "server_time", "heartbeat_seconds": 25 }` |
-| `message` | a message is new or changed (edit, delete, a reaction added or taken back, Go's reactions too) | `{ "type":"message", "trip_id", "message": Message }`: the **whole** message as it is now, card included. Upsert by `message_id`, place by `seq`. |
-| `card` | Go replaced one of its cards in place (`replace_card`: a call moved on, a pay card became paid, people dropped from `for_person_ids`) | `{ "type":"card", "trip_id", "message_id", "card": Card }`. No `seq` in the frame, but the **message's `updated_seq` moves** (D9), so `GET …/messages?after_seq=` returns the replaced card after a long time offline. |
+| `message` | a message is new or changed (edit, delete, a reaction added or taken back, Go's reactions too) | `{ "type":"message", "trip_id", "message": Message }`: the **whole** message as it is now, card included. Upsert by `message_id`, place by `seq`. A message with `visible_to_person_ids` (and its `card` frames) goes only to those people. |
+| `card` | Go replaced one of its cards in place (`replace_card`: a call moved on, a pay card became paid, people dropped from `for_person_ids`) | `{ "type":"card", "trip_id", "message_id", "card": Card }`. No `seq` in the frame, but the **message's `updated_seq` moves** (D9), so `GET …/messages?after_seq=` returns the replaced card after a long time offline. A `message` frame with the message at its new `updated_seq` follows. |
 | `typing` | Go or a person started or stopped typing | `{ "type":"typing", "trip_id", "who": {"kind":"go"} \| {"kind":"person","person_id"}, "on": boolean, "until"?: Iso }`. Go's runs out 10 s after the Server heard it, a person's 6 s; `on: false` hides it at once. Not sent back to the one typing. |
 | `trip_changed` | any change that is **not a message**: a vote cast or closed, mandate, record line, booking, expense, settlement, someone joined or left, itinerary, the group budget, trip details | `{ "type":"trip_changed", "trip_id", "seq", "kinds"?: ["decision","record"] }`. When `seq` is higher than the app holds, re-read what is showing. `kinds` (a hint, not always present) is one or more of `trip`, `people`, `decision`, `mandate`, `record`, `booking`, `expense`, `settlement`, `itinerary`, `budget`. |
 | `home_changed` | my home screen's data moved: a trip created or joined, someone left | `{ "type":"home_changed" }`. Re-read `GET /home`. (A trip's `attention` changing alone sends `trip_changed` to that trip, not `home_changed`: re-read home on resume or when an open trip changes. The same goes for `owes`.) |
@@ -353,8 +362,9 @@ Inbound frames over 64 KB close the socket. Writes (sending a message, voting) a
 
 - Per trip, keep **the highest `seq` seen** (a message's `updated_seq` or a `trip_changed` `seq`).
 - Frames are sent **after the change is committed**, from the same hook that writes Go's outbox row, so the app and Go
-  are in step. A money action sends `trip_changed` (its change number N) and then the `message` frame of its line in
-  the room (N+1). Typing, `card` and `home_changed` carry no `seq` and are never replayed.
+  are in step. Per trip, frames arrive in change-number order: a money action, a join, a leave, a vote closing, a poll
+  opening or a booking sends `trip_changed` (its change number N) and then the `message` frame of its line in the room
+  (N+1); a `message` frame is never sent ahead of an earlier `trip_changed`. Typing, `card` and `home_changed` carry no `seq` and are never replayed.
 - Show your own message at once as "sending" (by `client_message_id`), then replace it with the stored `Message`
   from the `POST` answer or the `message` frame, whichever lands first.
 
@@ -364,7 +374,8 @@ Inbound frames over 64 KB close the socket. Writes (sending a message, voting) a
    `visibilitychange → visible`. Each connect needs a fresh ticket.
 2. On connect, `subscribe` every open trip with its stored `since_seq`.
 3. On `resync`, or when the first `seq` jumps by more than one, read `GET /trips/:trip` and
-   `GET /trips/:trip/messages?after_seq=…` again before trusting the socket.
+   `GET /trips/:trip/messages?after_seq=…` again before trusting the socket. A message you cannot see
+   (`visible_to_person_ids`, §4.6) still takes a change number, so you will see gaps in `seq`: harmless, the re-read finds nothing missing.
 4. Correctness never depends on the socket: a pull-to-refresh or a resume re-reads the same endpoints.
 
 ### 3.4 Limits
@@ -403,7 +414,7 @@ There are no `/auth/*` routes (§1.2).
 | `PATCH /me` | any of `name` (1-80), `photo_upload_id` (a `profile_photo` upload of yours, §4.5: taken **once**, it becomes the stored `photo_url`, a long-lived signed link), `photo_url` (an `https://` link, or `null` to clear; not together with `photo_upload_id`), `from_city` (1-60, or `null`). Strict; at least one field (`422`). | `Me` plus `seq`: the last change number written, or `null` when nothing changed or Go was not told | 422 (`photo_upload_id` when the upload is not yours, not a profile photo, already used or expired) | `person.updated` in **every active trip** the person is in, `changed` among `name`, `photo_url`. A new default city tells Go nothing. Live: `trip_changed` in each trip. |
 | `PUT /me/upi` | `{ "upi_id": "name@bank" }`, matching `^[\w.\-]{2,256}@[a-zA-Z]{2,64}$` | `Me` (`has_upi: true`, `upi_id_masked`, `seq`) | 422 `upi_id` | `person.updated` `changed: ["has_upi"]` per active trip, **only when it flips** (replacing one id by another sends nothing) |
 | `DELETE /me/upi` | — | `Me` (`has_upi: false`) | | `person.updated` `changed: ["has_upi"]` per active trip when it flips |
-| `POST /me/vault-link` | `{ "start"?: "home" \| "add_card" \| "add_login" \| "add_documents", "context"?: { "trip_id", "purpose": "visa" } }` (strict) | `{ "url", "expires_at" }` (Go's `Link`): open it **immediately** in the system browser sheet, never a WebView, never ahead of time. Links expire after 5 minutes. | 422 `start` when `add_documents` and `features.visa` is off; 502/503/504 `go_unavailable`; 429 above **6 a minute per person** (Go is not asked), or Go busy | `vault_link { kind: "vault", person_id, start?, context? }` (2 s) |
+| `POST /me/vault-link` | `{ "start"?: "home" \| "add_card" \| "add_login" \| "add_documents", "context"?: { "trip_id", "purpose": "visa" } }` (strict) | `{ "url", "expires_at" }` (Go's `Link`): open it **immediately** in the system browser sheet, never a WebView, never ahead of time. Links expire after 5 minutes. | 422 `start` when `add_documents` and `features.visa` is off; 403 when `context.trip_id` is a trip you are not in; 502/503/504 `go_unavailable`; 429 above **6 a minute per person** (Go is not asked), or Go busy | `vault_link { kind: "vault", person_id, start?, context? }` (2 s) |
 | `DELETE /me` | `{ "confirm": true }` (strict) | `202`, no body. In order: Go forgets the person everywhere (`forget_person`; **if Go does not answer, nothing else happens**: `502`), join answers cleared, the person leaves every trip (`person.left` each, with everything a leave does), their messages stay and read "Former member" with no photo, email, phone, UPI id, default city go, live tickets are deleted, their tokens stop working | 502 `go_unavailable` | `forget_person`, then `person.left` per trip |
 
 Rules: the signed-in `person_id` is the same person in every trip; `Me.counts` is computed (`active_trips` = trips I
@@ -443,7 +454,7 @@ are signed in. There is no "Not now", no "Decline" and no list of pending invite
 
 | Method & path | Request | Answer | Errors |
 |---|---|---|---|
-| `GET /invites/:code` **public** (a valid token personalises `state`) | — | `{ "code", "state": "pending" \| "already_member" \| "expired" \| "revoked", "trip": { "trip_id", "title", "destination"?, "dates"?, "photo_url"? }, "inviter": PersonLite, "people_preview": [PersonLite], "joined_count" }`. **Read-only**: it never changes anything. `revoked` = the organizer rotated the link; `expired` = the trip is over. | 404 bad code; 429 above 30/min per IP address |
+| `GET /invites/:code` **public** (a valid token personalises `state`) | — | `{ "code", "state": "pending" \| "already_member" \| "expired" \| "revoked", "trip": { "trip_id", "title", "destination"?, "dates"?, "photo_url"? }, "inviter": PersonLite, "people_preview": [PersonLite], "joined_count" }`. **Read-only**: it never changes anything. `revoked` = the organizer rotated the link; `expired` = the trip is over. A link in either state shows only the trip's name and picture: `people_preview: []`, `joined_count: 0`, no `dates`. | 404 bad code; 429 above 30/min per IP address |
 | `POST /invites/:code/accept` | `{ "join_answers"?: JoinAnswers }` (§4.4; strict) | `200 { "trip_id", "seq", "landing": "chat" \| "trip_home" }`. `chat` when the room already has a message from Go or a person. Already a member: the trip's current `seq` and the landing, nothing else happens. Someone who left and comes back is a member again with the new answers. | 404 bad code; 409 rotated link or trip over; 422 |
 
 Accepting: Go hears `person.joined` with the answers; the Server posts the system message "Priya joined"; everyone in
@@ -453,7 +464,7 @@ the trip receives `trip_changed kinds: ["people"]` and `home_changed`; open vote
 
 | Method & path | Who | Request | Answer | Errors | Go hears / live |
 |---|---|---|---|---|---|
-| `POST /trips` | anyone | **Everything optional** (strict): `title` (1-80), `destination_hint` (1-80; becomes the title when there is none, else "New trip"), `dates { start, end }` (`YYYY-MM-DD`, start ≤ end), `from_city` (1-60; saved as **your** join answer), `destination` (contract `Place`: `name` 1-120, `place_id` ≤ 256, `address` ≤ 200, `lat`, `lng`, `photo_url`, `photos` ≤ 12 × `{ url, label? 1-40 }`), `vibe` (≤ 10 strings ≤ 40), `stay` (≤ 80), `plan_minor` (≥ 0), `currency` (`^[A-Z]{3}$`, default `INR`) | `201 TripView` (`people` = you as organizer, `invite_url` set) | 422 | `trip.created` is change **1**; the system message "Trip created · Aarav joined" is change 2, so `TripView.seq` is 2. Live: `trip_changed kinds: ["trip","people"]`, `home_changed` |
+| `POST /trips` | anyone | **Everything optional** (strict): `title` (1-80), `destination_hint` (1-80; becomes the title when there is none, else "New trip", and the `destination` `{ name }` when none is sent, so a trip made from an Idea starts at stage `deciding`), `dates { start, end }` (`YYYY-MM-DD`, start ≤ end), `from_city` (1-60; saved as **your** join answer), `destination` (contract `Place`: `name` 1-120, `place_id` ≤ 256, `address` ≤ 200, `lat`, `lng`, `photo_url`, `photos` ≤ 12 × `{ url, label? 1-40 }`), `vibe` (≤ 10 strings ≤ 40), `stay` (≤ 80), `plan_minor` (≥ 0), `currency` (`^[A-Z]{3}$`, default `INR`) | `201 TripView` (`people` = you as organizer, `invite_url` set) | 422 | `trip.created` is change **1**; the system message "Trip created · Aarav joined" is change 2, so `TripView.seq` is 2. Live: `trip_changed kinds: ["trip","people"]`, `home_changed` |
 | `GET /trips/:trip` | member | `?include=people,decisions,bookings,expenses,money,itinerary,record` keeps only those parts (the rest of the view always comes); `If-None-Match` | `TripView` (§2) with `ETag: "<seq>"`, `private, no-cache`; `304` when the ETag matches | 403; 422 `include` for an unknown part | — |
 | `PATCH /trips/:trip` | **any member** | any of `title` (1-80), `dates { start, end }`, `status` (`planning` \| `booked` \| `on_trip` \| `over`, in any direction), `itinerary` (the **whole** itinerary: ≤ 30 days, each a contract `Day`, ≤ 262,144 bytes as JSON, item `booking_id`s must be this trip's; fields the Server does not know, including the 1.1 `person_ids`, `audience`, `Day.image_url`, are stored as sent), `budget_per_person_minor` (**the group's one budget**: a whole number ≥ 1 in the trip's currency, the same for everyone; `null` clears it, the only field here that can be cleared). Strict; at least one field | `{ "seq" }`, or `{ "seq": null }` when nothing differed (key order inside objects is ignored) | 422 | `trip.updated` by the person naming only the fields that differed (`budget` for the budget). Live: `trip_changed` |
 | `GET /trips/:trip/invite` | member | — | `{ "invite_url", "code" }` (`invite_url` is `<PUBLIC_BASE_URL>/j/<code>`) | | — |
@@ -461,8 +472,8 @@ the trip receives `trip_changed kinds: ["people"]` and `home_changed`; open vote
 | `GET /trips/:trip/me` | member | — | `{ "from_city", "earliest_leave", "know", "role", "go_paused" }`: your own answers in this trip | | — |
 | `PUT /trips/:trip/me/join-answers` | member | `JoinAnswers` (below); strict; at least one field | your own `Person` (whole) plus `seq` (`null` when nothing changed) | 422 | `person.updated` with `changed` among `from_city`, `earliest_leave`, `know` (only what differs). Live: `trip_changed` |
 | `PATCH /trips/:trip/me` | member | `{ "go_paused": boolean }` (required; strict) | your own `Person` (whole) plus `seq`. While paused your messages reach Go with no words; the room sees them in full | 422 | `person.updated` `changed: ["go_paused"]`. Live: `trip_changed kinds: ["people"]` |
-| `POST /trips/:trip/leave` | member | — | `204` | 403 | `person.left`; the system message "Priya left"; an open vote that was waiting only for you closes. Live: `trip_changed kinds: ["people"]`, `home_changed` |
-| `POST /trips/:trip/read` | member | `{ "up_to_seq"?: number }` or `{ "message_id"?: Id }` (strict; both optional) | `204`. Marks the room read up to that change number (it never moves back) and notes you opened the room now (catch-up uses it). An empty body only notes the visit | 422 `message_id` not in the trip | — |
+| `POST /trips/:trip/leave` | member | — | `204` | 403 | `person.left`; the system message "Priya left"; an open vote that was waiting only for you closes. Live: `trip_changed kinds: ["people"]`, `home_changed`; your sockets get those and the "… left" line, then stop following the trip (subscribing again is `error forbidden`) |
+| `POST /trips/:trip/read` | member | `{ "up_to_seq"?: number }` or `{ "message_id"?: Id }` (strict; both optional) | `204`. Marks the room read up to that change number (it never moves back, and never goes past the trip's latest change) and notes you opened the room now (catch-up uses it). An empty body only notes the visit | 422 `message_id` not in the trip | — |
 
 **`JoinAnswers`** (strict): `from_city` (≤ 60, `null` clears), `earliest_leave` (≤ 60, `null` clears), `know` (≤ 20
 strings of 1-80; replaces the list, `[]` clears), `vibe` (`beach` \| `hills` \| `city` \| `any`). `vibe` is stored as one
@@ -518,7 +529,7 @@ Go's in-app link `go://trips/<trip>/sheet/budget` opens the group budget editor.
 | `PATCH /trips/:trip/messages/:id` | `{ "text" }` (1-4000; strict) | `200 Message` (`edited_at` set) | 403 not yours; 404; 409 deleted | `message.edited`. Live: `message` |
 | `DELETE /trips/:trip/messages/:id` | — | `200 Message` (`deleted: true`, no text, no attachments) | 403; 404; 409 already deleted | `message.deleted`. Live: `message` |
 | `PUT /trips/:trip/messages/:id/reaction` | `{ "emoji": "🔥" \| null }` (1-16 chars; strict). **One reaction per person per message**: a new emoji replaces the old one, `null` takes it back. The same emoji again (or `null` with none) changes nothing | `200 Message` | 404; 409 deleted; 429 above **20 a minute per person per trip** | `reaction.removed` then `reaction.added` on a switch, each its own change; `updated_seq` is the last. Live: `message` |
-| `GET /trips/:trip/catch-up` | `?force=1` to ask Go whatever the gap (testing) | `200 CatchUp` (Go's `summary`, `items`), or `204` when not away long enough, or when Go did not answer within its time | 502/503 `go_unavailable`; 429 | `catch_up { trip_id, person_id, since }` (3 s) where `since` = your last `POST …/read` (else your join). Asked when you were away **3 hours or more**, or have **15 or more** unread messages from others. Nothing is posted. |
+| `GET /trips/:trip/catch-up` | `?force=1` to ask Go whatever the gap (testing) | `200 CatchUp` (Go's `summary`, `items`), or `204` when not away long enough, when Go did not answer within its time, or when Go had nothing to say (no summary and no items) | 502/503 `go_unavailable`; 429 | `catch_up { trip_id, person_id, since }` (3 s) where `since` = your last `POST …/read` (else your join). Asked when you were away **3 hours or more**, or have **15 or more** unread messages from others. Nothing is posted. |
 
 **The two read modes**
 
@@ -548,11 +559,20 @@ Upsert by `message_id`, place by `seq`, whichever mode brought the message.
   to one of Go's messages, **or** `about_message_id` is set ("Ask Go about this", even without naming Go).
 - `withheld` is always `false` in app reads. A reaction without `person_id` is Go's. A message whose `author.kind` is
   `go` must look like Go; `quick_replies` on it are chips whose tap sends `text ?? label` as your own message.
+- **Former members.** `author: { "kind": "person", "person_id", "former": true }` when the author has left the trip or
+  deleted their account; a reaction by such a person has `"former": true` too. They are not in `TripView.people`
+  (active members only): draw "Former member" with a neutral avatar. Someone who joins again loses the mark. App reads only.
+- **Only some people can see it.** A message of Go's may carry `visible_to_person_ids` (1-30 ids; each traveller's own
+  flight options and booking flow, a note for the organizer). You only ever receive it when you are in the list: show
+  "Only you can see this" (or name the others). Everyone else never receives it in any read, frame or count (§1.7), and
+  reacting to it, replying to it, "Ask Go about this", editing or deleting it is `404`/`422` as for an unknown message.
+  It still takes a change number: people outside the list see a gap in `seq`, which is harmless. `has_more` and `limit`
+  count only the messages you can see. A person in the list who leaves stops seeing the trip, as with any leave.
 - **System messages.** The Server posts messages with `author: { "kind": "system" }`, text only, drawn as centred
   pills: "Trip created · Rahul joined", "Priya joined", "Priya left", "Villa Sol won · 4 votes", "BLR → GOX booked",
   the **money lines** below, and the anchor of a **person-opened poll** (text = the question, `card: { kind: "vote",
   card_id, decision_id, fallback_text }`). They have a `seq` like any message, do not count as unread, are never the
-  chat preview, do not trigger a catch-up, and send **no event** to Go.
+  chat preview, and do not trigger a catch-up. Each also reaches Go as `message.created` (a record Go never answers).
 - **Money lines.** Every money movement, whoever makes it (Go included), posts a line in the same transaction, as the
   change number right after the movement's own:
 
@@ -578,10 +598,12 @@ Upsert by `message_id`, place by `seq`, whichever mode brought the message.
 - `action_id`: `^[a-z][a-z_]{0,31}$`. `option_id` only when the button was on one option (`per_option`). `press_id`
   (1-64) becomes Go's `tap_id`, tied to you (nobody can replay your press and get your answer); without it the
   Server makes one per call. `payload { trip: "oneway" | "round" }` (1.1) goes to Go as it is.
+- The button must be on the card **as it stands now**: when Go has replaced the card (a pay card that is paid, expired or
+  declined), a tap on a button it no longer has answers `422 invalid`, `field: "action_id"`, and never reaches Go.
 - **10 taps a minute per person per trip** (`429 rate_limited`); a repeat of a `press_id` already counted is free, so a
   double tap or a retry never costs a tap.
-- Only for a card on one of Go's messages of kind `options`, `working`, `call`, `pay`, `notice`, `checklist` or `rooms`
-  (`404 not_found` otherwise; `422 card_id` for a record card: `vote`, `mandate`, `expense`, ... are the Server's).
+- Only for a card on one of Go's messages of kind `options`, `working`, `call`, `pay`, `notice`, `checklist` or `rooms`,
+  that you can see (`404 not_found` otherwise, the same as an unknown card, when the message's `visible_to_person_ids` leaves you out; `422 card_id` for a record card: `vote`, `mandate`, `expense`, ... are the Server's).
 - The Server sends `card_tap { tap_id, trip_id, card_id, action_id, person_id, option_id?, payload? }` and waits 3.5 s.
   The answer is Go's `CardActionResult`, passed through:
 
@@ -608,7 +630,7 @@ Upsert by `message_id`, place by `seq`, whichever mode brought the message.
 | `POST /trips/:trip/decisions` | any member | `{ "client_id"? (1-64), "question" (1-200), "kind": "choice" \| "yesno", "anonymous": boolean, "options": [2-10 × { "label" (1-120), "image_url"?, "price_minor"? (≥ 0, shown in the trip's currency), "note"? (≤ 120) }], "closes_at"? (ISO, in the future) }`. Strict; `client_id` **or** an `Idempotency-Key` is required | `201 { "decision": Decision + my_vote, "message": Message }`: the Server posts the system message carrying the `vote` card, so the poll shows in the room at once. `of` = people in the trip now (a joiner adds one, a leaver who had not voted removes one) | 422 | `decision.opened` by you. Live: `message`, `trip_changed kinds: ["decision"]` |
 | `PUT /trips/:trip/decisions/:id/vote` | member | `{ "option_index": 0-9 }` **or** `{ "flexible": true }` (never both or neither: `422`). Cast or move your vote until the vote closes. `flexible` needs `features.vote_flexible` (`409` otherwise); it counts in `voted` and `flexible_count`, not in `tally` | `200 Decision` + `my_vote` (the closed decision when your vote was the last) | 404; 409 closed or cancelled; 422 `option_index` out of range; 429 above **20 votes a minute per person** (taking one back counts) | `decision.voted` (`person_id` and `option_index` omitted when anonymous; `flexible: true` when so). **The vote closes by itself when everyone has voted.** Live: `trip_changed kinds: ["decision"]` |
 | `DELETE /trips/:trip/decisions/:id/vote` | member | — | `200 Decision` + `my_vote: null`. Needs `features.vote_retract` | 409 flag off, vote not open, or you have not voted | `decision.voted` with `retracted: true` and the new totals |
-| `POST /trips/:trip/decisions/:id/close` | **organizer or opener** | — | `200 Decision` (`result_index` set unless nobody voted or the top tied) | 403; 409 already closed/cancelled | `decision.closed`, then, when there is a result, `record.changed` (the **decided** line, by the system) and the system message "Villa Sol won · 4 votes". Live: `trip_changed kinds: ["decision","record"]` |
+| `POST /trips/:trip/decisions/:id/close` | **organizer or opener** | — | `200 Decision` (`result_index` set unless nobody voted or the top tied) | 403; 409 already closed/cancelled | `decision.closed`, then, when there is a result, `record.changed` (the **decided** line, by the system) and the system message "Villa Sol won · 4 votes" (a yes/no vote names its question: "Scuba on day 2? Yes won · 2 votes", and so does its decided line). Live: `trip_changed kinds: ["decision","record"]`, then the pill's `message`, in change-number order |
 | `POST /trips/:trip/decisions/:id/cancel` | organizer or opener | — | `200 Decision` (`status: "cancelled"`). No record line | 403; 409 not open | `decision.cancelled` by you |
 | `POST /trips/:trip/decisions/:id/mandate/confirm` | **the payer** | — | `200 Mandate` (`confirmed_at` set). "Yes, book it": Go may then ask for a spend approval and post a `pay` card | 403 not the payer; 409 no mandate | `mandate.confirmed`. Live: `trip_changed kinds: ["mandate"]` |
 | `POST /trips/:trip/decisions/:id/mandate/decline` | the payer | — | `200 Mandate` (`declined_at` set). A new `set_mandate` clears both | 403; 409 | `mandate.declined` |
@@ -725,7 +747,7 @@ booking that covers you is **reworded from the booking**: "BLR → GOX · 6E 531
 `GET /trips/:trip/cards?kind=<kind>&state=<a,b>` → `{ "items": [ { "message_id", "card": Card, "posted_at" } ] }`: the
 **latest version** of each card in the room (after `replace_card`), newest first, at most 100. `kind` is any card kind
 (`^[a-z_,]+$`); `state` is a comma list for kinds with a `state` (`call`: `dialing,talking,ended,failed`; `working`:
-`running,done,failed`; `pay`: `waiting,paid,cancelled,expired`). Cards are not filtered by `for_person_ids` here. The
+`running,needs_you,done,failed`; `pay`: `waiting,paid,declined,expired,failed`). A card on a message you cannot see (`visible_to_person_ids`) is left out; cards are not filtered by `for_person_ids` here. The
 Trip home's "Go's calls" reads `?kind=call&state=dialing,talking`; the live `card` frame updates them in place; the
 elapsed clock is the client's from `started_at`. "Stop the call" is the card action `stop`; **Listen in** is the card
 action `listen` (Go answers `open` with its page: transcript, mute, take over, hand back, end). "Ask Go to call…" is a
@@ -935,7 +957,8 @@ Server filters `private` items and builds `scope=me`); `settlement.recorded` (se
 | Room sets after a stay is picked | the `rooms` card: `{ card_id, kind: "rooms", fallback_text, for_person_ids?, title, option_id?, arrangements: [{ arrangement_id, label?, rooms: [{ room_type_id, label, person_ids, price_minor }], total_minor, per_person: [{ person_id, amount_minor }] }], actions }` | the room; `GET …/cards?kind=rooms`; "needs you" for `for_person_ids`. A tap is `POST …/cards/:card_id/actions` with `option_id` = the `arrangement_id` (§4.7) |
 | The group budget set by Go | `budget_per_person_minor` through Go's `update_trip` | the same fields as §4.4 |
 | Different room prices | no new shape: Go adds one expense per room, split among that room's people | §4.9 |
-| Flight options for one person | no new shape: an `options` card with `for_person_ids` and `only_for_person_ids` naming them; everyone sees it, only they can act | §4.7 |
+| Flight options for one person | an `options` card with `for_person_ids` and `only_for_person_ids` naming them; everyone sees it, only they can act. When Go also sends `visible_to_person_ids` (Server overlay), only they see it at all | §4.6, §4.7 |
+| A message only some people can see | `visible_to_person_ids` on the `Message` (Server overlay on Go's `post_message`): each traveller's own options and booking flow, an organizer-only note | §1.7, §4.6 |
 
 **Designed, not built** (waiting for Go's team to agree its half): paying for a seat or extra baggage at check-in
 through the same `pay` card and vault as a stay (`CheckinState.extras`, `extra_ids`; `GO-CHANGES.md` §6.5). Until then

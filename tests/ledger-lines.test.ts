@@ -1,5 +1,5 @@
 // §5.3 and §5.4 (rev 4): every money movement shows as a line in the room (a system message with the amount, its own
-// change number, no event to Go, an app-only `ledger` member), and the home screen lists what I owe.
+// change number, a `message.created` to Go with the text only, an app-only `ledger` member), and the home screen lists what I owe.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { check } from '../src/contract/index.js';
 import { appApi } from './helpers/app-api.js';
@@ -68,10 +68,16 @@ describe('money lines in the room', () => {
     expect([refused.map((r) => r.status), await seqOf(), (await lines()).length]).toEqual([[404, 422, 422], before, count]);
   });
 
-  it('a line is a record, not a message to anyone: no event for its change number, not unread, not the chat preview', async () => {
-    const lineSeqs = (await lines()).map((l) => l.seq);
+  it('a line is a record, not a message to anyone: Go gets it as message.created at its change number (text only, no ledger), but it is not unread and not the chat preview', async () => {
+    const appLines = await lines();
+    const events = (await rows(h.pool, 'select seq, body from outbox where trip_id = $1 and seq = any($2) order by seq', ['t_goa', appLines.map((l) => l.seq)])).map((r) => r.body);
+    // One event per line, at the line's own number: the message as Go reads it, author system, the text, and no ledger member.
+    expect(events.map((e) => [e.seq, e.type, e.data.message.seq, e.data.message.author, e.data.message.text.replace(/ /g, ' ')]))
+      .toEqual(appLines.map((l) => [l.seq, 'message.created', l.seq, { kind: 'system' }, l.text]));
+    expect(events.some((e) => 'ledger' in e.data.message)).toBe(false);
+    for (const e of events) expect(check('Event', e)).toMatchObject({ ok: true });
     const view = (await call('p_meher', 'GET', trip)).body; // Meher has read nothing and nobody has written a message
-    expect([(await rows(h.pool, 'select 1 from outbox where trip_id = $1 and seq = any($2)', ['t_goa', lineSeqs])).length, view.me.unread_count, view.chat.last_message ?? null]).toEqual([0, 0, null]);
+    expect([view.me.unread_count, view.chat.last_message ?? null]).toEqual([0, null]);
     // Enough lines to pass the catch-up's unread mark, were they messages: Go is still not asked.
     for (let i = 0; i < 16; i++) await call('p_priya', 'POST', `${trip}/expenses`, { amount_minor: 100, note: `Tea ${i}`, category: 'food', split_person_ids: ['p_priya'] });
     expect([(await call('p_meher', 'GET', `${trip}/catch-up`)).status, h.go.requests.filter((x) => x.method === 'catch_up').length]).toEqual([204, 0]);

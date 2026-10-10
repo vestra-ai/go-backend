@@ -12,7 +12,7 @@ export async function closeDueVotes(ctx: Ctx): Promise<number> {
   let closed = 0;
   for (const r of rows) {
     try {
-      await withTx(ctx.pool, (db, after) => closeDecision(ctx, db, after, r.trip_id, r.decision_id, 'time'));
+      await withTx(ctx.pool, (db) => closeDecision(ctx, db, r.trip_id, r.decision_id, 'time'));
       closed++;
     } catch (err) {
       // Another instance closed it first (409), or it is gone: nothing to do.

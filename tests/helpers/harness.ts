@@ -9,6 +9,7 @@ import { MemoryStorage } from '../../src/storage/memory-storage.js';
 import { goRequestHandlers } from '../../src/requests/index.js';
 import { OutboxSender } from '../../src/outbox/sender.js';
 import { buildApp } from '../../src/api/app.js';
+import { openTx } from '../../src/db/pool.js';
 import { DevAuth, SupabaseAuth, signSession, type Authenticator } from '../../src/api/auth.js';
 import type { Features, GoContract } from '../../src/config.js';
 import { freshDb } from './db.js';
@@ -19,12 +20,21 @@ import { seedTrip, uuidFor } from './seed.js';
 /** The app's API lives under /app/v1: `v1('/trips/t_goa')`. */
 export const v1 = (path: string) => `/app/v1${path}`;
 
+/**
+ * The in-memory live. Like `PgLive`'s NOTIFY, a notice published inside a transaction is delivered after the commit (the
+ * hub reads the row by id, which only exists then), in order, and never on a rollback.
+ */
 export class RecordingLive implements Live {
   events: Array<{ tripId: string; event: LiveEvent }> = [];
   private subscribers = new Set<(tripId: string, event: LiveEvent) => void>();
   async publish(tripId: string, event: LiveEvent) {
-    this.events.push({ tripId, event });
-    for (const fn of this.subscribers) fn(tripId, event);
+    const deliver = () => {
+      this.events.push({ tripId, event });
+      for (const fn of this.subscribers) fn(tripId, event);
+    };
+    const tx = openTx();
+    if (tx) tx.deferred.push(deliver);
+    else deliver();
   }
   subscribe(fn: (tripId: string, event: LiveEvent) => void) {
     this.subscribers.add(fn);

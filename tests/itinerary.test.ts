@@ -68,6 +68,7 @@ describe('scope=me', () => {
     const journey = { mode: 'flight', origin: { name: 'Delhi' }, destination: { name: 'Goa', code: 'GOI' }, depart_at: '2026-11-06T08:00:00Z', arrive_at: '2026-11-06T10:30:00Z', number: '6E 123' };
     expect(titleForPerson('stored', { journey, passengers: null } as any, 'p_x')).toBe('Delhi → GOI · 6E 123, lands Goa 10:30 am');
     expect(titleForPerson('stored', { journey: { ...journey, carrier_code: undefined, number: undefined, carrier_name: 'IndiGo' }, passengers: [{ person_id: 'p_x', seat: '2C' }] } as any, 'p_x')).toBe('Delhi → GOI · IndiGo, Seat 2C, lands Goa 10:30 am');
+    expect(titleForPerson('stored', { journey: { ...journey, carrier_code: '6E', number: '6E 123' }, passengers: null } as any, 'p_x')).toBe('Delhi → GOI · 6E 123, lands Goa 10:30 am'); // Go's numbers carry the code: not written twice
     expect(titleForPerson('stored', { journey: null, passengers: [{ person_id: 'p_x', seat: '2C' }] } as any, 'p_x')).toBe('stored');
     expect([wallClock('2026-11-06T00:05:00+05:30'), wallClock('2026-11-06T12:00:00Z'), wallClock('2026-11-06T23:59:00-08:00'), wallClock('nonsense')]).toEqual(['12:05 am', '12:00 pm', '11:59 pm', undefined]);
     const days = daysFor([{ date: '2026-11-06', items: [{ title: 'x', person_ids: [] }, { title: 'y', audience: 'private' }] }] as any, [], 'p_x', 'me');

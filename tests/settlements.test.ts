@@ -37,8 +37,14 @@ describe('recording a payment', () => {
     expect((await rows(h.pool, `select body->>'type' as type from outbox where trip_id = $1 and seq = $2`, ['t_goa', r.body.seq])).map((x) => x.type)).toEqual(['settlement.recorded']);
     await h.flush();
     const e = recorded().at(-1)!;
-    expect(e.data).toEqual({ settlement_id: first, from_person_id: 'p_priya', to_person_id: 'p_rahul', amount_minor: 15000, currency: 'INR', method: 'upi', note: 'part of dinner', status: 'confirmed', recorded_at: r.body.settlement.created_at, confirmed_at: r.body.settlement.created_at });
+    // Contract 1.1's shape: the settlement (always confirmed: recorded is the whole of it, so both times are the same) and who recorded it.
+    expect(e.data).toEqual({
+      settlement: { settlement_id: first, from_person_id: 'p_priya', to_person_id: 'p_rahul', amount_minor: 15000, currency: 'INR', method: 'upi', note: 'part of dinner', status: 'confirmed', recorded_at: r.body.settlement.created_at, confirmed_at: r.body.settlement.created_at },
+      by: { kind: 'person', person_id: 'p_priya' },
+    });
     expect([recorded().length, check('Event', e).ok, e.seq]).toEqual([1, true, r.body.seq]);
+    // The room's line follows at the next change number, and reaches Go as message.created (a system message).
+    expect(h.go.events.find((x) => x.trip_id === 't_goa' && x.seq === r.body.seq + 1)).toMatchObject({ type: 'message.created', data: { message: { seq: r.body.seq + 1, author: { kind: 'system' } } } });
     const money = await t.api(t.as('p_priya'), 'GET', `${trip}/money`);
     expect([money.headers['cache-control'], money.body.me.i_owe, money.body.seq]).toEqual(['private, no-store', [{ from_person_id: 'p_priya', to_person_id: 'p_rahul', amount_minor: 5000, currency: 'INR' }], r.body.seq + 1]); // the line took the next change number
   });
@@ -50,7 +56,7 @@ describe('recording a payment', () => {
     const b = await send();
     await h.flush();
     expect([a.status, b.status, b.headers['idempotent-replayed'], b.body]).toEqual([201, 201, 'true', a.body]);
-    expect([(await rows(h.pool, `select 1 from settlements where trip_id = 't_goa' and from_person_id = 'p_meher'`)).length, recorded().filter((e) => e.data.from_person_id === 'p_meher').length]).toEqual([1, 1]);
+    expect([(await rows(h.pool, `select 1 from settlements where trip_id = 't_goa' and from_person_id = 'p_meher'`)).length, recorded().filter((e) => e.data.settlement.from_person_id === 'p_meher').length]).toEqual([1, 1]);
   });
 
   it('refuses paying yourself, someone outside the trip, another currency, a zero amount and an unknown method (422), and an outsider (403)', async () => {

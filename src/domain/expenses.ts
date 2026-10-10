@@ -110,29 +110,29 @@ export interface NewExpense {
 
 /** A person adds an expense by hand. */
 export async function createExpense(ctx: Ctx, tripId: string, personId: string, input: NewExpense): Promise<ExpenseView & { seq: number }> {
-  return withTx(ctx.pool, async (db, after) => {
+  return withTx(ctx.pool, async (db) => {
     await requireMember(db, tripId, personId);
     const trip = (await db.query('select currency from trips where trip_id = $1', [tripId])).rows[0];
     const fields: ExpenseFields = { ...input, paid_by_person_id: input.paid_by_person_id ?? personId, currency: trip.currency, added_by_person_id: personId };
     await checkExpenseFields(db, tripId, fields);
     const expense = await insertExpense(db, tripId, fields);
     const seq = await change(db, tripId, 'expense.changed', { expense, change: 'added', by: { kind: 'person', person_id: personId } });
-    after(() => moneyChanged(ctx, tripId, seq));
-    await postExpenseAdded({ ctx, db, after, tripId }, expense, { kind: 'person', person_id: personId }); // the room's line: the next change number, no event
+    await moneyChanged(ctx, tripId, seq);
+    await postExpenseAdded({ ctx, db, tripId }, expense, { kind: 'person', person_id: personId }); // the room's line: the next change number, no event
     return { ...expense, seq };
   });
 }
 
 /** Removes an expense (see `mayChange`). Nothing of it counts any more. */
 export async function removeExpense(ctx: Ctx, tripId: string, personId: string, expenseId: string): Promise<{ seq: number }> {
-  return withTx(ctx.pool, async (db, after) => {
+  return withTx(ctx.pool, async (db) => {
     const member = await requireMember(db, tripId, personId);
     const row = await lockExpense(db, tripId, expenseId);
     await mayChange(db, tripId, row, personId, member.role, 'remove');
     const removed = (await db.query<ExpenseStoredRow>('update expenses set removed_at = now() where expense_id = $1 returning *', [expenseId])).rows[0]!;
     const seq = await change(db, tripId, 'expense.changed', { expense: expenseView(removed), change: 'removed', by: { kind: 'person', person_id: personId } });
-    after(() => moneyChanged(ctx, tripId, seq));
-    await postExpenseRemoved({ ctx, db, after, tripId }, expenseView(removed), personId);
+    await moneyChanged(ctx, tripId, seq);
+    await postExpenseRemoved({ ctx, db, tripId }, expenseView(removed), personId);
     return { seq };
   });
 }
@@ -144,7 +144,7 @@ export interface ExpenseSplitEdit {
 
 /** "Fix split" (see `mayChange`): the new split, and a new note if given. Go hears `expense.changed` with change `updated` on contract 1.1. */
 export async function updateExpenseSplit(ctx: Ctx, tripId: string, personId: string, expenseId: string, input: ExpenseSplitEdit): Promise<ExpenseView & { seq: number }> {
-  return withTx(ctx.pool, async (db, after) => {
+  return withTx(ctx.pool, async (db) => {
     const member = await requireMember(db, tripId, personId);
     const row = await lockExpense(db, tripId, expenseId);
     await mayChange(db, tripId, row, personId, member.role, 'change');
@@ -153,9 +153,9 @@ export async function updateExpenseSplit(ctx: Ctx, tripId: string, personId: str
     const updated = (await db.query<ExpenseStoredRow>('update expenses set split_person_ids = $2, note = $3 where expense_id = $1 returning *', [expenseId, JSON.stringify(ids), input.note ?? row.note])).rows[0]!;
     const expense = expenseView(updated);
     const seq = await expenseUpdated(ctx, db, tripId, { expense, change: 'updated', by: { kind: 'person', person_id: personId }, by_person_id: personId });
-    after(() => moneyChanged(ctx, tripId, seq));
+    await moneyChanged(ctx, tripId, seq);
     // The room's line, only when the split itself moved (a new note alone is not a money movement).
-    if (!sameIds(row.split_person_ids, ids)) await postSplitChanged({ ctx, db, after, tripId }, expense, personId);
+    if (!sameIds(row.split_person_ids, ids)) await postSplitChanged({ ctx, db, tripId }, expense, personId);
     return { ...expense, seq };
   });
 }

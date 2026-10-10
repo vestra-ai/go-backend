@@ -5,13 +5,16 @@ Go, what Go may ask the Server, the shapes added on top of contract 1.0, and wha
 the history of each proposal are in [`GO-CHANGES.md`](GO-CHANGES.md); the covering note is
 [`GO-TEAM-ASKS-REV4.md`](GO-TEAM-ASKS-REV4.md); the App ↔ Server side is [`CONTRACT-APP.md`](CONTRACT-APP.md).
 
-It describes the Server as of contract rev 4 (10 Oct 2026).
+It describes the Server as of contract rev 4 (10 Oct 2026), after the first integration run against production Go on
+10 Oct 2026 (what changed in that run is marked "since 10 Oct").
 
-**Where the shapes are defined.** The base is contract **1.0.0**: `https://vestrago.vercel.app/llms-full.txt`, held in
-this repository as `contract/go.json` (shapes), `contract/methods.json` (methods) and `contract/socket.json`. The 1.1
-additions the Server accepts are in `contract/extensions-1.1.json`, laid over 1.0 additively: nothing in 1.0 is removed,
-tightened or made required. Section 5 lists every addition. Where this page and those files differ, the files are
-what the Server checks against.
+**Where the shapes are defined.** Go's official contract **1.1.0**, from `vestra-ai/go-brain` `packages/contract`
+(branch `build`, commit `aff5dc1`), held in this repository as `contract/go.json` (shapes), `contract/methods.json`
+(methods) and `contract/socket.json`; the signing and spend-approval test vectors are identical to Go's. The Server
+checks every frame against those files. `contract/extensions-1.1.json` adds only the two web check-in requests (section
+2) and one optional member, `visible_to_person_ids`, on `PostMessage` and `Message` (section 4), none of them in Go's
+contract yet. Where this page and those files differ, the files are what the Server checks
+against.
 
 ```
  App (PWA)  ──HTTP + one WebSocket──►  Server  ──one signed WebSocket, JSON-RPC 2.0──►  Go
@@ -46,7 +49,9 @@ what the Server checks against.
 | `submit_checkin` (1.1) | `SubmitCheckin` → `SubmitCheckinResult` | 2 s | 2.5 s | that person's check-in answers |
 
 - **`card_tap`** is forwarded only for a card on one of Go's messages whose kind is `options`, `working`, `call`, `pay`,
-  `notice`, `checklist` or `rooms`. The params are `{ tap_id, trip_id, card_id, action_id, person_id, option_id?,
+  `notice`, `checklist` or `rooms`, and (since 10 Oct) only when the tapped `action_id` is one of the card's buttons as it
+  stands now: a tap on a button that a `replace_card` removed (a paid, expired or declined pay card) is refused by the
+  Server and never reaches Go. The params are `{ tap_id, trip_id, card_id, action_id, person_id, option_id?,
   payload? }`. `tap_id` is fixed per person and press, so a double tap is one tap. On a `rooms` card `option_id` carries
   the `arrangement_id`. If Go does not answer in time, refuses, or answers with something that is not a
   `CardActionResult`, the person sees "Go didn't answer. Try again."
@@ -61,7 +66,8 @@ transaction. Events for one trip are delivered one at a time, in `seq` order.
 in time: after 1 s, 5 s, 30 s, 2 min, 10 min, then every 10 min (a `429` with `retry_after_seconds` is retried after
 that long instead). It gives up after 24 hours. **Any other error answer (`422` included) marks the event failed, and
 the trip's next event goes on.** So an event Go refuses, or one the Server gave up on, is skipped: when Go sees a `seq`
-gap it cannot explain (section 3.3 lists the expected ones), it should `read_trip`.
+gap it cannot explain, it should `read_trip`. The only `seq` values with no event by design are a fixed split on
+`GO_CONTRACT=1.0` (section 3.2) and a `replace_card` (which moves the message's `updated_seq`).
 
 Every event is `{ event_id, trip_id, seq, occurred_at, type, data }`.
 
@@ -82,7 +88,7 @@ Every event is `{ event_id, trip_id, seq, occurred_at, type, data }`.
 | `record.changed` | a line of the trip record | `{ line, change, by }` |
 | `booking.changed` | a booking added, updated, or cancelled (including by a passed group vote, `by: system`) | `{ booking, change: "added" \| "updated" \| "cancelled", by }` |
 | `expense.changed` | an expense added or removed; **on `GO_CONTRACT=1.1` only**, also `change: "updated"` when a person fixes its split (with `by_person_id`) | `{ expense, change, by }` |
-| `settlement.recorded` (1.1) | **a person records a payback** | `{ settlement_id, from_person_id, to_person_id, amount_minor, currency, method: "upi" \| "cash" \| "bank_transfer" \| "other", note?, status: "confirmed", recorded_at, confirmed_at }` |
+| `settlement.recorded` (1.1) | **a person records a payback** | `{ settlement: Settlement, by }`: `Settlement` is `{ settlement_id, from_person_id, to_person_id, amount_minor, currency, method: "upi" \| "cash" \| "bank_transfer" \| "other", note?, status: "confirmed", recorded_at, confirmed_at }` and `by` the person who recorded it (the official 1.1 shape, since 10 Oct) |
 
 ### 3.2 What changed in rev 4
 
@@ -117,10 +123,11 @@ Priya removed Airport cab · ₹1,700
 Aarav paid Rahul ₹5,800
 ```
 
-Each takes a `seq` (the one right after the change it describes) and appears in `read_messages`. **No event is sent
-for a system message**, so Go will see a `seq` it received no event for. The expected `seq` values with no event are:
-a system message, a fixed split on contract 1.0, and a `replace_card` (which moves the message's `updated_seq`). They
-are a record; Go should not reply to them.
+Each takes a `seq` (the one right after the change it describes), appears in `read_messages`, and **since 10 Oct is
+sent to Go as `message.created`** with `author: { "kind": "system" }` and the text (the poll's anchor also carries its
+`vote` card), so Go never has to re-read the trip for one of them (Go's ask). They are a record: Go never answers,
+thanks or reacts to them. On an account deletion the "… left" line, like the events around it, names the person
+"Former member": Go has just forgotten them.
 
 ## 4. What Go may ask of the Server
 
@@ -161,15 +168,28 @@ error `-32601`; params that do not match the contract with `422`, `data.code: "i
   room's people.
 - **`request_spend_approval`** is granted only for a closed `choice` vote that has a mandate the payer confirmed, in the
   mandate's currency, at or under its cap, refundable when the mandate requires it, with no other approval for that vote
-  still waiting. The payer is always the mandate's payer. Anything else is denied with a reason.
+  still waiting, and (since 10 Oct) **no confirmed booking for that vote**: a second payment for a stay that is already
+  booked would charge twice. That case is denied with `approval_outstanding` and a `detail` starting "this vote is
+  already booked" (1.1 has no closer reason); once the booking is cancelled, a new approval can be granted. The payer is
+  always the mandate's payer. Anything else is denied with a reason.
 - **`post_message` · cards.** A card is stored exactly as sent and reaches the app unchanged, so every field below
   passes through. `mentions` and a card's `for_person_ids` put the message in those people's "needs you" list.
+- **`post_message` · `visible_to_person_ids`** (Server overlay, optional): a message only some people can see. 1 to 30
+  unique ids, each a person in the trip now (otherwise `422`, `data.code: "invalid"`, nothing stored); left out or
+  `null` means everyone, as before. Only those people see the message in the app: in the room, live, in "needs you",
+  in the chat preview and unread counts; to anyone else it does not exist (a tap on its card from them never reaches
+  you). Use it for each traveller's own flight options and booking flow, or a note for one person ("your ixigo money
+  applies here"). A later `replace_card` keeps the message's list. **You still see every message**: `read_messages`
+  returns them all with `visible_to_person_ids`, and `message.created` carries it. The message takes a change number
+  like any other, so people outside the list see a gap in `seq`, which is harmless.
 - **`update_booking`** with `status: "cancelled"` cancels a booking. A booking a person added by hand can also be
   cancelled by a group vote (Go hears `booking.changed cancelled`, `by: system`); a booking paid through the vault cannot.
 
 ## 5. Shapes added on top of contract 1.0
 
-All optional, all checked when present.
+All in Go's official contract 1.1.0 (section "Where the shapes are defined"), all optional, all checked when present.
+On 10 Oct 2026 **production Go still answered contract 1.0.0** on `/v1/health`, did not send any of the rev 4 shapes
+below, and refused `expense.changed` `change: "updated"`, which is why production runs `GO_CONTRACT=1.0`.
 
 | Where | Addition |
 |---|---|
@@ -179,7 +199,7 @@ All optional, all checked when present.
 | `OptionsCard` | `option_kind: "cab"` |
 | `Card` | the `checklist` card; **the `rooms` card** |
 | `CallCard` | `recording_url`, `duration_s` |
-| `Message` · `PostMessage` | `quick_replies`: up to 6 of `{ label 1-40, text? ≤ 2000 }` |
+| `Message` · `PostMessage` | `quick_replies`: up to 6 of `{ label 1-40, text? ≤ 2000 }`; `visible_to_person_ids` (1-30 unique person ids; the Server's overlay, not in Go's 1.1.0, section 4) |
 | `Attachment` | a `location` attachment; `duration_s` on a file attachment |
 | `Booking` · `AddBooking` | `details`, `return_journey`, `passengers`, `documents` |
 | `ItineraryItem` · `Day` | `person_ids`, `audience`; `Day.image_url` |
@@ -230,7 +250,7 @@ A person may also enter `photos` on a new trip's destination and on a booking's 
 
 - **Flight options per person.** Post flight `options` cards per person, searched from that person's `from_city`, with
   `for_person_ids` and each action's `only_for_person_ids` naming them. The card is visible in the room; only that
-  person can act on it.
+  person can act on it. Add `visible_to_person_ids` naming them (section 4) and only they see it at all.
 - **One expense per room**, as in section 4.
 - **Do not announce the expenses Go adds.** The Server posts the line in the room.
 - **Treat system messages as a record.**
@@ -255,7 +275,8 @@ payment is required and nothing reaches Go. Proposed, and built only once Go's t
 
 1. Go calls `read_trip` after `trip.updated` and `person.updated` to see the new values.
 2. Go on 1.0 tolerates the two extra fields named at the end of section 5 (it accepted extra fields on 8 Oct 2026).
-3. Go accepts `expense.changed` with `change: "updated"` before the Server is switched to `GO_CONTRACT=1.1`.
-4. The expected `seq` values with no event (section 3.3) are not treated as missed events, and an unexplained gap makes
-   Go read the trip (section 3).
+3. Go accepts `expense.changed` with `change: "updated"` before the Server is switched to `GO_CONTRACT=1.1` (staging
+   does; production refused it on 10 Oct).
+4. The two `seq` values with no event by design (section 3) are not treated as missed events, and an unexplained gap
+   makes Go read the trip.
 5. Go verifies the signature over the path with its query string (section 1).

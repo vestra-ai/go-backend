@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import type { AfterCommit, Db } from '../db/pool.js';
+import type { Db } from '../db/pool.js';
 import { newId } from '../db/ids.js';
 import { change, nextSeq, emit } from '../db/write-change.js';
 import type { Ctx } from '../context.js';
@@ -87,7 +87,6 @@ export function cancellationResultOf(headCount: number, votes: VoteRow[]): numbe
 export async function closeDecision(
   ctx: Ctx,
   db: pg.PoolClient,
-  after: AfterCommit,
   tripId: string,
   decisionId: string,
   reason: CloseReason,
@@ -113,8 +112,11 @@ export async function closeDecision(
     last = await change(db, tripId, 'booking.changed', { booking: bookingOf(cancelled), change: 'cancelled', by: { kind: 'system' } });
     kinds.push('booking');
   }
-  if (result !== null) {
-    const label = (row.options[result] as { label: string }).label;
+  // A yes/no vote's winner ("Yes") means nothing without its question: "Scuba on day 2? Yes".
+  const label = result === null ? null : row.kind === 'yesno' && !row.cancels_booking_id // a cancel vote's options name the booking already
+    ? `${row.question.replace(/[\s?]+$/, '')}? ${(row.options[result] as { label: string }).label}`
+    : (row.options[result] as { label: string }).label;
+  if (result !== null && label !== null) {
     const line = (await db.query<RecordLineRow>(
       `insert into record_lines (line_id, trip_id, kind, text, decision_id, source) values ($1, $2, 'decided', $3, $4, 'vote') returning *`,
       [newId('r'), tripId, label.slice(0, 200), decisionId],
@@ -122,9 +124,10 @@ export async function closeDecision(
     last = await nextSeq(db, tripId);
     await emit(db, tripId, last, 'record.changed', { line: recordLineOf(line), change: 'added', by: { kind: 'system' } });
     kinds.push('record');
-    // The room's pill, "Villa Sol won · 4 votes" (decision D8): after the events, no event of its own.
-    await postSystemMessage(ctx, db, after, tripId, decidedText(label, decision.tally[result] ?? 0));
   }
-  after(() => ctx.live.publish(tripId, { kind: 'trip', seq: last, kinds }));
+  // The trip notice before the pill's message notice, so the live frames arrive in change-number order.
+  await ctx.live.publish(tripId, { kind: 'trip', seq: last, kinds });
+  // The room's pill, "Villa Sol won · 4 votes" (decision D8): after the events.
+  if (result !== null && label !== null) await postSystemMessage(ctx, db, tripId, decidedText(label, decision.tally[result] ?? 0));
   return { decision, seq };
 }

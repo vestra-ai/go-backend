@@ -34,17 +34,18 @@ it('one journey from the web app\'s origin: decide a vote, add a booking against
   const bodies = events.map((r) => r.body);
   const snap = (await h.go.call('read_trip', { trip_id: 't_goa' })).result;
   expect(answers.map((a, i) => (a.status < 300 && a.headers['access-control-allow-origin'] === PWA ? null : `call ${i}: ${a.status}`)).filter(Boolean)).toEqual([]); // every call succeeded and carried the origin's headers
-  // trip.created took 1 (seeded); then 2, 3, 4... with no gap and no repeat, once the server's own pills (the poll's anchor, "won", "booked": a change number, no event) are counted in
+  // trip.created took 1 (seeded); then 2, 3, 4... each with exactly one event, the server's own pills (the poll's anchor, "won", "booked") as message.created
   const pills = (await rows(h.pool, `select seq, text from messages where trip_id = 't_goa' and author_kind = 'system' order by seq`)).map((p) => p.seq as number);
-  expect([...bodies.map((e) => e.seq), ...pills].sort((a, b) => a - b)).toEqual(Array.from({ length: bodies.length + pills.length }, (_, i) => i + 2));
+  expect(bodies.map((e) => e.seq)).toEqual(Array.from({ length: bodies.length }, (_, i) => i + 2));
   expect(pills).toHaveLength(5); // two poll anchors, "Villa Sol won", "booked", "Cancel: … won"
+  expect(bodies.filter((e) => e.type === 'message.created').map((e) => e.seq)).toEqual(pills);
   expect(bodies.map((e) => check('Event', e).ok).every(Boolean)).toBe(true);
-  expect(bodies.map((e) => e.type + (e.data.change ? `:${e.data.change}` : ''))).toEqual([
-    'decision.opened', ...Array(5).fill('decision.voted'), 'decision.closed', 'record.changed:added', // the first vote and its decided line
-    'booking.changed:added', 'record.changed:updated', // the booking, and the decided line becoming the booked line
-    'booking.changed:updated', // the reference and start time
-    'decision.opened', ...Array(3).fill('decision.voted'), 'decision.closed', 'booking.changed:cancelled', 'record.changed:added', // the cancellation vote, passing
+  expect(bodies.map((e) => e.type === 'message.created' ? `pill:${e.data.message.author.kind}:${e.data.message.text}` : e.type + (e.data.change ? `:${e.data.change}` : ''))).toEqual([
+    'decision.opened', 'pill:system:Where do we stay?', ...Array(5).fill('decision.voted'), 'decision.closed', 'record.changed:added', 'pill:system:Villa Sol won · 5 votes', // the first vote, its anchor, its decided line and its pill
+    'booking.changed:added', 'record.changed:updated', 'pill:system:Villa Sol, 3 nights booked', // the booking, the decided line becoming the booked line, its pill
+    'booking.changed:updated', // the reference and start time (no pill)
+    'decision.opened', 'pill:system:Cancel this booking? Villa Sol, 3 nights', ...Array(3).fill('decision.voted'), 'decision.closed', 'booking.changed:cancelled', 'record.changed:added', 'pill:system:Cancel: Villa Sol, 3 nights won · 3 votes', // the cancellation vote, passing
   ]);
-  expect([check('TripSnapshot', snap).ok, snap.seq, snap.bookings[0].status, snap.bookings[0].ref, snap.bookings[0].starts_at]).toEqual([true, Math.max(bodies.at(-1)!.seq, ...pills), 'cancelled', 'IXG-2', '2026-11-06T08:00:00.000Z']);
+  expect([check('TripSnapshot', snap).ok, snap.seq, snap.bookings[0].status, snap.bookings[0].ref, snap.bookings[0].starts_at]).toEqual([true, bodies.at(-1)!.seq, 'cancelled', 'IXG-2', '2026-11-06T08:00:00.000Z']);
   expect(JSON.stringify(snap)).not.toContain('cancels_booking');
 });

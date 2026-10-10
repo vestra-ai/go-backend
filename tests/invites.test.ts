@@ -3,6 +3,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { appApi } from './helpers/app-api.js';
 import { rows, startHarness, v1, type Harness } from './helpers/harness.js';
+import { seedTrip } from './helpers/seed.js';
 
 let h: Harness;
 let t: ReturnType<typeof appApi>;
@@ -48,9 +49,9 @@ describe('accepting', () => {
     expect(t.events('trip.updated')).toEqual([]);
     // The "Sam joined" pill, the trip notice, then a home notice for every member (their card shows one more face) and for Sam.
     const kinds = h.live.events.slice(before).map((e) => e.event.kind);
-    expect([kinds.filter((k) => k !== 'home'), kinds.filter((k) => k === 'home').length]).toEqual([['message', 'trip'], 6]);
+    expect([kinds.filter((k) => k !== 'home'), kinds.filter((k) => k === 'home').length]).toEqual([['trip', 'message'], 6]); // person.joined's notice, then its "… joined" line: change-number order
     const again = await t.api(sam, 'POST', v1('/invites/inv_t_goa/accept'), {});
-    expect([again.body, t.events('person.joined').filter((e) => e.data.person.person_id === sam.id).length]).toEqual([{ trip_id: 't_goa', seq: r.body.seq + 1, landing: 'trip_home' }, 1]); // the trip's seq is now the "Sam joined" pill
+    expect([again.body, t.events('person.joined').filter((e) => e.data.person.person_id === sam.id).length]).toEqual([{ trip_id: 't_goa', seq: r.body.seq, landing: 'trip_home' }, 1]); // both answers carry the trip's seq after the join: the "Sam joined" line
     expect((await preview('inv_t_goa', sam)).body.joined_count).toBe(6);
   });
 
@@ -89,6 +90,25 @@ describe('rotation', () => {
     const code = (await rows(h.pool, `select invite_code from trips where trip_id = 't_goa'`))[0].invite_code;
     expect((await preview(code)).body.state).toBe('expired');
     await h.pool.query(`update trips set status = 'planning' where trip_id = 't_goa'`);
+  });
+});
+
+describe('a link that no longer works', () => {
+  it('revoked or expired: the trip\'s title only, no faces, no count, no dates; a working link still shows them', async () => {
+    await seedTrip(h.pool, 't_closed', [{ id: 'p_olga', name: 'Olga', role: 'organizer' }, { id: 'p_nina', name: 'Nina' }]);
+    const working = await preview('inv_t_closed');
+    expect([working.status, working.body.state, working.body.trip, working.body.people_preview, working.body.joined_count]).toEqual([
+      200, 'pending', { trip_id: 't_closed', title: 'Goa 🌴', dates: { start: '2026-11-06', end: '2026-11-09' } }, [{ person_id: 'p_olga', name: 'Olga' }, { person_id: 'p_nina', name: 'Nina' }], 2,
+    ]);
+    const rotated = await t.api(t.as('p_olga'), 'POST', v1('/trips/t_closed/invite/rotate'));
+    expect(rotated.status).toBe(200);
+    const revoked = await preview('inv_t_closed');
+    expect([revoked.status, revoked.body.state, revoked.body.trip, revoked.body.people_preview, revoked.body.joined_count]).toEqual([200, 'revoked', { trip_id: 't_closed', title: 'Goa 🌴' }, [], 0]);
+    const fresh = await preview(rotated.body.code); // the new link works: members and dates
+    expect([fresh.body.state, fresh.body.trip.dates, fresh.body.joined_count, fresh.body.people_preview.length]).toEqual(['pending', { start: '2026-11-06', end: '2026-11-09' }, 2, 2]);
+    await h.pool.query(`update trips set status = 'over' where trip_id = 't_closed'`);
+    const expired = await preview(rotated.body.code);
+    expect([expired.status, expired.body.state, expired.body.trip, expired.body.people_preview, expired.body.joined_count]).toEqual([200, 'expired', { trip_id: 't_closed', title: 'Goa 🌴' }, [], 0]);
   });
 });
 

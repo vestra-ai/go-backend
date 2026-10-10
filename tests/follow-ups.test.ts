@@ -37,14 +37,16 @@ describe('the app can tell a cancellation vote from an ordinary one; Go cannot',
 });
 
 describe('leaving a trip', () => {
-  it('sends person.left for each leaver, in order, and nothing after it: no budget event follows', async () => {
+  it('sends person.left for each leaver, in order, each followed only by its "left" pill as message.created: no budget event follows', async () => {
     await t.api(t.as('p_kabir'), 'POST', '/app/v1/trips/t_leave/leave');
     await t.api(t.as('p_meher'), 'POST', '/app/v1/trips/t_leave/leave');
     await h.flush();
     const after = goEvents('t_leave').map((e) => [e.seq, e.type, e.data]);
     const snap = (await h.go.call('read_trip', { trip_id: 't_leave' })).result;
-    expect(after.map((e) => e[1])).toEqual(['person.left', 'person.left']);
-    expect([after[1]![0] > after[0]![0], after.map((e) => e[2]), snap.people.length]).toEqual([true, [{ person_id: 'p_kabir' }, { person_id: 'p_meher' }], 3]);
+    expect(after.map((e) => e[1])).toEqual(['person.left', 'message.created', 'person.left', 'message.created']);
+    expect(after.map((e) => e[0])).toEqual([after[0]![0], after[0]![0] + 1, after[0]![0] + 2, after[0]![0] + 3]); // each pill takes the number after its leave
+    expect([after[0]![2], after[2]![2], snap.people.length]).toEqual([{ person_id: 'p_kabir' }, { person_id: 'p_meher' }, 3]);
+    expect([after[1]![2], after[3]![2]].map((d: any) => [d.message.author, d.message.text])).toEqual([[{ kind: 'system' }, 'Kabir left'], [{ kind: 'system' }, 'Meher left']]);
   });
 });
 

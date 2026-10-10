@@ -1,6 +1,7 @@
 // What people change about themselves and their trips. Each edit is one transaction: lock the row compared against,
 // compare, write only what differs, and tell Go through the usual change number and event. Nothing that did not change
 // is written or sent: an edit that changes nothing answers `seq: null`.
+import type { ChangeKind } from '../live/live.js';
 import type pg from 'pg';
 import type { Ctx } from '../context.js';
 import { withTx } from '../db/pool.js';
@@ -74,7 +75,7 @@ type ProfileEdit = PatchMeBody & { upi_id?: string | null };
  */
 async function editProfile(ctx: Ctx, personId: string, input: ProfileEdit): Promise<Me & { seq: number | null }> {
   if (input.photo_upload_id !== undefined && input.photo_url !== undefined) throw invalid('send photo_upload_id or photo_url, not both', 'photo_upload_id');
-  return withTx(ctx.pool, async (db, after) => {
+  return withTx(ctx.pool, async (db) => {
     const cur = (await db.query<PersonRecord>(`select ${PERSON_COLUMNS} from people where person_id = $1 for no key update`, [personId])).rows[0];
     if (!cur) throw notFound(`person ${personId} does not exist`);
     const photoUrl = input.photo_upload_id !== undefined ? await resolveUploadUrl(ctx, db, personId, input.photo_upload_id) : input.photo_url;
@@ -107,7 +108,7 @@ async function editProfile(ctx: Ctx, personId: string, input: ProfileEdit): Prom
         const person = (await activePeople(db, trip_id)).find((p) => p.person_id === personId)!;
         const written = await change(db, trip_id, 'person.updated', { person: personForGo(person), changed });
         seq = written;
-        after(() => ctx.live.publish(trip_id, { kind: 'trip', seq: written }));
+        await ctx.live.publish(trip_id, { kind: 'trip', seq: written, kinds: ['people'] });
       }
     }
     return { ...own(next, counts), seq };
@@ -146,7 +147,7 @@ export async function getMyTripAnswers(ctx: Ctx, tripId: string, personId: strin
  * differs: `seq: null`. Answers the caller's own Person, in full. The vibe lands in `know` as "Vibe: beach" (see join-answers.ts).
  */
 export async function updateMyTripAnswers(ctx: Ctx, tripId: string, personId: string, input: PatchTripMeBody) {
-  return withTx(ctx.pool, async (db, after) => {
+  return withTx(ctx.pool, async (db) => {
     const cur = await lockMembership(db, tripId, personId);
     const next = {
       from_city: input.from_city === undefined ? cur.from_city : input.from_city,
@@ -165,7 +166,7 @@ export async function updateMyTripAnswers(ctx: Ctx, tripId: string, personId: st
     }
     if (seq !== null) {
       const last = seq;
-      after(() => ctx.live.publish(tripId, { kind: 'trip', seq: last }));
+      await ctx.live.publish(tripId, { kind: 'trip', seq: last, kinds: ['people'] });
     }
     const mine = (await activePeople(db, tripId)).find((p) => p.person_id === personId)!;
     return { ...personForGo(mine), seq };
@@ -195,7 +196,7 @@ export async function updateTripDetails(ctx: Ctx, tripId: string, personId: stri
       if (!checked.ok) throw invalid(`itinerary[${i}] ${checked.message}`);
     });
   }
-  return withTx(ctx.pool, async (db, after) => {
+  return withTx(ctx.pool, async (db) => {
     // The trip row, locked: the same lock the change number takes, held from here so nothing else changes the trip between compare and write.
     const cur = (await db.query('select title, status, dates_start, dates_end, budget_per_person_minor from trips where trip_id = $1 for no key update', [tripId])).rows[0];
     if (!cur) throw notFound(`trip ${tripId} does not exist`);
@@ -227,7 +228,8 @@ export async function updateTripDetails(ctx: Ctx, tripId: string, personId: stri
     if (changed.length === 0) return { seq: null };
     await db.query(`update trips set ${sets.join(', ')} where trip_id = $1`, values);
     const seq = await change(db, tripId, 'trip.updated', { by: { kind: 'person', person_id: personId }, changed });
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq, ...(changed.includes('budget') ? { kinds: ['trip', 'budget'] } : {}) }));
+    const kinds: ChangeKind[] = ['trip', ...(changed.includes('budget') ? ['budget' as const] : []), ...(changed.includes('itinerary') ? ['itinerary' as const] : [])];
+    await ctx.live.publish(tripId, { kind: 'trip', seq, kinds });
     return { seq };
   });
 }

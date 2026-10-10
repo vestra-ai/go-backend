@@ -152,13 +152,14 @@ describe('F2. A trip starts (guide: "A trip starts")', () => {
     trip = t.body.trip_id;
     code = t.body.invite_url.split('/j/')[1];
     await h.flush();
-    const [created] = eventsFor(trip, mark);
+    const [created, pill] = eventsFor(trip, mark);
+    expect(pill).toMatchObject({ type: 'message.created', seq: 2, data: { message: { seq: 2, author: { kind: 'system' }, text: 'Trip created · Rahul joined' } } }); // the room's pill, change 2
     expect(created).toMatchObject({ type: 'trip.created', seq: 1, data: { trip: { seq: 1, budget: { answered: 0, of: 1 } } } });
     expect(created!.data.trip.people).toEqual([expect.objectContaining({ person_id: rahul.id, role: 'organizer', has_upi: true })]);
     expect(JSON.stringify(created)).not.toMatch(/\+919999|r@x\.test|rahul@upi/);
   });
 
-  it('3-4. Go opens "When can everyone go?" and posts the vote card: changes 3 and 4 (2 was the room\'s "Trip created" pill, no event)', async () => {
+  it('3-4. Go opens "When can everyone go?" and posts the vote card: changes 3 and 4 (2 was the room\'s "Trip created" pill, sent as message.created)', async () => {
     const mark = h.go.events.length;
     expect((await rows(h.pool, 'select seq, author_kind, text from messages where trip_id = $1', [trip]))).toEqual([{ seq: 2, author_kind: 'system', text: 'Trip created · Rahul joined' }]);
     const o = await go('open_vote', trip, { question: 'When can everyone go?', kind: 'choice', anonymous: false, options: [{ label: '6-9 Nov' }, { label: '13-16 Nov' }] });
@@ -176,29 +177,31 @@ describe('F2. A trip starts (guide: "A trip starts")', () => {
     expect((await api(null, 'GET', `/app/v1/invites/${code}`)).body).toMatchObject({ state: 'pending', trip: { trip_id: trip, title: 'Goa 🌴 F2' }, inviter: { person_id: rahul.id }, joined_count: 1 });
   });
 
-  it('6. Priya joins with her answers: person.joined alone, no budget event; the open vote now waits for 2; she lands in the chat Go started', async () => {
+  it('6. Priya joins with her answers: person.joined, then her pill as message.created, no budget event; the open vote now waits for 2; she lands in the chat Go started', async () => {
     priya = await person('Priya');
     const mark = h.go.events.length;
     const r = await api(priya, 'POST', `/app/v1/invites/${code}/accept`, { join_answers: { from_city: 'Delhi', know: ['Vegetarian', 'Window seat'] } });
-    expect(r.body).toEqual({ trip_id: trip, seq: 5, landing: 'chat' }); // the last change the join made: person.joined (5)
+    expect(r.body).toEqual({ trip_id: trip, seq: 6, landing: 'chat' }); // the trip's change number after the join: her "joined" line (6), after person.joined (5)
     await h.flush();
     const list = eventsFor(trip, mark);
-    expect(list.map((e) => [e.type, e.seq])).toEqual([['person.joined', 5]]);
+    expect(list.map((e) => [e.type, e.seq])).toEqual([['person.joined', 5], ['message.created', 6]]);
     expect((await rows(h.pool, 'select seq, text from messages where trip_id = $1 and author_kind = $2 order by seq', [trip, 'system'])).at(-1)).toEqual({ seq: 6, text: 'Priya joined' }); // the pill, after the event
+    expect(list[1]!.data.message).toMatchObject({ seq: 6, author: { kind: 'system' }, text: 'Priya joined' });
     expect(list[0]!.data.person).toMatchObject({ person_id: priya.id, from_city: 'Delhi', know: ['Vegetarian', 'Window seat'] });
     const snap = await read('read_trip', { trip_id: trip });
     expect(snap.decisions[0]).toMatchObject({ decision_id: decision, of: 2 });
     expect(snap.budget).toEqual({ answered: 0, of: 2 }); // no group budget set
   });
 
-  it('7-8. The vote is in both strips; both vote; it closes by itself and the decided line follows', async () => {
+  it('7-8. The vote is in both strips; both vote; it closes by itself and the decided line follows, then the "won" pill', async () => {
     expect(await strip(priya, trip)).toContainEqual(expect.objectContaining({ item_id: `vote:${decision}:${priya.id}`, kind: 'vote', title: 'When can everyone go?', cta_label: 'Vote', target: expect.objectContaining({ decision_id: decision }) }));
     const mark = h.go.events.length;
     await api(rahul, 'PUT', `/app/v1/trips/${trip}/decisions/${decision}/vote`, { option_index: 0 });
     await api(priya, 'PUT', `/app/v1/trips/${trip}/decisions/${decision}/vote`, { option_index: 0 });
     await h.flush();
     const list = eventsFor(trip, mark);
-    expect(types(list)).toEqual(['decision.voted', 'decision.voted', 'decision.closed', 'record.changed']);
+    expect(types(list)).toEqual(['decision.voted', 'decision.voted', 'decision.closed', 'record.changed', 'message.created']);
+    expect(list[4]).toMatchObject({ seq: list[3]!.seq + 1, data: { message: { author: { kind: 'system' }, text: '6-9 Nov won · 2 votes' } } });
     expect(list[2]!.data).toMatchObject({ reason: 'everyone_voted', decision: { result_index: 0, tally: [2, 0] } });
     expect(list[3]!.data).toMatchObject({ change: 'added', by: { kind: 'system' }, line: { kind: 'decided', text: '6-9 Nov', source: 'vote' } });
     expect(await strip(priya, trip)).toEqual([]);
@@ -270,7 +273,7 @@ describe('F4. From a vote to a booking (guides: "From a vote to a booking", "Mon
     h.go.call('request_spend_approval', { request_id, trip_id: trip, decision_id: villa, amount_minor: 5420000, currency: 'INR', merchant: 'ixigo: Villa Sol, Anjuna', purpose: 'Villa Sol, 3 nights', refundable_until: new Date(Date.now() + 30 * 86_400_000).toISOString(), ...over }).then((f) => f.result);
   const mandate = { choice_index: 0, cap_minor: 5500000, currency: 'INR', refundable_only: true };
 
-  it('1. Five people vote on where to stay; the last vote closes it and writes the decided line', async () => {
+  it('1. Five people vote on where to stay; the last vote closes it and writes the decided line, then the "won" pill', async () => {
     [rahul, priya, arjun, meher, kabir] = [await person('Rahul', { upi_id: 'rahul@upi' }), await person('Priya'), await person('Arjun'), await person('Meher'), await person('Kabir')];
     all = [rahul, priya, arjun, meher, kabir];
     trip = (await newTrip('Goa F4', rahul, [priya, arjun, meher, kabir])).id;
@@ -283,9 +286,10 @@ describe('F4. From a vote to a booking (guides: "From a vote to a booking", "Mon
     await api(kabir, 'PUT', `/app/v1/trips/${trip}/decisions/${villa}/vote`, { option_index: 1 });
     await h.flush();
     const list = eventsFor(trip, mark);
-    expect(types(list).slice(-2)).toEqual(['decision.closed', 'record.changed']);
-    expect(list.at(-2)!.data).toMatchObject({ reason: 'everyone_voted', decision: { result_index: 0, tally: [4, 1, 0] } });
-    expect(list.at(-1)!.data).toMatchObject({ by: { kind: 'system' }, line: { kind: 'decided', text: 'Villa Sol' } });
+    expect(types(list).slice(-3)).toEqual(['decision.closed', 'record.changed', 'message.created']);
+    expect(list.at(-3)!.data).toMatchObject({ reason: 'everyone_voted', decision: { result_index: 0, tally: [4, 1, 0] } });
+    expect(list.at(-2)!.data).toMatchObject({ by: { kind: 'system' }, line: { kind: 'decided', text: 'Villa Sol' } });
+    expect(list.at(-1)!.data.message).toMatchObject({ author: { kind: 'system' }, text: 'Villa Sol won · 4 votes' });
   });
 
   it('2-3. A mandate card needs a mandate first; Go sets the mandate and it shows in Rahul\'s strip', async () => {
@@ -363,7 +367,7 @@ describe('F4. From a vote to a booking (guides: "From a vote to a booking", "Mon
     h.go.answers.card_tap = () => ({ result: { result: 'done', toast: 'Noted. Go will reply in the room.' } });
   });
 
-  it('9. Go records the booking with the approval: used once, booking.changed, then the decided line becomes booked', async () => {
+  it('9. Go records the booking with the approval: used once, booking.changed, then the decided line becomes booked, then the "booked" pill', async () => {
     const [decided] = await rows(h.pool, "select line_id from record_lines where decision_id = $1 and kind = 'decided'", [villa]);
     await h.flush();
     const mark = h.go.events.length;
@@ -372,7 +376,8 @@ describe('F4. From a vote to a booking (guides: "From a vote to a booking", "Mon
     expect((await rows(h.pool, 'select used_at, booking_id from spend_approvals where approval_id = $1', [approval.approval_id]))[0]).toMatchObject({ used_at: expect.any(Date), booking_id: b.booking_id });
     await h.flush();
     const list = eventsFor(trip, mark);
-    expect(list.map((e) => [e.type, e.seq])).toEqual([['booking.changed', b.seq], ['record.changed', b.seq + 1]]);
+    expect(list.map((e) => [e.type, e.seq])).toEqual([['booking.changed', b.seq], ['record.changed', b.seq + 1], ['message.created', b.seq + 2]]);
+    expect(list[2]!.data.message).toMatchObject({ author: { kind: 'system' }, text: 'Villa Sol, 3 nights booked' });
     expect(list[1]!.data).toMatchObject({ change: 'updated', by: { kind: 'system' }, line: { line_id: decided.line_id, kind: 'booked', booking_id: b.booking_id } });
     expect(await go('add_booking', trip, params, 'rq_bk_1')).toEqual(b);
     expect(await goError('add_booking', trip, params)).toMatchObject({ code: 409 });
@@ -385,7 +390,7 @@ describe('F4. From a vote to a booking (guides: "From a vote to a booking", "Mon
     await go('post_message', trip, { text: 'Booked!', card: { card_id: 'c_villa_ticket', kind: 'ticket', booking_id: b.booking_id, fallback_text: 'Villa Sol is booked' } });
   });
 
-  it('12. Go marks the pay card paid with replace_card: no change number, no event, and Rahul\'s strip is clear', async () => {
+  it('12. Go marks the pay card paid with replace_card: a change number (updated_seq) but no event, and Rahul\'s strip is clear', async () => {
     await h.flush();
     const seq = await tripSeq(trip);
     const outbox = await outboxCount(trip);
@@ -401,7 +406,17 @@ describe('F4. From a vote to a booking (guides: "From a vote to a booking", "Mon
     expect((await strip(rahul, trip)).find((x) => x.kind === 'card')).toBeUndefined();
   });
 
+  it('branch: a booked vote gets no second approval (it would charge twice) until its booking is cancelled', async () => {
+    const again = await spend('rq_spend_booked');
+    expect(again).toMatchObject({ status: 'denied', reason: 'approval_outstanding', detail: expect.stringMatching(/^this vote is already booked/) });
+    expect(check('SpendApprovalResult', again)).toMatchObject({ ok: true });
+    // The stay falls through: Go cancels the booking, and the vote can be booked again (the branches below need that).
+    const [b] = await rows(h.pool, "select booking_id from bookings where trip_id = $1 and decision_id = $2 and status = 'confirmed'", [trip, villa]);
+    await go('update_booking', trip, { booking_id: b.booking_id, status: 'cancelled' });
+  });
+
   it('branch: "Not now" on the pay card: Go cancels the approval (safe twice), it cannot be booked, and a new one is approved', async () => {
+    // The villa's booking was cancelled in the branch above; without that the vote is already booked and gets no new approval.
     const second = await spend('rq_spend_4');
     expect(second.status).toBe('approved'); // the used approval no longer counts as outstanding
     expect(await go('cancel_spend_approval', trip, { approval_id: second.approval_id, reason: 'payer_declined' })).toEqual({ ok: true });
@@ -460,9 +475,18 @@ describe('F5. A phone call (guide: "A phone call")', () => {
     expect(stored.card).toMatchObject({ state: 'ended', outcome: expect.stringContaining('₹2,000 off') });
   });
 
-  it('6. Stop on the call card is a Go button: the tap reaches Go', async () => {
-    await api(arjun, 'POST', `/app/v1/trips/${trip}/cards/c_villa_call/actions`, { action_id: 'stop' });
-    expect(h.go.requests.at(-1)).toMatchObject({ method: 'card_tap', params: { card_id: 'c_villa_call', action_id: 'stop', person_id: arjun.id } });
+  it('6. Stop on the call card is a Go button: the tap reaches Go while the call is live; once it has ended the card has no Stop', async () => {
+    // The first call ended in 4-5 (its card has no buttons now), so Go's second call to Villa Sol is the live one here.
+    await go('post_message', trip, { card: callCard('dialing', { card_id: 'c_villa_call_2', call_id: 'call_2', goal: 'Ask about parking' }) });
+    const r = await api(arjun, 'POST', `/app/v1/trips/${trip}/cards/c_villa_call_2/actions`, { action_id: 'stop' });
+    expect(r.status).toBe(200);
+    expect(h.go.requests.at(-1)).toMatchObject({ method: 'card_tap', params: { card_id: 'c_villa_call_2', action_id: 'stop', person_id: arjun.id } });
+    expect((await read('replace_card', { trip_id: trip, card: callCard('ended', { card_id: 'c_villa_call_2', call_id: 'call_2', goal: 'Ask about parking', ended_at: new Date().toISOString(), outcome: 'Stopped by Arjun' }) }))?.message_id).toBeTruthy();
+    // Stop on the ended call is refused and never reaches Go.
+    const sent = h.go.requests.length;
+    const late = await api(arjun, 'POST', `/app/v1/trips/${trip}/cards/c_villa_call/actions`, { action_id: 'stop' });
+    expect([late.status, late.body.error.code, late.body.error.field]).toEqual([422, 'invalid', 'action_id']);
+    expect(h.go.requests.length).toBe(sent);
   });
 
   it('7-8. Go posts the outcome naming Rahul and writes the open question for him in the record (his strip)', async () => {

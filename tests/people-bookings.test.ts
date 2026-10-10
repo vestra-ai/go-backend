@@ -123,14 +123,21 @@ describe('adding a booking', () => {
     for (const decision_id of [open, cancelled, 'd_cancelvote', 'd_elsewhere']) expect(refusal(await add(booking({ decision_id })))).toEqual([422, 'invalid']);
   });
 
-  it('accepts a closed vote and Go\'s spend approval for it still goes through; refuses ends before starts and an image that is not a URL', async () => {
+  it('accepts a closed vote; Go\'s spend approval for it is denied while that booking stands and goes through once it is cancelled; refuses ends before starts and an image that is not a URL', async () => {
     const decision_id = await closedVote();
     await h.go.call('set_mandate', { request_id: 'rq_m1', trip_id: 't_goa', decision_id, choice_index: 0, cap_minor: 5600000, currency: 'INR', refundable_only: false, payer_person_id: 'p_rahul' });
     await t.api(t.as('p_rahul'), 'POST', `/app/v1/trips/t_goa/decisions/${decision_id}/mandate/confirm`);
     const r = await add(booking({ decision_id }));
-    const approval = await h.go.call('request_spend_approval', { request_id: 'rq_s1', trip_id: 't_goa', decision_id, amount_minor: 5420000, currency: 'INR', merchant: 'ixigo: Villa Sol', purpose: 'Villa Sol' });
-    expect([r.status, approval.result.status]).toEqual([201, 'approved']);
+    // The person's booking for the vote is confirmed, so the vote is already booked: a second payment would charge twice.
+    const ask = (request_id: string) => h.go.call('request_spend_approval', { request_id, trip_id: 't_goa', decision_id, amount_minor: 5420000, currency: 'INR', merchant: 'ixigo: Villa Sol', purpose: 'Villa Sol' });
+    const denied = await ask('rq_s1');
+    expect([r.status, denied.result.status, denied.result.reason]).toEqual([201, 'denied', 'approval_outstanding']);
+    expect(denied.result.detail).toMatch(/^this vote is already booked/);
     expect(await rows(h.pool, 'select kind, booking_id from record_lines where decision_id = $1', [decision_id])).toEqual([{ kind: 'booked', booking_id: r.body.booking_id }]); // the decided line became the booked line
+    // Once that booking is cancelled, the vote can be booked again: Go's approval goes through.
+    const cancelled = await h.go.call('update_booking', { request_id: 'rq_cancel_hand', trip_id: 't_goa', booking_id: r.body.booking_id, status: 'cancelled' });
+    expect(cancelled.error).toBeUndefined();
+    expect((await ask('rq_s2')).result.status).toBe('approved');
     expect(refusal(await add(booking({ starts_at: '2026-11-09T10:00:00Z', ends_at: '2026-11-06T10:00:00Z' })))).toEqual([422, 'invalid']);
     expect(refusal(await add(booking({ image_url: 'not a url' })))).toEqual([422, 'invalid']);
   });

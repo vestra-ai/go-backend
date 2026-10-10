@@ -154,14 +154,15 @@ it('each answer uses a different one of Go\'s card kinds, and a tap on Go\'s car
   expect(go.requests.at(-1)).toMatchObject({ method: 'card_tap', params: { card_id: options.card.card_id, person_id: rahul.person_id } });
 });
 
-it('every event reached Go once, in change-number order, with no gaps but the server\'s own pills (which have no event)', async () => {
+it('every event reached Go once, in change-number order, with no gaps: the server\'s own pills arrive as message.created', async () => {
   const end = Date.now() + 5000;
   const seq = (await api(`/app/v1/trips/${trip}`, { token: rahul.token })).body.seq as number;
-  // The pills ("Trip created · Rahul joined", "Priya joined") took a change number each and were never sent to Go.
+  // The pills ("Trip created · Rahul joined", "Priya joined") took a change number each and were sent to Go as message.created.
   const room = (await api(`/app/v1/trips/${trip}/messages?after_seq=0`, { token: rahul.token })).body.messages as any[];
-  const pills = room.filter((m) => m.author.kind === 'system').map((m) => m.seq as number);
-  expect(pills).toHaveLength(2);
-  while (go.events.filter((e) => e.trip_id === trip).length < seq - pills.length && Date.now() < end) await new Promise((r) => setTimeout(r, 50));
-  const seqs = go.events.filter((e) => e.trip_id === trip).map((e) => e.seq);
-  expect(seqs).toEqual(Array.from({ length: seq }, (_, i) => i + 1).filter((n) => !pills.includes(n)));
+  const pills = room.filter((m) => m.author.kind === 'system');
+  expect(pills.map((m) => m.text)).toEqual(['Trip created · Rahul joined', 'Priya joined']);
+  while (go.events.filter((e) => e.trip_id === trip).length < seq && Date.now() < end) await new Promise((r) => setTimeout(r, 50));
+  const events = go.events.filter((e) => e.trip_id === trip);
+  expect(events.map((e) => e.seq)).toEqual(Array.from({ length: seq }, (_, i) => i + 1));
+  for (const p of pills) expect(events.find((e) => e.seq === p.seq)).toMatchObject({ type: 'message.created', data: { message: { message_id: p.message_id, author: { kind: 'system' }, text: p.text } } });
 });

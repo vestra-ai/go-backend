@@ -2,7 +2,7 @@
 // trips that are over, the home_changed notices, and the ideas carousel.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { appApi } from './helpers/app-api.js';
-import { startHarness, v1, type Harness } from './helpers/harness.js';
+import { rows, startHarness, v1, type Harness } from './helpers/harness.js';
 
 let h: Harness;
 let t: ReturnType<typeof appApi>;
@@ -113,9 +113,12 @@ describe('a returning person', () => {
     expect((await home(asha)).body.trips.find((x: any) => x.trip_id === deciding).people_count).toBe(1);
   });
 
-  it('a destination hint becomes the title when there is none, and the organizer\'s from_city is their own answer', async () => {
+  it('a destination hint becomes the title and the destination when there are none, and the organizer\'s from_city is their own answer', async () => {
     const r = await t.api(asha, 'POST', v1('/trips'), { destination_hint: 'Coorg', from_city: 'Bengaluru', currency: 'INR' });
-    expect([r.status, r.body.title, r.body.stage, r.body.me.person.from_city, r.body.people[0].from_city, r.body.seq, r.body.can]).toEqual([201, 'Coorg', 'new', 'Bengaluru', 'Bengaluru', 2, { invite: true, manage_trip: true }]); // seq 2: the "Trip created" pill
+    // Found against production Go (10 Oct 2026): the hint was only a title, so Go's trip.created had no destination.
+    const created = (await rows(h.pool, `select body from outbox where trip_id = $1 and body->>'type' = 'trip.created'`, [r.body.trip_id]))[0]?.body;
+    expect([r.body.destination?.name, created?.data.trip.destination?.name]).toEqual(['Coorg', 'Coorg']);
+    expect([r.status, r.body.title, r.body.stage, r.body.me.person.from_city, r.body.people[0].from_city, r.body.seq, r.body.can]).toEqual([201, 'Coorg', 'deciding', 'Bengaluru', 'Bengaluru', 2, { invite: true, manage_trip: true }]); // seq 2: the "Trip created" pill
     expect((await t.api(asha, 'POST', v1('/trips'), { title: 'x', colour: 'blue' })).status).toBe(422);
     expect((await t.api(asha, 'POST', v1('/trips'), { dates: { start: '2026-11-09', end: '2026-11-06' } })).status).toBe(422);
     expect((await t.api(asha, 'POST', v1('/trips'), { currency: 'rupees' })).status).toBe(422);

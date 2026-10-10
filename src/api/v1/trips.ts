@@ -18,7 +18,7 @@ const TRIP_VIEW = {
 };
 
 export const routes: RouteMeta[] = [
-  { method: 'POST', path: '/app/v1/trips', section: SECTIONS.trips, title: 'Create a trip', summary: 'Everything optional: title (else destination_hint, else "New trip"), destination_hint, dates, from_city (saved as your own answer), plus destination, vibe, stay, plan_minor, currency. You are the organizer; Go is told (trip.created, change 1). Answers the TripView.',
+  { method: 'POST', path: '/app/v1/trips', section: SECTIONS.trips, title: 'Create a trip', summary: 'Everything optional: title (else destination_hint, else "New trip"), destination_hint (also the destination { name } when none is sent), dates, from_city (saved as your own answer), plus destination, vibe, stay, plan_minor, currency. You are the organizer; Go is told (trip.created, change 1). Answers the TripView.',
     example: { body: { title: 'Goa 🌴', destination_hint: 'Goa', dates: { start: '2026-11-06', end: '2026-11-09' }, from_city: 'Bengaluru' }, responses: [{ name: 'Created', status: 201, body: TRIP_VIEW }] } },
   { method: 'GET', path: '/app/v1/trips/:trip', section: SECTIONS.trips, title: 'Read a trip', summary: 'The TripView: the snapshot plus stage, me (your Person, read marker, unread count), chat (unread, last message, who talks), needs_you_count and can. ?include=people,decisions,bookings,expenses,money,itinerary,record trims the rest. ETag is the seq: If-None-Match ⇒ 304. Every member\'s from_city and earliest_leave are shown to every member.',
     example: { query: { include: 'people,decisions' }, responses: [{ name: 'TripView', status: 200, body: TRIP_VIEW }, { name: 'Nothing moved', status: 304 }] } },

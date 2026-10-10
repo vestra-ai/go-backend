@@ -1,34 +1,14 @@
-// Rev 4 as a whole (block B8, criteria A12 and A13). One walk through every Part 1 change, twice: against a Go that speaks
-// contract 1.0 (today's), where everything the Server sends or answers must be valid against contract/go.json ALONE, and
-// against a Go on 1.1. And the route list the contract document is written from.
-import { readFileSync } from 'node:fs';
-import { Ajv2020 } from 'ajv/dist/2020.js';
-import addFormats from 'ajv-formats';
+// Rev 4 as a whole (block B8, criteria A12 and A13). One walk through every Part 1 change, twice: against a Go set to
+// GO_CONTRACT=1.0 (no event for a re-split), where everything the Server sends or answers must be valid against Go's official
+// contract/go.json (1.1.0) ALONE, with none of the Server's own overlay, and against a Go on 1.1. And the route list the
+// contract document is written from.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sections } from '../src/api/v1/index.js';
 import { check } from '../src/contract/index.js';
 import { appApi } from './helpers/app-api.js';
 import { rows, startHarness, type Harness } from './helpers/harness.js';
-
-// A checker built from go.json only: no overlay, so nothing from the 1.1 proposals is known to it. (go.json writes "may
-// be empty" as anyOf [X, null] and the Server leaves empty members out, so those are read as X, as the Server's own check does.)
-const simplify = (node: any): any => {
-  if (Array.isArray(node)) return node.map(simplify);
-  if (node === null || typeof node !== 'object') return node;
-  if (Array.isArray(node.anyOf) && node.anyOf.length === 2) {
-    const nonNull = node.anyOf.filter((b: any) => b?.type !== 'null');
-    if (nonNull.length === 1) {
-      const { anyOf: _drop, ...rest } = node;
-      return simplify({ ...nonNull[0], ...rest });
-    }
-  }
-  return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, simplify(v)]));
-};
-const goJson = JSON.parse(readFileSync(new URL('../contract/go.json', import.meta.url), 'utf8'));
-const ajv = new Ajv2020({ strict: false, allErrors: false, discriminator: true });
-addFormats.default(ajv);
-ajv.addSchema({ $id: 'go10', components: { schemas: simplify(goJson.components.schemas) } });
-const valid10 = (schema: string, value: unknown): boolean => ajv.getSchema(`go10#/components/schemas/${schema}`)!(value) as boolean;
+// A checker built from Go's official go.json only: none of the Server's overlay (the check-in additions) is known to it.
+import { validOfficial } from './helpers/official-contract.js';
 
 const trip = '/app/v1/trips/t_goa';
 /** Every Part 1 change, once: budget set and cleared, expenses added, re-split and removed, a payback, a join with no answers, a leave, Go adding an expense. */
@@ -63,21 +43,33 @@ describe('against a Go on contract 1.0', () => {
   beforeAll(async () => void (h = await startHarness({ goContract: '1.0' })));
   afterAll(() => h.stop());
 
-  it('every event and every answer to Go\'s reads is valid against go.json alone; the one event type outside it is settlement.recorded (valid in its 1.1 shape); the budget, expenses and messages carry no field beyond the ones the design names', async () => {
+  it('every event and every answer to Go\'s reads is valid against the official go.json alone (settlement.recorded and the pills\' message.created included); the budget, expenses and messages carry no field beyond the ones the design names', async () => {
     const w = await walk(h);
     expect([w.statuses.every((s) => s >= 200 && s < 300), w.failed]).toEqual([true, 0]); // every step worked and Go accepted every event
-    const outside = [...new Set(w.events.filter((e) => !valid10('Event', e)).map((e) => e.type))];
-    expect(outside).toEqual(['settlement.recorded']);
-    expect(w.events.filter((e) => e.type === 'settlement.recorded').map((e) => [check('Event', e).ok, e.data.status, e.data.confirmed_at === e.data.recorded_at])).toEqual([[true, 'confirmed', true]]);
-    expect(w.events.map((e) => e.type + (e.data.change ? `:${e.data.change}` : '') + (e.type === 'trip.updated' ? `:${e.data.by.kind}:${e.data.changed}` : ''))).toEqual([
-      'trip.updated:person:budget', 'expense.changed:added', 'expense.changed:added', 'expense.changed:removed', // no event for the re-split on 1.0
-      'settlement.recorded', 'expense.changed:added', 'person.joined', 'person.left', 'trip.updated:person:budget',
+    const outside = [...new Set(w.events.filter((e) => !validOfficial('Event', e)).map((e) => e.type))];
+    expect(outside).toEqual([]);
+    // settlement.recorded in its official shape: { settlement, by }, confirmed, both times the same.
+    expect(w.events.filter((e) => e.type === 'settlement.recorded').map((e) => [Object.keys(e.data).sort(), e.data.settlement.status, e.data.settlement.confirmed_at === e.data.settlement.recorded_at, e.data.by])).toEqual([[['by', 'settlement'], 'confirmed', true, { kind: 'person', person_id: 'p_arjun' }]]);
+    expect(w.events.map((e) => e.type + (e.data.change ? `:${e.data.change}` : '') + (e.type === 'trip.updated' ? `:${e.data.by.kind}:${e.data.changed}` : '') + (e.type === 'message.created' ? `:${e.data.message.author.kind}` : ''))).toEqual([
+      'trip.updated:person:budget',
+      'expense.changed:added', 'message.created:system', // the cab and its money line
+      'message.created:system', // the re-split's money line: on 1.0 the re-split itself has no event
+      'expense.changed:added', 'message.created:system', 'expense.changed:removed', 'message.created:system', // tea added and removed
+      'settlement.recorded', 'message.created:system', 'expense.changed:added', 'message.created:system', // the payback; Go's villa
+      'person.joined', 'message.created:system', 'person.left', 'message.created:system', // Sam joins, Meher leaves: each with its pill
+      'trip.updated:person:budget',
     ]);
-    expect([valid10('TripSnapshot', w.unset), valid10('TripSnapshot', w.set), w.messages.every((m) => valid10('Message', m))]).toEqual([true, true, true]);
+    // The one change number without an event is the re-split's (between the cab's line and the re-split's line).
+    const seqs = w.events.map((e) => Number(e.seq));
+    const missing = Array.from({ length: seqs.at(-1)! - seqs[0]! + 1 }, (_, i) => seqs[0]! + i).filter((n) => !seqs.includes(n));
+    expect(missing).toEqual([seqs[2]! + 1]);
+    expect([validOfficial('TripSnapshot', w.unset), validOfficial('TripSnapshot', w.set), w.messages.every((m) => validOfficial('Message', m))]).toEqual([true, true, true]);
     // Checked by name, because go.json's objects accept extra fields: the budget carries per_person_minor and nothing else, an
     // expense has no standing, a message has no ledger. (Not checked here: every other object for an unlisted extra field, and
     // `photos` entered by a person, which tests/rev4-go-shapes.test.ts covers.) Go also still receives everyone's starting city.
     expect([w.unset.budget, Object.keys(w.set.budget).sort(), w.set.budget.per_person_minor]).toEqual([{ answered: 0, of: 5 }, ['answered', 'lowest', 'of', 'per_person_minor'], 2000000]);
+    const pillsSent = w.events.filter((e) => e.type === 'message.created').map((e) => e.data.message);
+    expect([pillsSent.some((m) => 'ledger' in m), pillsSent.every((m) => m.author.kind === 'system')]).toEqual([false, true]); // the money lines reach Go as text, never with the ledger
     expect([w.set.expenses.some((e: any) => 'status' in e || 'confirmations' in e), w.messages.some((m) => 'ledger' in m), w.messages.filter((m) => m.author.kind === 'system' && / · ₹|paid /.test(m.text ?? '')).length, w.set.people.every((p: any) => 'know' in p)]).toEqual([false, false, 6, true]); // cab added, re-split, tea added, tea removed, the payback, Go's villa
   });
 });

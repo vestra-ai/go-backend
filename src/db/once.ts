@@ -1,13 +1,14 @@
 import type pg from 'pg';
 import { conflict } from '../domain/errors.js';
-import { withTx, type AfterCommit } from './pool.js';
+import { runAfterCommit, txContext, withTx, type AfterCommit, type TxStore } from './pool.js';
 
 const READ = 'select answer from go_requests where trip_id = $1 and request_id = $2';
 
 /**
  * Does a write once per (trip_id, request_id). A repeat gets the first answer back, with the same
  * ids and the same `seq`, and runs nothing: no rule, no write. The answer is stored in the
- * same transaction as the change. Functions given to `after` run once, after the commit.
+ * same transaction as the change. Live notices published inside go out at the commit (see `txContext`); functions
+ * given to `after` run once, after the commit.
  */
 export async function once<T extends object>(
   pool: pg.Pool,
@@ -17,6 +18,7 @@ export async function once<T extends object>(
 ): Promise<T> {
   const db = await pool.connect();
   const hooks: Array<() => void | Promise<void>> = [];
+  const store: TxStore = { db, deferred: [], open: true };
   try {
     await db.query('begin');
     const seen = await db.query(READ, [tripId, requestId]);
@@ -24,12 +26,15 @@ export async function once<T extends object>(
       await db.query('rollback');
       return seen.rows[0].answer as T;
     }
-    const answer = await work(db, (fn) => hooks.push(fn));
+    const answer = await txContext.run(store, () => work(db, (fn) => hooks.push(fn)));
     await db.query('insert into go_requests (trip_id, request_id, answer) values ($1, $2, $3)', [tripId, requestId, JSON.stringify(answer)]);
     await db.query('commit');
-    for (const hook of hooks) await Promise.resolve(hook()).catch((err) => console.error('after-commit hook failed', err));
+    store.open = false;
+    await runAfterCommit(store.deferred);
+    await runAfterCommit(hooks);
     return answer;
   } catch (err) {
+    store.open = false;
     await db.query('rollback').catch(() => {});
     // Two copies arrived at the same moment and the other one committed first. Whatever stopped this copy (the
     // unique index, or a rule the first copy's write now trips, such as "approval already used"), the request

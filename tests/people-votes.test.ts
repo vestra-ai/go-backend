@@ -24,13 +24,15 @@ describe('a member opens a vote', () => {
     const r = await t.api(priya(), 'POST', '/app/v1/trips/t_goa/decisions', vote);
     expect([r.status, Object.keys(r.body).sort()]).toEqual([201, ['decision', 'message']]);
     const did = r.body.decision.decision_id as string;
-    // The poll shows in the room at once: a system message carrying the vote card, with a change number of its own and no event (D8).
+    // The poll shows in the room at once: a system message carrying the vote card, with a change number of its own and its own message.created (D8).
     expect(r.body.message).toMatchObject({ author: { kind: 'system' }, text: 'Where do we stay?', card: { kind: 'vote', decision_id: did, fallback_text: 'Where do we stay?' } });
     expect(r.body.decision).toMatchObject({ decision_id: did, status: 'open', voted: 0, of: 5, my_vote: null });
     await h.flush();
     const opened = t.events('decision.opened').find((e) => e.data.decision.decision_id === did)!;
     expect(r.body.message.seq).toBe(opened.seq + 1);
-    expect(await rows(h.pool, 'select 1 from outbox where trip_id = $1 and seq = $2', ['t_goa', r.body.message.seq])).toEqual([]);
+    const anchor = t.events('message.created').find((e) => e.seq === r.body.message.seq)!;
+    expect(anchor.data.message).toMatchObject({ message_id: r.body.message.message_id, author: { kind: 'system' }, text: 'Where do we stay?', card: r.body.message.card });
+    expect(check('Event', anchor)).toMatchObject({ ok: true });
     expect(check('Event', opened)).toMatchObject({ ok: true });
     expect(opened.data).toMatchObject({ by: { kind: 'person', person_id: 'p_priya' }, decision: { opened_by_person_id: 'p_priya', of: 5, voted: 0, status: 'open', options: [{ label: 'Villa Sol', price_minor: 1200000, currency: 'INR' }, { label: 'Beach hut' }] } });
     expect(opened.data.decision.options[1]).not.toHaveProperty('currency');

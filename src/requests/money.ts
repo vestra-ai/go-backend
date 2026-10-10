@@ -14,7 +14,7 @@ import { bookedText, postSystemMessage } from '../domain/system-messages.js';
 import { assertCurrency, assertPeopleInTrip, requireSomething, tripOf } from './guards.js';
 
 export const addBooking = (ctx: Ctx) => async (p: any, raw: Record<string, unknown>) =>
-  once(ctx.pool, p.trip_id, p.request_id, async (db, after) => {
+  once(ctx.pool, p.trip_id, p.request_id, async (db) => {
     const trip = await tripOf(db, p.trip_id);
     await assertPeopleInTrip(db, p.trip_id, [p.payer_person_id, ...p.for_person_ids], 'payer_person_id/for_person_ids');
     if (p.decision_id) {
@@ -59,13 +59,13 @@ export const addBooking = (ctx: Ctx) => async (p: any, raw: Record<string, unkno
         )).rows[0]!;
     const lineSeq = await nextSeq(db, p.trip_id);
     await emit(db, p.trip_id, lineSeq, 'record.changed', { line: recordLineOf(line), change: decided ? 'updated' : 'added', by: { kind: 'system' } });
-    await postSystemMessage(ctx, db, after, p.trip_id, bookedText(p.title)); // the room's pill (decision D8), after the events, no event of its own
-    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq: lineSeq, kinds: ['booking', 'record'] }));
+    await ctx.live.publish(p.trip_id, { kind: 'trip', seq: lineSeq, kinds: ['booking', 'record'] }); // before the pill's notice: live frames in change-number order
+    await postSystemMessage(ctx, db, p.trip_id, bookedText(p.title)); // the room's pill (decision D8), after the events, sent to Go as message.created
     return { booking_id: booking.booking_id, seq };
   });
 
 export const updateBooking = (ctx: Ctx) => async (p: any) =>
-  once(ctx.pool, p.trip_id, p.request_id, async (db, after) => {
+  once(ctx.pool, p.trip_id, p.request_id, async (db) => {
     await tripOf(db, p.trip_id);
     const current = (await db.query<BookingRow>('select * from bookings where trip_id = $1 and booking_id = $2 for update', [p.trip_id, p.booking_id])).rows[0];
     if (!current) throw notFound(`booking ${p.booking_id} does not exist in trip ${p.trip_id}`);
@@ -80,13 +80,13 @@ export const updateBooking = (ctx: Ctx) => async (p: any) =>
       change: p.status === 'cancelled' ? 'cancelled' : 'updated',
       by: { kind: 'go' },
     });
-    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: ['booking'] }));
+    await ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: ['booking'] });
     return { seq };
   });
 
 /** Go adds an expense. It counts at once, like any expense; `approval_id` names the vault payment it belongs to. */
 export const addExpense = (ctx: Ctx) => async (p: any) =>
-  once(ctx.pool, p.trip_id, p.request_id, async (db, after) => {
+  once(ctx.pool, p.trip_id, p.request_id, async (db) => {
     const trip = await tripOf(db, p.trip_id);
     await assertPeopleInTrip(db, p.trip_id, [p.paid_by_person_id, ...p.split_person_ids], 'paid_by_person_id/split_person_ids');
     if (p.booking_id) {
@@ -97,8 +97,8 @@ export const addExpense = (ctx: Ctx) => async (p: any) =>
     assertCurrency(trip, p.currency);
     const expense = await insertExpense(db, p.trip_id, { ...p, booking_id: p.booking_id ?? null });
     const seq = await change(db, p.trip_id, 'expense.changed', { expense, change: 'added', by: { kind: 'go' } });
-    after(() => moneyChanged(ctx, p.trip_id, seq));
-    await postExpenseAdded({ ctx, db, after, tripId: p.trip_id }, expense, { kind: 'go' }); // the room's line, for Go's expenses too
+    await moneyChanged(ctx, p.trip_id, seq);
+    await postExpenseAdded({ ctx, db, tripId: p.trip_id }, expense, { kind: 'go' }); // the room's line, for Go's expenses too
     return { expense_id: expense.expense_id, seq };
   });
 
@@ -117,7 +117,10 @@ export const requestSpendApproval = (ctx: Ctx) => async (p: any) =>
       'select 1 from spend_approvals where decision_id = $1 and used_at is null and cancelled_at is null and expires_at > now()',
       [p.decision_id],
     );
-    const denial = spendCheck(decision, p, (outstanding.rowCount ?? 0) > 0);
+    // Already booked: a confirmed booking for this vote (Go's, made with an approval, or one a person added). A cancelled
+    // booking does not count, so a stay can be booked again after it is cancelled.
+    const paid = await db.query(`select 1 from bookings where trip_id = $1 and decision_id = $2 and status = 'confirmed' limit 1`, [p.trip_id, p.decision_id]);
+    const denial = spendCheck(decision, p, (outstanding.rowCount ?? 0) > 0, new Date(), (paid.rowCount ?? 0) > 0);
     if (denial) return { status: 'denied' as const, reason: denial.reason, detail: denial.detail.slice(0, 200) };
     const { row, answer } = issueApproval(p.trip_id, decision!, p, ctx.spendPrivateKey);
     await db.query(

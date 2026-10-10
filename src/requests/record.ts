@@ -15,7 +15,7 @@ async function checkProof(db: import('pg').PoolClient, tripId: string, proof: Pr
 }
 
 export const addRecordLine = (ctx: Ctx) => async (p: any) =>
-  once(ctx.pool, p.trip_id, p.request_id, async (db, after) => {
+  once(ctx.pool, p.trip_id, p.request_id, async (db) => {
     await tripOf(db, p.trip_id);
     // Decided and booked lines come only from votes and bookings.
     if (!['agreed', 'open', 'doing'].includes(p.kind)) throw invalid('kind must be agreed, open or doing');
@@ -27,12 +27,12 @@ export const addRecordLine = (ctx: Ctx) => async (p: any) =>
       [newId('r'), p.trip_id, p.kind, p.text, JSON.stringify(p.proof), JSON.stringify(p.person_ids), p.due_at ?? null],
     )).rows[0]!;
     const seq = await change(db, p.trip_id, 'record.changed', { line: recordLineOf(line), change: 'added', by: { kind: 'go' } });
-    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: ['record'] }));
+    await ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: ['record'] });
     return { line_id: line.line_id, seq };
   });
 
 export const updateRecordLine = (ctx: Ctx) => async (p: any) =>
-  once(ctx.pool, p.trip_id, p.request_id, async (db, after) => {
+  once(ctx.pool, p.trip_id, p.request_id, async (db) => {
     await tripOf(db, p.trip_id);
     const current = (await db.query<RecordLineRow>('select * from record_lines where trip_id = $1 and line_id = $2 for update', [p.trip_id, p.line_id])).rows[0];
     if (!current) throw notFound(`line ${p.line_id} does not exist in trip ${p.trip_id}`);
@@ -54,6 +54,6 @@ export const updateRecordLine = (ctx: Ctx) => async (p: any) =>
       change: p.status === 'done' && current.status !== 'done' ? 'done' : 'updated',
       by: { kind: 'go' },
     });
-    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: ['record'] }));
+    await ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: ['record'] });
     return { seq };
   });

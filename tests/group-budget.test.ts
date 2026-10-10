@@ -111,7 +111,7 @@ describe('what each member shows the others', () => {
 });
 
 describe('joining and leaving, and what is gone', () => {
-  it('joining and leaving send no budget event: person.joined and person.left only, each with a "people" live notice', async () => {
+  it('joining and leaving send no budget event: person.joined and person.left, each followed by its pill as message.created, each with a "people" live notice', async () => {
     const sam = await h.signIn('Sam');
     const mark = await markNow();
     const live = h.live.events.length;
@@ -119,7 +119,7 @@ describe('joining and leaving, and what is gone', () => {
     const left = await t.api(sam, 'POST', `${trip}/leave`);
     await h.flush();
     expect([joined.status, left.status]).toEqual([200, 204]);
-    expect(h.go.events.slice(mark).filter((e) => e.trip_id === 't_goa').map((e) => e.type)).toEqual(['person.joined', 'person.left']);
+    expect(h.go.events.slice(mark).filter((e) => e.trip_id === 't_goa').map((e) => [e.type, e.data.message?.text])).toEqual([['person.joined', undefined], ['message.created', 'Sam joined'], ['person.left', undefined], ['message.created', 'Sam left']]);
     expect(h.live.events.slice(live).filter((e) => e.event.kind === 'trip').map((e) => (e.event as any).kinds)).toEqual([['people'], ['people']]);
   });
 

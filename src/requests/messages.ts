@@ -25,6 +25,9 @@ export const postMessage = (ctx: Ctx) => async (p: any, raw: Record<string, unkn
     const mentions: string[] = [...new Set<string>(p.mentions ?? [])];
     await assertPeopleInTrip(db, trip.trip_id, mentions, 'mentions');
     await assertMessagesInTrip(db, trip.trip_id, [p.reply_to], 'reply_to');
+    // Our 1.1 overlay: a message only these people see in the app (1 to 30 unique ids, checked with the params), each in the trip now.
+    const visibleTo: string[] | null = p.visible_to_person_ids ?? null;
+    if (visibleTo) await assertPeopleInTrip(db, trip.trip_id, visibleTo, 'visible_to_person_ids');
 
     // The card goes in as one JSON value, exactly as it arrived (raw.card), never rebuilt from the checked params.
     const card = (raw.card ?? null) as RawCard | null;
@@ -46,19 +49,18 @@ export const postMessage = (ctx: Ctx) => async (p: any, raw: Record<string, unkn
     const seq = await nextSeq(db, trip.trip_id);
     // Quick replies (GO-CHANGES 1.3) are kept as they arrived too, and go back to the app and to Go unchanged.
     const row = (await db.query<MessageRow>(
-      `insert into messages (message_id, trip_id, seq, updated_seq, author_kind, text, reply_to, mentions_go, mentions, card, card_id, quick_replies)
-       values ($1, $2, $3, $3, 'go', $4, $5, false, $6, $7, $8, $9) returning *`,
+      `insert into messages (message_id, trip_id, seq, updated_seq, author_kind, text, reply_to, mentions_go, mentions, card, card_id, quick_replies, visible_to_person_ids)
+       values ($1, $2, $3, $3, 'go', $4, $5, false, $6, $7, $8, $9, $10) returning *`,
       [newId('m'), trip.trip_id, seq, p.text ?? null, p.reply_to ?? null, JSON.stringify(mentions), card ? JSON.stringify(card) : null, card?.card_id ?? null,
-       Array.isArray(raw.quick_replies) && raw.quick_replies.length ? JSON.stringify(raw.quick_replies) : null],
+       Array.isArray(raw.quick_replies) && raw.quick_replies.length ? JSON.stringify(raw.quick_replies) : null, visibleTo ? JSON.stringify(visibleTo) : null],
     )).rows[0]!;
     await emit(db, trip.trip_id, seq, 'message.created', { message: messageForGo(row, []) });
 
-    after(async () => {
-      await ctx.live.publish(trip.trip_id, { kind: 'message', message_id: row.message_id, updated_seq: seq });
-      await ctx.live.publish(trip.trip_id, { kind: 'typing', who: { kind: 'go' }, on: false });
-      // A notice card linking go://…/checkin/<booking> is Go saying "check-in is open" (§4.12).
-      if (card) await noteCheckinSignal(ctx, trip.trip_id, card);
-    });
+    // Live notices go out with the transaction, at the commit and in commit order.
+    await ctx.live.publish(trip.trip_id, { kind: 'message', message_id: row.message_id, updated_seq: seq });
+    await ctx.live.publish(trip.trip_id, { kind: 'typing', who: { kind: 'go' }, on: false });
+    // A notice card linking go://…/checkin/<booking> is Go saying "check-in is open" (§4.12): its own database work, after the commit.
+    if (card) after(async () => void (await noteCheckinSignal(ctx, trip.trip_id, card)));
     return { message_id: row.message_id, seq };
   });
 
@@ -76,7 +78,10 @@ export const replaceCard = (ctx: Ctx) => async (p: { trip_id: string }, raw: Rec
     const seq = await nextSeq(db, p.trip_id);
     await db.query('update messages set card = $2, updated_seq = $3 where message_id = $1', [found.rows[0].message_id, JSON.stringify(card), seq]);
     const message_id = found.rows[0].message_id as string;
-    after(() => ctx.live.publish(p.trip_id, { kind: 'card', message_id }));
+    await ctx.live.publish(p.trip_id, { kind: 'card', message_id });
+    // And the message as it now stands, at its new seq: an earlier notice for this message that finds it already moved
+    // sends nothing (src/live/ws.ts), so this one carries whatever that earlier change was (a reaction, say).
+    await ctx.live.publish(p.trip_id, { kind: 'message', message_id, updated_seq: seq });
     after(async () => void (await noteCheckinSignal(ctx, p.trip_id, card))); // a notice replaced into the "check-in is open" signal counts too
     return { message_id };
   });

@@ -8,6 +8,7 @@ import { check } from '../src/contract/index.js';
 import { appApi } from './helpers/app-api.js';
 import { startHarness, type Harness } from './helpers/harness.js';
 import { fakeChecklist } from './helpers/mock-go.js';
+import { seedTrip } from './helpers/seed.js';
 
 let h: Harness;
 let t: ReturnType<typeof appApi>;
@@ -51,6 +52,22 @@ describe('POST /me/vault-link with start: add_documents', () => {
     } finally {
       await off.close();
     }
+  });
+});
+
+describe('POST /me/vault-link with a context: only for a trip you are in', () => {
+  it('a trip the caller is not in is 403 forbidden and Go gets no vault_link, whatever the start; a trip they are in reaches Go with the context', async () => {
+    await seedTrip(h.pool, 't_bali', [{ id: 'p_orgb', name: 'Orgb', role: 'organizer' }]);
+    const asked = vaultRequests().length;
+    for (const start of ['home', 'add_documents']) {
+      const r = await link('p_arjun', { start, context: { trip_id: 't_bali', purpose: 'visa' } });
+      expect([r.status, r.body.error.code], start).toEqual([403, 'forbidden']);
+    }
+    expect(vaultRequests().length).toBe(asked);
+    const ok = await link('p_arjun', { start: 'home', context: { trip_id: 't_goa', purpose: 'visa' } });
+    expect(ok.status).toBe(200);
+    expect(vaultRequests()).toHaveLength(asked + 1);
+    expect(vaultRequests().at(-1)).toEqual({ kind: 'vault', person_id: 'p_arjun', start: 'home', context: { trip_id: 't_goa', purpose: 'visa' } });
   });
 });
 

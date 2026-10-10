@@ -70,10 +70,13 @@ describe('the whole app works with Supabase tokens', () => {
     expect((await api(asha, 'PATCH', '/app/v1/me', { name: 'Asha' })).status).toBe(200);
     await h.flush();
     const events = h.go.events.filter((e) => e.trip_id === trip.body.trip_id);
-    expect(events.map((e) => e.type)).toEqual(['trip.created', 'person.joined', 'message.created', 'person.updated']);
+    // The server's own pills ("Trip created · Asha Rao joined", "Ben joined") reach Go as message.created like Ben's message.
+    expect(events.map((e) => [e.type, e.data.message?.author.kind ?? null])).toEqual([['trip.created', null], ['message.created', 'system'], ['person.joined', null], ['message.created', 'system'], ['message.created', 'person'], ['person.updated', null]]);
+    expect(events.map((e) => e.seq)).toEqual([1, 2, 3, 4, 5, 6]);
     for (const e of events) expect(check('Event', e)).toMatchObject({ ok: true });
     expect(events[0]!.data.trip.people[0]).toMatchObject({ name: 'Asha Rao', role: 'organizer' });
-    expect(events[3]!.data).toMatchObject({ changed: ['name'], person: { name: 'Asha' } });
+    expect([events[1]!.data.message.text, events[3]!.data.message.text, events[4]!.data.message.text]).toEqual(['Trip created · Asha Rao joined', 'Ben joined', '@Go hello from Supabase']);
+    expect(events[5]!.data).toMatchObject({ changed: ['name'], person: { name: 'Asha' } });
     expect(JSON.stringify(events)).not.toMatch(/@gmail\.com/); // contact details never reach Go
   });
 

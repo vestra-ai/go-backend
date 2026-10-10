@@ -11,7 +11,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Open the socket. A WebSocket upgrade, signed with x-go-signature (method GET, this path, empty body). The server keeps it open. */
+        /** Open the socket. A WebSocket upgrade, signed with x-go-signature (method GET, this path, empty body). The Server keeps it open. */
         get: operations["openSocket"];
         put?: never;
         post?: never;
@@ -43,7 +43,7 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
-         * @description The spending category. The app colours: stay blue, food orange, getting around green, activities yellow.
+         * @description The spending category. The App colours: stay blue, food orange, getting around green, activities yellow.
          * @enum {string}
          */
         Category: "stay" | "food" | "getting_around" | "activities" | "other";
@@ -69,8 +69,13 @@ export interface components {
              */
             kind: "SystemActor";
         };
-        /** @description Who did it: a person, Go, or the server itself (system). */
+        /** @description Who did it: a person, Go, or the Server itself (system). */
         Actor: components["schemas"]["PersonActor"] | components["schemas"]["GoActor"] | components["schemas"]["SystemActor"];
+        Photo: {
+            /** Format: uri */
+            url: string;
+            label?: string | null;
+        };
         Place: {
             name: string;
             place_id?: string | null;
@@ -78,6 +83,8 @@ export interface components {
             lat?: number | null;
             lng?: number | null;
             photo_url?: string | null;
+            photos?: components["schemas"]["Photo"][] | null;
+            timezone?: string | null;
         };
         Journey: {
             /** @enum {string} */
@@ -123,6 +130,7 @@ export interface components {
             lowest?: components["schemas"]["BudgetBand"] | null;
             answered: number;
             of: number;
+            per_person_minor?: number | null;
         };
         CardAction: {
             action_id: string;
@@ -132,7 +140,7 @@ export interface components {
             only_for_person_ids?: string[] | null;
             per_option?: boolean | null;
         };
-        /** @description A vote. The server draws the options, the tally and the vote buttons. */
+        /** @description A vote. The Server draws the options, the tally and the vote buttons. */
         VoteCard: {
             card_id: string;
             fallback_text: string;
@@ -144,7 +152,7 @@ export interface components {
             kind: "VoteCard";
             decision_id: string;
         };
-        /** @description Ready to book: what the group allowed (the choice, the cap, refundable or not, who pays). The server shows "Yes, book it" and "Not now" to the payer only. */
+        /** @description Ready to book: what the group allowed (the choice, the cap, refundable or not, who pays). The Server shows "Yes, book it" and "Not now" to the payer only. */
         MandateCard: {
             card_id: string;
             fallback_text: string;
@@ -226,6 +234,37 @@ export interface components {
              */
             kind: "BudgetCard";
         };
+        OptionCost: {
+            label: string;
+            emoji?: string | null;
+            amount_minor: number;
+            currency: string;
+        };
+        OptionFact: {
+            label: string;
+            value: string;
+        };
+        OptionDetails: {
+            gallery_urls?: string[] | null;
+            caption?: string | null;
+            why?: string[] | null;
+            costs?: components["schemas"]["OptionCost"][] | null;
+            total_minor?: number | null;
+            amenities?: string[] | null;
+            activities?: string[] | null;
+            facts?: components["schemas"]["OptionFact"][] | null;
+            cancellation?: string | null;
+            rating?: number | null;
+            review_count?: number | null;
+            go_note?: string | null;
+        };
+        RoomType: {
+            room_type_id: string;
+            label: string;
+            sleeps: number;
+            price_minor: number;
+            photos?: components["schemas"]["Photo"][] | null;
+        };
         Option: {
             option_id: string;
             title: string;
@@ -240,6 +279,14 @@ export interface components {
             place?: components["schemas"]["Place"] | null;
             rating?: number | null;
             refundable_until?: string | null;
+            details?: components["schemas"]["OptionDetails"] | null;
+            return_journey?: components["schemas"]["Journey"] | null;
+            price_oneway_minor?: number | null;
+            price_round_minor?: number | null;
+            photos?: components["schemas"]["Photo"][] | null;
+            price_min_minor?: number | null;
+            price_max_minor?: number | null;
+            room_types?: components["schemas"]["RoomType"][] | null;
         };
         /** @description Options Go found (stays, flights, places...), with prices and when they were checked. */
         OptionsCard: {
@@ -253,10 +300,42 @@ export interface components {
             kind: "OptionsCard";
             title: string;
             /** @enum {string} */
-            option_kind: "stay" | "flight" | "train" | "bus" | "place" | "food" | "activity";
+            option_kind: "stay" | "flight" | "train" | "bus" | "place" | "food" | "activity" | "cab";
             /** Format: date-time */
             checked_at: string;
             options: components["schemas"]["Option"][];
+            actions?: components["schemas"]["CardAction"][] | null;
+        };
+        ArrangedRoom: {
+            room_type_id: string;
+            label: string;
+            person_ids: string[];
+            price_minor: number;
+        };
+        PersonAmount: {
+            person_id: string;
+            amount_minor: number;
+        };
+        RoomArrangement: {
+            arrangement_id: string;
+            label: string;
+            rooms: components["schemas"]["ArrangedRoom"][];
+            total_minor: number;
+            per_person: components["schemas"]["PersonAmount"][];
+        };
+        /** @description 10 Oct B5: after a stay is picked, the ways the group can take its rooms and who shares with whom. A tap is card_tap with option_id = the arrangement's id. */
+        RoomsCard: {
+            card_id: string;
+            fallback_text: string;
+            for_person_ids?: string[] | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "RoomsCard";
+            title: string;
+            option_id: string;
+            arrangements: components["schemas"]["RoomArrangement"][];
             actions?: components["schemas"]["CardAction"][] | null;
         };
         /** @description Go doing a longer job (booking on a website, comparing many options). Updated in place. */
@@ -279,6 +358,7 @@ export interface components {
                 state: "todo" | "doing" | "done" | "failed";
             }[];
             screenshot_url?: string | null;
+            page_url?: string | null;
             /** Format: date-time */
             updated_at: string;
             actions?: components["schemas"]["CardAction"][] | null;
@@ -311,6 +391,8 @@ export interface components {
                 who: "go" | "them";
                 text: string;
             }[] | null;
+            recording_url?: string | null;
+            duration_s?: number | null;
             actions?: components["schemas"]["CardAction"][] | null;
         };
         /** @description A payment waiting for the payer. Their "Approve" button opens the vault page, where they confirm with Face ID. */
@@ -359,7 +441,38 @@ export interface components {
             deadline_at?: string | null;
             actions?: components["schemas"]["CardAction"][] | null;
         };
-        Card: components["schemas"]["VoteCard"] | components["schemas"]["MandateCard"] | components["schemas"]["TicketCard"] | components["schemas"]["ExpenseCard"] | components["schemas"]["SettleUpCard"] | components["schemas"]["DayCard"] | components["schemas"]["PlanCard"] | components["schemas"]["BudgetCard"] | components["schemas"]["OptionsCard"] | components["schemas"]["WorkingCard"] | components["schemas"]["CallCard"] | components["schemas"]["PayCard"] | components["schemas"]["NoticeCard"];
+        ChecklistRow: {
+            person_id: string;
+            /** @enum {string} */
+            status: "todo" | "started" | "done" | "info";
+            label: string;
+            sub?: string | null;
+        };
+        ChecklistSuggestion: {
+            text: string;
+            cta?: {
+                action_id: string;
+                label: string;
+            } | null;
+        };
+        /** @description 1.1: a checklist for the group, one row a person, each todo, started, done or info. Updated in place. */
+        ChecklistCard: {
+            card_id: string;
+            fallback_text: string;
+            for_person_ids?: string[] | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "ChecklistCard";
+            title: string;
+            subtitle?: string | null;
+            due_at?: string | null;
+            rows: components["schemas"]["ChecklistRow"][];
+            suggestion?: components["schemas"]["ChecklistSuggestion"] | null;
+            actions?: components["schemas"]["CardAction"][] | null;
+        };
+        Card: components["schemas"]["VoteCard"] | components["schemas"]["MandateCard"] | components["schemas"]["TicketCard"] | components["schemas"]["ExpenseCard"] | components["schemas"]["SettleUpCard"] | components["schemas"]["DayCard"] | components["schemas"]["PlanCard"] | components["schemas"]["BudgetCard"] | components["schemas"]["OptionsCard"] | components["schemas"]["WorkingCard"] | components["schemas"]["CallCard"] | components["schemas"]["PayCard"] | components["schemas"]["NoticeCard"] | components["schemas"]["ChecklistCard"] | components["schemas"]["RoomsCard"];
         PhotoAttachment: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -383,8 +496,24 @@ export interface components {
             name: string;
             mime: string;
             size_bytes: number;
+            duration_s?: number | null;
         };
-        Attachment: components["schemas"]["PhotoAttachment"] | components["schemas"]["FileAttachment"];
+        LocationAttachment: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "LocationAttachment";
+            lat: number;
+            lng: number;
+            name?: string | null;
+            address?: string | null;
+        };
+        Attachment: components["schemas"]["PhotoAttachment"] | components["schemas"]["FileAttachment"] | components["schemas"]["LocationAttachment"];
+        QuickReply: {
+            label: string;
+            text?: string | null;
+        };
         Reaction: {
             emoji: string;
             person_id?: string | null;
@@ -402,6 +531,7 @@ export interface components {
             mentions: string[];
             reactions: components["schemas"]["Reaction"][];
             card?: components["schemas"]["Card"] | null;
+            quick_replies?: components["schemas"]["QuickReply"][] | null;
             withheld: boolean;
             deleted: boolean;
             edited_at?: string | null;
@@ -420,6 +550,7 @@ export interface components {
             card?: components["schemas"]["Card"] | null;
             reply_to?: string | null;
             mentions?: string[] | null;
+            quick_replies?: components["schemas"]["QuickReply"][] | null;
         };
         PostMessageResult: {
             message_id: string;
@@ -443,6 +574,11 @@ export interface components {
             currency?: string | null;
             option_ref?: string | null;
             note?: string | null;
+            details?: components["schemas"]["OptionDetails"] | null;
+            photos?: components["schemas"]["Photo"][] | null;
+            price_min_minor?: number | null;
+            price_max_minor?: number | null;
+            room_types?: components["schemas"]["RoomType"][] | null;
         };
         Mandate: {
             choice_index: number;
@@ -469,6 +605,7 @@ export interface components {
             voted: number;
             of: number;
             tally: number[];
+            flexible_count?: number | null;
             votes?: {
                 person_id: string;
                 option_index: number;
@@ -478,6 +615,28 @@ export interface components {
             /** Format: date-time */
             opened_at: string;
             closed_at?: string | null;
+        };
+        /** @enum {string} */
+        Audience: "group" | "shared" | "private";
+        BookingDetail: {
+            label: string;
+            value: string;
+        };
+        Passenger: {
+            person_id: string;
+            seat?: string | null;
+            pnr?: string | null;
+        };
+        BookingDocument: {
+            document_id: string;
+            name: string;
+            mime: string;
+            size_bytes: number;
+            pages?: number | null;
+            /** @enum {string} */
+            visibility: "covered" | "group";
+            /** Format: uri */
+            url: string;
         };
         /** @enum {string} */
         BookingKind: "stay" | "flight" | "train" | "bus" | "cab" | "table" | "activity" | "other";
@@ -504,6 +663,17 @@ export interface components {
             added_by_person_id?: string | null;
             /** Format: date-time */
             created_at: string;
+            details?: components["schemas"]["BookingDetail"][] | null;
+            return_journey?: components["schemas"]["Journey"] | null;
+            passengers?: components["schemas"]["Passenger"][] | null;
+            documents?: components["schemas"]["BookingDocument"][] | null;
+        };
+        ExpenseConfirmation: {
+            person_id: string;
+            /** @enum {string} */
+            state: "pending" | "approved" | "disputed";
+            at?: string | null;
+            reason?: string | null;
         };
         Expense: {
             expense_id: string;
@@ -517,6 +687,23 @@ export interface components {
             added_by_person_id?: string | null;
             /** Format: date-time */
             created_at: string;
+            status?: ("pending" | "approved" | "disputed") | null;
+            confirmations?: components["schemas"]["ExpenseConfirmation"][] | null;
+        };
+        Settlement: {
+            settlement_id: string;
+            from_person_id: string;
+            to_person_id: string;
+            amount_minor: number;
+            currency: string;
+            /** @enum {string} */
+            method: "upi" | "cash" | "bank_transfer" | "other";
+            note?: string | null;
+            /** @constant */
+            status: "confirmed";
+            recorded_at?: string | null;
+            /** Format: date-time */
+            confirmed_at: string;
         };
         Transfer: {
             from_person_id: string;
@@ -544,12 +731,15 @@ export interface components {
             /** @enum {string} */
             status: "booked" | "planned" | "idea";
             note?: string | null;
+            person_ids?: string[] | null;
+            audience?: components["schemas"]["Audience"] | null;
         };
         Day: {
             /** Format: date */
             date: string;
             title?: string | null;
             items: components["schemas"]["ItineraryItem"][];
+            image_url?: string | null;
         };
         Proof: {
             message_id: string;
@@ -802,8 +992,10 @@ export interface components {
             voted: number;
             of: number;
             tally: number[];
+            flexible?: true | null;
+            retracted?: true | null;
         };
-        /** @description Someone voted (or changed their vote). */
+        /** @description Someone voted, changed their vote, said they are flexible (1.1), or took their vote back (1.1). */
         DecisionVoted: {
             event_id: string;
             trip_id: string;
@@ -951,10 +1143,11 @@ export interface components {
         ExpenseChangedData: {
             expense: components["schemas"]["Expense"];
             /** @enum {string} */
-            change: "added" | "removed";
+            change: "added" | "removed" | "updated" | "approved" | "disputed";
             by: components["schemas"]["Actor"];
+            by_person_id?: string | null;
         };
-        /** @description An expense was added or removed. */
+        /** @description An expense was added, removed, or (1.1) changed. */
         ExpenseChanged: {
             event_id: string;
             trip_id: string;
@@ -968,11 +1161,29 @@ export interface components {
             type: "ExpenseChanged";
             data: components["schemas"]["ExpenseChangedData"];
         };
-        Event: components["schemas"]["MessageCreated"] | components["schemas"]["MessageEdited"] | components["schemas"]["MessageDeleted"] | components["schemas"]["ReactionAdded"] | components["schemas"]["ReactionRemoved"] | components["schemas"]["PersonJoined"] | components["schemas"]["PersonUpdated"] | components["schemas"]["PersonLeft"] | components["schemas"]["TripCreated"] | components["schemas"]["TripUpdated"] | components["schemas"]["DecisionOpened"] | components["schemas"]["DecisionVoted"] | components["schemas"]["DecisionClosed"] | components["schemas"]["DecisionCancelled"] | components["schemas"]["MandateSet"] | components["schemas"]["MandateConfirmed"] | components["schemas"]["MandateDeclined"] | components["schemas"]["RecordChanged"] | components["schemas"]["BookingChanged"] | components["schemas"]["ExpenseChanged"];
+        SettlementRecordedData: {
+            settlement: components["schemas"]["Settlement"];
+            by: components["schemas"]["Actor"];
+        };
+        /** @description 1.1: someone recorded paying someone back. It counts at once, so its status is always confirmed. */
+        SettlementRecorded: {
+            event_id: string;
+            trip_id: string;
+            seq: number;
+            /** Format: date-time */
+            occurred_at: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "SettlementRecorded";
+            data: components["schemas"]["SettlementRecordedData"];
+        };
+        Event: components["schemas"]["MessageCreated"] | components["schemas"]["MessageEdited"] | components["schemas"]["MessageDeleted"] | components["schemas"]["ReactionAdded"] | components["schemas"]["ReactionRemoved"] | components["schemas"]["PersonJoined"] | components["schemas"]["PersonUpdated"] | components["schemas"]["PersonLeft"] | components["schemas"]["TripCreated"] | components["schemas"]["TripUpdated"] | components["schemas"]["DecisionOpened"] | components["schemas"]["DecisionVoted"] | components["schemas"]["DecisionClosed"] | components["schemas"]["DecisionCancelled"] | components["schemas"]["MandateSet"] | components["schemas"]["MandateConfirmed"] | components["schemas"]["MandateDeclined"] | components["schemas"]["RecordChanged"] | components["schemas"]["BookingChanged"] | components["schemas"]["ExpenseChanged"] | components["schemas"]["SettlementRecorded"];
         ReadTrip: {
             trip_id: string;
         };
-        /** @description Up to 200 at a time; 200 when limit is left out. The server sends fewer, with has_more: true, when the answer would go over the 1 MB frame limit. */
+        /** @description Up to 200 at a time; 200 when limit is left out. The Server sends fewer, with has_more: true, when the answer would go over the 1 MB frame limit. */
         ReadMessages: {
             trip_id: string;
             after_seq: number;
@@ -996,6 +1207,7 @@ export interface components {
             vibe?: string[] | null;
             stay?: string | null;
             itinerary?: components["schemas"]["Day"][] | null;
+            budget_per_person_minor?: number | null;
         };
         /** @description Opens a vote. Go then posts a message with a vote card to show it in the room. */
         OpenDecision: {
@@ -1077,6 +1289,10 @@ export interface components {
             image_url?: string | null;
             decision_id?: string | null;
             approval_id?: string | null;
+            details?: components["schemas"]["BookingDetail"][] | null;
+            return_journey?: components["schemas"]["Journey"] | null;
+            passengers?: components["schemas"]["Passenger"][] | null;
+            documents?: components["schemas"]["BookingDocument"][] | null;
         };
         AddBookingResult: {
             booking_id: string;
@@ -1103,6 +1319,7 @@ export interface components {
             category: components["schemas"]["Category"];
             split_person_ids: string[];
             booking_id?: string | null;
+            approval_id?: string | null;
         };
         AddExpenseResult: {
             expense_id: string;
@@ -1165,6 +1382,10 @@ export interface components {
             accepted: true;
             duplicate: boolean;
         };
+        CardTapPayload: {
+            /** @enum {string} */
+            trip: "oneway" | "round";
+        };
         CardTap: {
             tap_id: string;
             trip_id: string;
@@ -1172,6 +1393,7 @@ export interface components {
             action_id: string;
             person_id: string;
             option_id?: string | null;
+            payload?: components["schemas"]["CardTapPayload"] | null;
         };
         ActionDone: {
             /**
@@ -1256,11 +1478,16 @@ export interface components {
             /** @constant */
             remaining_facts: 0;
         };
+        LinkContext: {
+            trip_id: string;
+            purpose?: "visa" | null;
+        };
         CreateLink: {
             /** @enum {string} */
             kind: "vault";
             person_id: string;
-            start?: ("home" | "add_card" | "add_login") | null;
+            start?: ("home" | "add_card" | "add_login" | "add_documents") | null;
+            context?: components["schemas"]["LinkContext"] | null;
         };
         Link: {
             /** Format: uri */
@@ -1323,7 +1550,7 @@ export interface components {
                 } | null;
             };
         };
-        /** @description What the server signs. exp is at most 600 seconds after iat. */
+        /** @description What the Server signs. exp is at most 600 seconds after iat. */
         SpendApprovalClaims: {
             /** @constant */
             iss: "server";

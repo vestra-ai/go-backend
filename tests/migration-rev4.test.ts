@@ -63,7 +63,7 @@ beforeAll(async () => {
   await pool.query(`insert into push_subscriptions (endpoint, person_id, p256dh, auth) values ('https://fcm.googleapis.com/a', 'p_a', 'k', 'a')`);
   await pool.query(`insert into nudges (trip_id, from_person_id, to_person_id, last_sent_at) values ('t_m', 'p_a', 'p_c', now())`);
   await pool.query(`insert into invite_marks (person_id, code, state) values ('p_c', 'inv_m', 'declined')`);
-  applied = await migrate(pool); // the real directory: only 012 is left to apply
+  applied = await migrate(pool); // the real directory: 012 and what came after it are left to apply
 });
 afterAll(async () => {
   for (const p of pools) await p.end();
@@ -71,7 +71,7 @@ afterAll(async () => {
 });
 
 it('012 moves nobody\'s balance: every balance, the transfers and the totals equal what the old rules gave for the same rows', async () => {
-  expect(applied.filter((f) => f.endsWith('.sql'))).toEqual(['012_rev4_cleanup.sql']);
+  expect(applied.filter((f) => f.endsWith('.sql'))).toEqual(['012_rev4_cleanup.sql', '013_visible_to.sql']);
   const m = await tripMoney(pool, 't_m');
   expect(Object.fromEntries(balances(m.expenses, m.order, m.settlements))).toEqual({ p_a: 5000, p_b: 4000, p_c: -9000 });
   expect([m.money.spent_minor, m.money.by_category, m.money.transfers]).toEqual([
@@ -94,12 +94,12 @@ it('what the removed features stored is gone: four tables and seven columns on f
   const gone = ['expenses.status', 'settlements.status', 'settlements.responded_at', 'trip_people.budget_min_minor', 'trip_people.budget_max_minor', 'people.notifications_enabled', 'decisions.closing_push_sent_at'];
   expect(['expense_confirmations', 'push_subscriptions', 'nudges', 'invite_marks'].filter((t) => tables.includes(t))).toEqual([]);
   expect(gone.filter((c) => columns.includes(c))).toEqual([]);
-  expect(['trips.budget_per_person_minor', 'messages.ledger', 'expenses.removed_at', 'settlements.seq'].filter((c) => !columns.includes(c))).toEqual([]);
+  expect(['trips.budget_per_person_minor', 'messages.ledger', 'messages.visible_to_person_ids', 'expenses.removed_at', 'settlements.seq'].filter((c) => !columns.includes(c))).toEqual([]);
   expect(await migrate(pool)).toEqual([]); // nothing left to apply
 });
 
-it('every migration, 001 to 012, applies to an empty database', async () => {
+it('every migration, 001 to 013, applies to an empty database', async () => {
   const empty = await freshDatabase();
   const applied = (await migrate(empty)).filter((f) => f.endsWith('.sql'));
-  expect([applied[0], applied.at(-1), applied.length]).toEqual(['001_core.sql', '012_rev4_cleanup.sql', 12]);
+  expect([applied[0], applied.at(-1), applied.length]).toEqual(['001_core.sql', '013_visible_to.sql', 13]);
 });

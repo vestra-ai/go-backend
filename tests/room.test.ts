@@ -208,7 +208,7 @@ describe('typing and replace_card', () => {
     expect([m.card, m.updated_seq]).toEqual([card, seqBefore + 1]);
     expect((await rows(h.pool, "select seq from trips where trip_id = 't_goa'"))[0].seq).toBe(seqBefore + 1);
     expect((await rows(h.pool, 'select count(*)::int as n from outbox'))[0].n).toBe(outboxBefore);
-    expect(h.live.events.slice(liveMark).map((e) => e.event)).toEqual([{ kind: 'card', message_id: f.result.message_id }]); // the live card frame, no seq
+    expect(h.live.events.slice(liveMark).map((e) => e.event)).toEqual([{ kind: 'card', message_id: f.result.message_id }, { kind: 'message', message_id: f.result.message_id, updated_seq: seqBefore + 1 }]); // the live card frame (no seq), then the message at its new seq
     const page = await h.go.call('read_messages', { trip_id: 't_goa', after_seq: seqBefore });
     expect(page.result.messages.map((x: any) => x.message_id)).toEqual([f.result.message_id]); // Go's own read_messages sees it (GO-CHANGES clarification 2)
     const again = await h.go.call('replace_card', { trip_id: 't_goa', card });

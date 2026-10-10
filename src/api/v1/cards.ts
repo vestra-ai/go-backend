@@ -33,7 +33,7 @@ export const routes: RouteMeta[] = [
   },
   {
     method: 'GET', path: '/app/v1/trips/:trip/cards', section: SECTIONS.needsYou, title: "Go's cards by kind and state",
-    summary: `The latest version of each card in the room (after replace_card), newest first, at most ${CARDS_MAX}: { items: [{ message_id, card, posted_at }] }. ?kind= any card kind; ?state= a comma list, for kinds that have a state (call: dialing,talking,ended,failed; working: running,done,failed; pay: waiting,paid,cancelled,expired). The Trip home's "Go's calls" reads ?kind=call&state=dialing,talking. Cards are not filtered by for_person_ids here; a card's for_person_ids is returned as stored. An ended call card carries recording_url and duration_s when Go recorded it.`,
+    summary: `The latest version of each card in the room (after replace_card), newest first, at most ${CARDS_MAX}: { items: [{ message_id, card, posted_at }] }. ?kind= any card kind; ?state= a comma list, for kinds that have a state (call: dialing,talking,ended,failed; working: running,needs_you,done,failed; pay: waiting,paid,declined,expired,failed). The Trip home's "Go's calls" reads ?kind=call&state=dialing,talking. A card on a message that is not for you (visible_to_person_ids) is left out. Cards are not filtered by for_person_ids here; a card's for_person_ids is returned as stored. An ended call card carries recording_url and duration_s when Go recorded it.`,
     example: { query: { kind: 'call', state: 'dialing,talking' }, responses: [{ name: 'live calls', status: 200, body: { items: [{ message_id: 'm_0190', card: CALL, posted_at: '2026-10-08T09:00:00Z' }] } }, { name: 'ended calls (?kind=call&state=ended)', status: 200, body: { items: [{ message_id: 'm_0190', card: ENDED, posted_at: '2026-10-08T09:00:00Z' }] } }] },
   },
   {
@@ -60,7 +60,7 @@ export function register(app: FastifyInstance, ctx: Ctx, deps: V1Deps): void {
   }));
   app.get('/app/v1/trips/:trip/cards', {
     schema: { querystring: { type: 'object', properties: { kind: text(32), state: text(200) } } },
-    ...inTrip(ctx, (req, trip) => listCards(ctx, trip, { kind: req.query.kind, state: req.query.state })),
+    ...inTrip(ctx, (req, trip, me) => listCards(ctx, trip, me, { kind: req.query.kind, state: req.query.state })),
   });
   app.post('/app/v1/trips/:trip/cards/:card_id/share', inTrip(ctx, (req, trip, me) => {
     if (!deps.features.calls) throw conflict('sharing call recordings is not on yet (features.calls)');

@@ -1,31 +1,33 @@
 // Messages the server itself posts in the room (decision D8, app contract §4.6): "Trip created · Rahul joined",
 // "Priya joined", "Priya left", "Villa Sol won · 4 votes", "Villa Sol booked", the money lines (src/domain/ledger-lines.ts),
 // and the message that carries the vote card of a person-opened poll. `author` is { kind: "system" }, the app draws them as centred pills. Each takes the
-// trip's next change number like any message, but writes NO outbox event: Go already received `person.joined`,
-// `decision.closed`, `booking.changed` or `decision.opened` for the same thing, and sees these in `read_messages`.
+// trip's next change number like any message and goes to Go as `message.created`, so Go has every change number and
+// never re-reads the trip for one of these (Go's ask, 10 Oct 2026). Go treats them as a record: it never answers them.
 import type pg from 'pg';
 import type { Ctx } from '../context.js';
 import { newId } from '../db/ids.js';
-import type { AfterCommit, Db } from '../db/pool.js';
-import { nextSeq } from '../db/write-change.js';
+import type { Db } from '../db/pool.js';
+import { emit, nextSeq } from '../db/write-change.js';
 import type { Ledger } from './ledger-lines.js';
-import type { MessageRow } from './mappers.js';
+import { messageForGo, type MessageRow } from './mappers.js';
 
 /** A card the server puts on a system message: today only the `vote` card of a person-opened poll. */
 export interface SystemCard { card_id: string; kind: 'vote'; decision_id: string; fallback_text: string }
 
 /**
- * Posts a system message as the trip's next change (no event), and shows it live after the commit. Returns the row.
- * `ledger` is the app-only member of a money line: it is stored beside the message and never sent to Go.
+ * Posts a system message as the trip's next change, writes its `message.created` event, and shows it live after the
+ * commit. Returns the row. `ledger` is the app-only member of a money line: it is stored beside the message and never
+ * sent to Go.
  */
-export async function postSystemMessage(ctx: Ctx, db: pg.PoolClient, after: AfterCommit, tripId: string, text: string, card?: SystemCard, ledger?: Ledger): Promise<MessageRow> {
+export async function postSystemMessage(ctx: Ctx, db: pg.PoolClient, tripId: string, text: string, card?: SystemCard, ledger?: Ledger): Promise<MessageRow> {
   const seq = await nextSeq(db, tripId);
   const row = (await db.query<MessageRow>(
     `insert into messages (message_id, trip_id, seq, updated_seq, author_kind, text, card, card_id, ledger)
      values ($1, $2, $3, $3, 'system', $4, $5, $6, $7) returning *`,
     [newId('m'), tripId, seq, text.slice(0, 4000), card ? JSON.stringify(card) : null, card?.card_id ?? null, ledger ? JSON.stringify(ledger) : null],
   )).rows[0]!;
-  after(() => ctx.live.publish(tripId, { kind: 'message', message_id: row.message_id, updated_seq: seq }));
+  await emit(db, tripId, seq, 'message.created', { message: messageForGo(row, []) });
+  await ctx.live.publish(tripId, { kind: 'message', message_id: row.message_id, updated_seq: seq });
   return row;
 }
 

@@ -58,7 +58,7 @@ describe('creating and joining a trip', () => {
     const joined = events('person.joined').at(-1)!;
     expect(joined.data.person).toMatchObject({ person_id: priya.id, name: 'Priya', from_city: 'Delhi', know: ['Vegetarian', 'Window seat'], role: 'member', go_paused: false });
     expect(events('trip.updated').filter((e) => e.trip_id === trip)).toEqual([]);
-    expect(r.body.seq).toBe(joined.seq);
+    expect(r.body.seq).toBe(joined.seq + 1); // the trip's change number after the join: the "Priya joined" line
     expect((await api(priya, 'POST', `/app/v1/invites/${code}/accept`, {})).body).toEqual({ trip_id: trip, seq: joined.seq + 1, landing: 'trip_home' }); // already in: nothing happens; the trip's seq is the "Priya joined" pill
     await api(kabir, 'POST', `/app/v1/invites/${code}/accept`, {});
     const snap = (await h.go.call('read_trip', { trip_id: trip })).result;
@@ -308,7 +308,9 @@ describe('asking Go', () => {
   });
 
   it('makes a tap id when the app sent none, and refuses record cards, unknown cards and strangers', async () => {
-    await tap(rahul, { card_id: 'c_opts', action_id: 'vote' });
+    const sent = h.go.requests.length;
+    expect((await tap(rahul, { card_id: 'c_opts', action_id: 'pick', option_id: 'o1' })).status).toBe(200); // a button the card has
+    expect(h.go.requests.length).toBe(sent + 1);
     expect(h.go.requests.at(-1)!.params.tap_id).toMatch(/^tap_/);
     await goCall('post_message', { text: 'Vote', card: { card_id: 'c_vote', kind: 'vote', decision_id: (await rows(h.pool, 'select decision_id from decisions limit 1'))[0].decision_id, fallback_text: 'Vote' } }, trip);
     expect((await tap(rahul, { card_id: 'c_vote', action_id: 'x' })).status).toBe(422); // the Server handles record cards
@@ -327,8 +329,45 @@ describe('asking Go', () => {
     expect(await tap(priya, { card_id: 'c_opts', action_id: 'pick' })).toEqual(unanswered);
     // not sent again on its own: one request each
     expect(h.go.requests.length - before).toBe(3);
-    h.go.answers.card_tap = () => ({ result: { result: 'refused', toast: 'Only Rahul can approve' } });
-    expect((await tap(priya, { card_id: 'c_opts', action_id: 'approve' })).body).toEqual({ result: 'refused', toast: 'Only Rahul can approve' });
+    // Go's own refusal passes through. The tap names a button the card has (a tap on a button that is not there never reaches Go).
+    h.go.answers.card_tap = () => ({ result: { result: 'refused', toast: 'Only Rahul can pick' } });
+    expect((await tap(priya, { card_id: 'c_opts', action_id: 'pick' })).body).toEqual({ result: 'refused', toast: 'Only Rahul can pick' });
+    expect(h.go.requests.length - before).toBe(4);
+    h.go.answers.card_tap = () => ({ result: { result: 'done', toast: 'Noted. Go will reply in the room.' } });
+  });
+
+  it('a tap must name a button the card has now: the old Approve on a pay card replaced without buttons is refused (422 action_id) and never reaches Go', async () => {
+    const pay = (over: Record<string, unknown>) => ({
+      card_id: 'c_pay_tap', kind: 'pay', fallback_text: 'Rahul, approve ₹54,200 for Villa Sol', for_person_ids: [rahul.id], approval_id: 'ap_00000000000000aa',
+      payer_person_id: rahul.id, amount_minor: 5420000, currency: 'INR', merchant: 'ixigo: Villa Sol, Anjuna', purpose: 'Villa Sol, 3 nights',
+      expires_at: new Date(Date.now() + 600_000).toISOString(), state: 'waiting',
+      actions: [{ action_id: 'approve', label: 'Approve', style: 'primary', only_for_person_ids: [rahul.id] }, { action_id: 'decline', label: 'Not now', style: 'secondary', only_for_person_ids: [rahul.id] }],
+      ...over,
+    });
+    await goCall('post_message', { text: 'Ready to pay', card: pay({}) }, trip);
+    // While the card has the button, the tap reaches Go.
+    let sent = h.go.requests.length;
+    expect((await tap(rahul, { card_id: 'c_pay_tap', action_id: 'approve', press_id: 'tap_pay_1' })).status).toBe(200);
+    expect(h.go.requests.length).toBe(sent + 1);
+    expect(h.go.requests.at(-1)).toMatchObject({ method: 'card_tap', params: { card_id: 'c_pay_tap', action_id: 'approve', person_id: rahul.id } });
+    // A button that was never on the card is refused too.
+    sent = h.go.requests.length;
+    const never = await tap(rahul, { card_id: 'c_pay_tap', action_id: 'pay_twice' });
+    expect([never.status, never.body.error.code, never.body.error.field]).toEqual([422, 'invalid', 'action_id']);
+    expect(h.go.requests.length).toBe(sent);
+    // Go replaces the card as expired, with no buttons: the old Approve (a stale screen, a second press) is refused and Go gets nothing.
+    const replaced = await h.go.call('replace_card', { trip_id: trip, card: pay({ fallback_text: 'This approval expired', for_person_ids: [], state: 'expired', actions: [] }) });
+    expect(replaced.error).toBeUndefined();
+    sent = h.go.requests.length;
+    for (const action_id of ['approve', 'decline']) {
+      const r = await tap(rahul, { card_id: 'c_pay_tap', action_id, press_id: `tap_pay_${action_id}` });
+      expect([r.status, r.body.error.code, r.body.error.field]).toEqual([422, 'invalid', 'action_id']);
+    }
+    expect(h.go.requests.length).toBe(sent);
+    expect(h.go.requests.filter((x) => x.method === 'card_tap' && x.params.card_id === 'c_pay_tap')).toHaveLength(1);
+    // A real button on another card still reaches Go.
+    expect((await tap(priya, { card_id: 'c_opts', action_id: 'pick', option_id: 'o1' })).status).toBe(200);
+    expect(h.go.requests.at(-1)).toMatchObject({ method: 'card_tap', params: { card_id: 'c_opts', action_id: 'pick', person_id: priya.id } });
   });
 
   it('asks Go for a catch-up only when the person was away 3 hours or has 15 unread', async () => {

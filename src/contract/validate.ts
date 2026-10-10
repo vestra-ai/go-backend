@@ -5,7 +5,7 @@ import addFormats from 'ajv-formats';
 const root = new URL('../../contract/', import.meta.url);
 const openapi = JSON.parse(readFileSync(new URL('go.json', root), 'utf8'));
 const table = JSON.parse(readFileSync(new URL('methods.json', root), 'utf8'));
-/** The 1.1 proposals (docs/GO-CHANGES.md), laid over 1.0 additively. Replaced by the official go.json when it is published. */
+/** What the Server accepts beyond Go's official contract (go.json is Go's 1.1.0): the web check-in requests and `visible_to_person_ids` on PostMessage and Message, laid over additively. */
 const extensions = JSON.parse(readFileSync(new URL('extensions-1.1.json', root), 'utf8')) as { contract: string; schemas: Record<string, unknown>; methods: MethodInfo[] };
 export const CONTRACT_EXTENSIONS_VERSION: string = extensions.contract;
 

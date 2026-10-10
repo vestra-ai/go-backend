@@ -59,6 +59,8 @@ export async function invitePreview(ctx: Ctx, code: string, viewerId?: string): 
   if (invite.revoked_at) state = 'revoked';
   else if (invite.status === 'over') state = 'expired';
   else if (viewerId && people.some((p) => p.person_id === viewerId)) state = 'already_member';
+  // A link that no longer works shows the trip's name and picture only: not who is in it now, how many, or when.
+  const closed = state === 'revoked' || state === 'expired';
   return {
     code,
     state,
@@ -66,12 +68,12 @@ export async function invitePreview(ctx: Ctx, code: string, viewerId?: string): 
       trip_id: invite.trip_id,
       title: invite.title,
       destination: invite.destination ?? undefined,
-      dates: invite.dates_start && invite.dates_end ? { start: invite.dates_start, end: invite.dates_end } : undefined,
+      dates: !closed && invite.dates_start && invite.dates_end ? { start: invite.dates_start, end: invite.dates_end } : undefined,
       photo_url: invite.destination?.photo_url ?? undefined,
     }),
     inviter: organizer ? personLite(organizer) : { person_id: '', name: 'Former member' },
-    people_preview: peoplePreview(people),
-    joined_count: people.length,
+    people_preview: closed ? [] : peoplePreview(people),
+    joined_count: closed ? 0 : people.length,
   };
 }
 

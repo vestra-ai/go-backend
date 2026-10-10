@@ -9,7 +9,7 @@ import { closeDecision, lockDecision } from '../domain/voting.js';
 import { assertCurrency, assertPeopleInTrip, tripOf } from './guards.js';
 
 export const openVote = (ctx: Ctx) => async (p: any, raw: Record<string, unknown>) =>
-  once(ctx.pool, p.trip_id, p.request_id, async (db, after) => {
+  once(ctx.pool, p.trip_id, p.request_id, async (db) => {
     const trip = await tripOf(db, p.trip_id);
     for (const [i, o] of (p.options as Array<{ currency?: string }>).entries()) assertCurrency(trip, o.currency, `options.${i}.currency`);
     if (p.options.length < 2 || p.options.length > 10) throw invalid('options must have 2 to 10 options');
@@ -23,18 +23,18 @@ export const openVote = (ctx: Ctx) => async (p: any, raw: Record<string, unknown
     )).rows[0]!;
     // The vote is not in the room yet: Go posts the message with the vote card next.
     const seq = await change(db, p.trip_id, 'decision.opened', { decision: decisionOf(row, []), by: { kind: 'go' } });
-    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: ['decision'] }));
+    await ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: ['decision'] });
     return { decision_id: row.decision_id, seq };
   });
 
 export const closeVote = (ctx: Ctx) => async (p: { request_id: string; trip_id: string; decision_id: string }) =>
-  once(ctx.pool, p.trip_id, p.request_id, async (db, after) => {
+  once(ctx.pool, p.trip_id, p.request_id, async (db) => {
     await tripOf(db, p.trip_id);
-    return closeDecision(ctx, db, after, p.trip_id, p.decision_id, 'closed_by_go');
+    return closeDecision(ctx, db, p.trip_id, p.decision_id, 'closed_by_go');
   });
 
 export const setMandate = (ctx: Ctx) => async (p: any) =>
-  once(ctx.pool, p.trip_id, p.request_id, async (db, after) => {
+  once(ctx.pool, p.trip_id, p.request_id, async (db) => {
     const trip = await tripOf(db, p.trip_id);
     const decision = await lockDecision(db, p.trip_id, p.decision_id); // 404 when it is not this trip's
     await assertPeopleInTrip(db, p.trip_id, [p.payer_person_id], 'payer_person_id');
@@ -54,6 +54,6 @@ export const setMandate = (ctx: Ctx) => async (p: any) =>
     };
     await db.query('update decisions set mandate = $2 where decision_id = $1', [p.decision_id, JSON.stringify(mandate)]);
     const seq = await change(db, p.trip_id, 'mandate.set', { decision_id: p.decision_id, mandate });
-    after(() => ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: ['mandate'] }));
+    await ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: ['mandate'] });
     return { seq };
   });

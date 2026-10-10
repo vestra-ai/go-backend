@@ -1,362 +1,200 @@
 {
-  "contract": "1.1.0-draft",
-  "description": "Additive extensions to go.json 1.0.0 proposed to Go's team in docs/GO-CHANGES.md: new optional fields, new enum values, new card and attachment kinds, one new event and the two check-in requests. src/contract/validate.ts merges this over the 1.0 schemas without removing or tightening anything, so a 1.0 frame still validates. The official 1.1 go.json replaces this file when it is published.",
+  "contract": "1.1.0+server-checkin",
+  "description": "What the Server accepts beyond Go's official contract 1.1.0 (contract/go.json, from vestra-ai/go-brain packages/contract): the web check-in requests, behind the checkin flag, and `visible_to_person_ids` on post_message and Message (a message only some people see in the app). Not yet agreed with Go's team. Laid over the official files additively.",
   "schemas": {
-    "OptionDetails": {
-      "type": "object",
-      "description": "1.1 (GO-CHANGES 1.1): what the Place and Stay details sheets show.",
-      "properties": {
-        "gallery_urls": { "type": "array", "maxItems": 10, "items": { "type": "string", "format": "uri" } },
-        "caption": { "type": "string", "maxLength": 120 },
-        "why": { "type": "array", "maxItems": 6, "items": { "type": "string", "minLength": 1, "maxLength": 160 } },
-        "costs": {
-          "type": "array",
-          "maxItems": 10,
-          "items": {
-            "type": "object",
-            "properties": {
-              "label": { "type": "string", "minLength": 1, "maxLength": 60 },
-              "emoji": { "type": "string", "maxLength": 8 },
-              "amount_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
-              "currency": { "type": "string", "pattern": "^[A-Z]{3}$" }
-            },
-            "required": ["label", "amount_minor", "currency"]
-          }
-        },
-        "total_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
-        "amenities": { "type": "array", "maxItems": 20, "items": { "type": "string", "minLength": 1, "maxLength": 40 } },
-        "activities": { "type": "array", "maxItems": 20, "items": { "type": "string", "minLength": 1, "maxLength": 40 } },
-        "facts": {
-          "type": "array",
-          "maxItems": 10,
-          "items": { "type": "object", "properties": { "label": { "type": "string", "minLength": 1, "maxLength": 40 }, "value": { "type": "string", "minLength": 1, "maxLength": 120 } }, "required": ["label", "value"] }
-        },
-        "cancellation": { "type": "string", "maxLength": 200 },
-        "rating": { "type": "number", "minimum": 0, "maximum": 5 },
-        "review_count": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
-        "go_note": { "type": "string", "maxLength": 300 }
-      }
-    },
-    "QuickReply": {
-      "type": "object",
-      "description": "1.1 (GO-CHANGES 1.3): a chip under Go's message; a tap sends `text ?? label` as the person's own message.",
-      "properties": { "label": { "type": "string", "minLength": 1, "maxLength": 40 }, "text": { "type": "string", "minLength": 1, "maxLength": 2000 } },
-      "required": ["label"]
-    },
-    "LocationAttachment": {
-      "type": "object",
-      "description": "1.1 (GO-CHANGES 1.6): a shared location.",
-      "properties": {
-        "kind": { "type": "string", "const": "location" },
-        "lat": { "type": "number", "minimum": -90, "maximum": 90 },
-        "lng": { "type": "number", "minimum": -180, "maximum": 180 },
-        "name": { "type": "string", "maxLength": 120 },
-        "address": { "type": "string", "maxLength": 200 }
-      },
-      "required": ["kind", "lat", "lng"]
-    },
-    "Passenger": {
-      "type": "object",
-      "description": "1.1 (GO-CHANGES 1.7): one person's seat and PNR on a booking. Shown only to the people the booking covers.",
-      "properties": {
-        "person_id": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "seat": { "type": "string", "maxLength": 8 },
-        "pnr": { "type": "string", "maxLength": 20 }
-      },
-      "required": ["person_id"]
-    },
-    "BookingDocument": {
-      "type": "object",
-      "description": "1.1 (GO-CHANGES 1.7): a ticket or voucher Go obtained. The server copies the file once and serves it to the covered people.",
-      "properties": {
-        "document_id": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
-        "mime": { "type": "string", "minLength": 1, "maxLength": 100 },
-        "size_bytes": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
-        "pages": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
-        "visibility": { "type": "string", "enum": ["covered", "group"] },
-        "url": { "type": "string", "format": "uri" }
-      },
-      "required": ["document_id", "name", "mime", "size_bytes", "visibility", "url"]
-    },
-    "BookingDetail": {
-      "type": "object",
-      "properties": { "label": { "type": "string", "minLength": 1, "maxLength": 40 }, "value": { "type": "string", "minLength": 1, "maxLength": 120 } },
-      "required": ["label", "value"]
-    },
-    "ChecklistCard": {
-      "type": "object",
-      "description": "1.1 (GO-CHANGES 2.2): a table of people with a status (visa documents, who lands when, packing). Rows are updated in place with replace_card.",
-      "properties": {
-        "card_id": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "fallback_text": { "type": "string", "minLength": 1, "maxLength": 300 },
-        "for_person_ids": { "type": "array", "maxItems": 30, "items": { "type": "string", "minLength": 1, "maxLength": 64 } },
-        "kind": { "type": "string", "const": "checklist" },
-        "title": { "type": "string", "minLength": 1, "maxLength": 80 },
-        "subtitle": { "type": "string", "maxLength": 120 },
-        "due_at": { "type": "string", "format": "date" },
-        "rows": {
-          "type": "array",
-          "maxItems": 30,
-          "items": {
-            "type": "object",
-            "properties": {
-              "person_id": { "type": "string", "minLength": 1, "maxLength": 64 },
-              "status": { "type": "string", "enum": ["todo", "started", "done", "info"] },
-              "label": { "type": "string", "maxLength": 40 },
-              "sub": { "type": "string", "maxLength": 80 }
-            },
-            "required": ["person_id", "status"]
-          }
-        },
-        "suggestion": {
-          "type": "object",
-          "properties": {
-            "text": { "type": "string", "minLength": 1, "maxLength": 200 },
-            "cta": { "type": "object", "properties": { "action_id": { "type": "string", "pattern": "^[a-z][a-z_]{0,31}$" }, "label": { "type": "string", "minLength": 1, "maxLength": 24 } }, "required": ["action_id", "label"] }
-          },
-          "required": ["text"]
-        },
-        "actions": { "type": "array", "maxItems": 3, "items": { "$ref": "#/components/schemas/CardAction" } }
-      },
-      "required": ["card_id", "fallback_text", "kind", "title", "rows"]
-    },
-    "Photo": {
-      "type": "object",
-      "description": "1.1 (GO-CHANGES 6.2): one photo of a place or a stay, with what it shows (\"Deluxe room\", \"Pool\").",
-      "properties": {
-        "url": { "type": "string", "format": "uri" },
-        "label": { "type": "string", "minLength": 1, "maxLength": 40 }
-      },
-      "required": ["url"]
-    },
-    "RoomType": {
-      "type": "object",
-      "description": "1.1 (GO-CHANGES 6.3): a kind of room at a stay. `price_minor` is per room for the whole stay, in the option's currency.",
-      "properties": {
-        "room_type_id": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "label": { "type": "string", "minLength": 1, "maxLength": 60 },
-        "sleeps": { "type": "integer", "minimum": 1, "maximum": 30 },
-        "price_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
-        "photos": { "type": "array", "maxItems": 12, "items": { "$ref": "#/components/schemas/Photo" } }
-      },
-      "required": ["room_type_id", "label", "sleeps", "price_minor"]
-    },
-    "RoomsCard": {
-      "type": "object",
-      "description": "1.1 (GO-CHANGES 6.4): the room sets for a stay: who shares with whom, by room type. Its buttons are Go's; a tap's option_id carries the arrangement_id.",
-      "properties": {
-        "card_id": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "fallback_text": { "type": "string", "minLength": 1, "maxLength": 300 },
-        "for_person_ids": { "type": "array", "maxItems": 30, "items": { "type": "string", "minLength": 1, "maxLength": 64 } },
-        "kind": { "type": "string", "const": "rooms" },
-        "title": { "type": "string", "minLength": 1, "maxLength": 80 },
-        "option_id": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "arrangements": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 10,
-          "items": {
-            "type": "object",
-            "properties": {
-              "arrangement_id": { "type": "string", "minLength": 1, "maxLength": 64 },
-              "label": { "type": "string", "minLength": 1, "maxLength": 80 },
-              "rooms": {
-                "type": "array",
-                "minItems": 1,
-                "maxItems": 15,
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "room_type_id": { "type": "string", "minLength": 1, "maxLength": 64 },
-                    "label": { "type": "string", "minLength": 1, "maxLength": 60 },
-                    "person_ids": { "type": "array", "minItems": 1, "maxItems": 30, "items": { "type": "string", "minLength": 1, "maxLength": 64 } },
-                    "price_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
-                  },
-                  "required": ["room_type_id", "label", "person_ids", "price_minor"]
-                }
-              },
-              "total_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
-              "per_person": {
-                "type": "array",
-                "maxItems": 30,
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "person_id": { "type": "string", "minLength": 1, "maxLength": 64 },
-                    "amount_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
-                  },
-                  "required": ["person_id", "amount_minor"]
-                }
-              }
-            },
-            "required": ["arrangement_id", "rooms", "total_minor", "per_person"]
-          }
-        },
-        "actions": { "type": "array", "maxItems": 3, "items": { "$ref": "#/components/schemas/CardAction" } }
-      },
-      "required": ["card_id", "fallback_text", "kind", "title", "arrangements"]
-    },
-    "SettlementRecordedData": {
-      "type": "object",
-      "description": "1.1 (GO-CHANGES 2.1): a payment outside Go, sent when it is recorded. Nobody confirms a payment any more: `status` is always `confirmed` and `confirmed_at` equals `recorded_at`.",
-      "properties": {
-        "settlement_id": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "from_person_id": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "to_person_id": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "amount_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
-        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
-        "method": { "type": "string", "enum": ["upi", "cash", "bank_transfer", "other"] },
-        "note": { "type": "string", "maxLength": 120 },
-        "status": { "type": "string", "const": "confirmed" },
-        "recorded_at": { "type": "string", "format": "date-time" },
-        "confirmed_at": { "type": "string", "format": "date-time" }
-      },
-      "required": ["settlement_id", "from_person_id", "to_person_id", "amount_minor", "currency", "method", "status", "recorded_at", "confirmed_at"]
-    },
-    "SettlementRecorded": {
-      "type": "object",
-      "description": "1.1: someone paid someone back outside Go and recorded it.",
-      "properties": {
-        "event_id": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "trip_id": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "seq": { "type": "integer", "exclusiveMinimum": 0, "maximum": 9007199254740991 },
-        "occurred_at": { "type": "string", "format": "date-time" },
-        "type": { "type": "string", "const": "settlement.recorded" },
-        "data": { "$ref": "#/components/schemas/SettlementRecordedData" }
-      },
-      "required": ["event_id", "trip_id", "seq", "occurred_at", "type", "data"]
-    },
     "GetCheckin": {
       "type": "object",
       "description": "1.1 (GO-CHANGES 3): Server → Go, the state of one person's web check-in on a booking. Go may answer `working` and finish by event or replace_card.",
       "properties": {
-        "trip_id": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "booking_id": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "person_id": { "type": "string", "minLength": 1, "maxLength": 64 }
+        "trip_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "booking_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "person_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
       },
-      "required": ["trip_id", "booking_id", "person_id"]
+      "required": [
+        "trip_id",
+        "booking_id",
+        "person_id"
+      ]
     },
     "CheckinState": {
       "type": "object",
       "description": "1.1 (GO-CHANGES 3; app contract §4.12). Draft: the field names are the app contract's; the inner shapes are open until Go's team fixes them.",
       "properties": {
-        "status": { "type": "string", "enum": ["not_open", "open", "working", "done", "failed", "closed"] },
-        "opens_at": { "type": "string", "format": "date-time" },
-        "closes_at": { "type": "string", "format": "date-time" },
-        "flight": { "type": "object" },
-        "passenger": { "type": "object" },
-        "digi_yatra": { "type": "boolean" },
-        "declaration": { "type": "boolean" },
-        "seat": { "type": "string", "maxLength": 8 },
-        "companion": { "type": "object" },
-        "seat_map": { "type": "object" },
-        "boarding_pass": { "type": "object" }
+        "status": {
+          "type": "string",
+          "enum": [
+            "not_open",
+            "open",
+            "working",
+            "done",
+            "failed",
+            "closed"
+          ]
+        },
+        "opens_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "closes_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "flight": {
+          "type": "object"
+        },
+        "passenger": {
+          "type": "object"
+        },
+        "digi_yatra": {
+          "type": "boolean"
+        },
+        "declaration": {
+          "type": "boolean"
+        },
+        "seat": {
+          "type": "string",
+          "maxLength": 8
+        },
+        "companion": {
+          "type": "object"
+        },
+        "seat_map": {
+          "type": "object"
+        },
+        "boarding_pass": {
+          "type": "object"
+        }
       },
-      "required": ["status"]
+      "required": [
+        "status"
+      ]
     },
     "SubmitCheckin": {
       "type": "object",
       "description": "1.1 (GO-CHANGES 3): Server → Go, the person's check-in answers. A paid seat is paid through Go's pay card and the vault; how the seat and paid extras reach Go and how that payment is approved is proposed in GO-CHANGES 6.5 and not built yet.",
       "properties": {
-        "trip_id": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "booking_id": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "person_id": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "digi_yatra": { "type": "boolean" },
-        "declaration": { "type": "boolean" },
-        "seat": { "type": "string", "maxLength": 8 },
-        "mobile": { "type": "string", "maxLength": 20 }
+        "trip_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "booking_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "person_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "digi_yatra": {
+          "type": "boolean"
+        },
+        "declaration": {
+          "type": "boolean"
+        },
+        "seat": {
+          "type": "string",
+          "maxLength": 8
+        },
+        "mobile": {
+          "type": "string",
+          "maxLength": 20
+        }
       },
-      "required": ["trip_id", "booking_id", "person_id", "digi_yatra", "declaration"]
+      "required": [
+        "trip_id",
+        "booking_id",
+        "person_id",
+        "digi_yatra",
+        "declaration"
+      ]
     },
     "SubmitCheckinResult": {
       "type": "object",
       "properties": {
-        "status": { "type": "string", "enum": ["done", "working", "failed"] },
-        "boarding_pass": { "type": "object" }
+        "status": {
+          "type": "string",
+          "enum": [
+            "done",
+            "working",
+            "failed"
+          ]
+        },
+        "boarding_pass": {
+          "type": "object"
+        }
       },
-      "required": ["status"]
+      "required": [
+        "status"
+      ]
     },
-
-    "OptionsCard": { "properties": { "option_kind": { "enum": ["cab"] } } },
-    "Option": {
+    "PostMessage": {
+      "type": "object",
       "properties": {
-        "details": { "$ref": "#/components/schemas/OptionDetails" },
-        "return_journey": { "$ref": "#/components/schemas/Journey" },
-        "price_oneway_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
-        "price_round_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
-        "photos": { "type": "array", "maxItems": 12, "items": { "$ref": "#/components/schemas/Photo" } },
-        "price_min_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
-        "price_max_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
-        "room_types": { "type": "array", "maxItems": 10, "items": { "$ref": "#/components/schemas/RoomType" } }
+        "visible_to_person_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 30,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "description": "Overlay: only these people see the message in the app (each a person in the trip now; 1 to 30, unique). Left out or null: everyone, as before. Go keeps reading every message."
+        }
       }
     },
-    "DecisionOption": {
+    "Message": {
+      "type": "object",
       "properties": {
-        "details": { "$ref": "#/components/schemas/OptionDetails" },
-        "photos": { "type": "array", "maxItems": 12, "items": { "$ref": "#/components/schemas/Photo" } },
-        "price_min_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
-        "price_max_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
-        "room_types": { "type": "array", "maxItems": 10, "items": { "$ref": "#/components/schemas/RoomType" } }
+        "visible_to_person_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 30,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "description": "Overlay: the people this message is for, as post_message set it; absent means everyone. read_messages returns it; the app only ever receives messages that name the reader."
+        }
       }
-    },
-    "Message": { "properties": { "quick_replies": { "type": "array", "maxItems": 6, "items": { "$ref": "#/components/schemas/QuickReply" } } } },
-    "PostMessage": { "properties": { "quick_replies": { "type": "array", "maxItems": 6, "items": { "$ref": "#/components/schemas/QuickReply" } } } },
-    "CardTap": { "properties": { "payload": { "type": "object", "properties": { "trip": { "type": "string", "enum": ["oneway", "round"] } } } } },
-    "Attachment": { "oneOf": [{ "$ref": "#/components/schemas/LocationAttachment" }] },
-    "FileAttachment": { "properties": { "duration_s": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 } } },
-    "Booking": {
-      "properties": {
-        "details": { "type": "array", "maxItems": 20, "items": { "$ref": "#/components/schemas/BookingDetail" } },
-        "return_journey": { "$ref": "#/components/schemas/Journey" },
-        "passengers": { "type": "array", "maxItems": 30, "items": { "$ref": "#/components/schemas/Passenger" } },
-        "documents": { "type": "array", "maxItems": 20, "items": { "$ref": "#/components/schemas/BookingDocument" } }
-      }
-    },
-    "AddBooking": {
-      "properties": {
-        "details": { "type": "array", "maxItems": 20, "items": { "$ref": "#/components/schemas/BookingDetail" } },
-        "return_journey": { "$ref": "#/components/schemas/Journey" },
-        "passengers": { "type": "array", "maxItems": 30, "items": { "$ref": "#/components/schemas/Passenger" } },
-        "documents": { "type": "array", "maxItems": 20, "items": { "$ref": "#/components/schemas/BookingDocument" } }
-      }
-    },
-    "ItineraryItem": {
-      "properties": {
-        "person_ids": { "type": "array", "maxItems": 30, "items": { "type": "string", "minLength": 1, "maxLength": 64 } },
-        "audience": { "type": "string", "enum": ["group", "shared", "private"] }
-      }
-    },
-    "Day": { "properties": { "image_url": { "type": "string", "format": "uri" } } },
-    "Place": { "properties": { "timezone": { "type": "string", "maxLength": 64 }, "photos": { "type": "array", "maxItems": 12, "items": { "$ref": "#/components/schemas/Photo" } } } },
-    "UpdateTrip": { "properties": { "budget_per_person_minor": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 } } },
-    "BudgetSummary": { "properties": { "per_person_minor": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 } } },
-    "CallCard": {
-      "properties": {
-        "recording_url": { "type": "string", "format": "uri" },
-        "duration_s": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
-      }
-    },
-    "Card": { "oneOf": [{ "$ref": "#/components/schemas/ChecklistCard" }, { "$ref": "#/components/schemas/RoomsCard" }] },
-    "ExpenseChangedData": {
-      "properties": {
-        "change": { "enum": ["updated"] },
-        "by_person_id": { "type": "string", "minLength": 1, "maxLength": 64 }
-      }
-    },
-    "AddExpense": { "properties": { "approval_id": { "type": "string", "minLength": 1, "maxLength": 64 } } },
-    "Decision": { "properties": { "flexible_count": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 } } },
-    "DecisionVotedData": { "properties": { "flexible": { "type": "boolean" }, "retracted": { "type": "boolean" } } },
-    "CreateLink": {
-      "properties": {
-        "start": { "enum": ["add_documents"] },
-        "context": { "type": "object", "properties": { "trip_id": { "type": "string", "minLength": 1, "maxLength": 64 }, "purpose": { "type": "string", "enum": ["visa"] } } }
-      }
-    },
-    "Event": { "oneOf": [{ "$ref": "#/components/schemas/SettlementRecorded" }] }
+    }
   },
   "methods": [
-    { "name": "get_checkin", "direction": "to_go", "summary": "1.1: the state of one person's web check-in on a booking. Go may answer working and finish later.", "params": "GetCheckin", "result": "CheckinState", "answer_within_seconds": 2, "sends_event": null },
-    { "name": "submit_checkin", "direction": "to_go", "summary": "1.1: the person's check-in answers (DigiYatra, declaration, seat).", "params": "SubmitCheckin", "result": "SubmitCheckinResult", "answer_within_seconds": 2, "sends_event": null }
+    {
+      "name": "get_checkin",
+      "direction": "to_go",
+      "summary": "1.1: the state of one person's web check-in on a booking. Go may answer working and finish later.",
+      "params": "GetCheckin",
+      "result": "CheckinState",
+      "answer_within_seconds": 2,
+      "sends_event": null
+    },
+    {
+      "name": "submit_checkin",
+      "direction": "to_go",
+      "summary": "1.1: the person's check-in answers (DigiYatra, declaration, seat).",
+      "params": "SubmitCheckin",
+      "result": "SubmitCheckinResult",
+      "answer_within_seconds": 2,
+      "sends_event": null
+    }
   ]
 }

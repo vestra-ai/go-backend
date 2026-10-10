@@ -3,7 +3,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Ctx } from '../../context.js';
 import { deleteAccount } from '../../domain/account.js';
-import { createPerson } from '../../domain/actions.js';
+import { createPerson, requireMember } from '../../domain/actions.js';
 import { vaultLink } from '../../domain/ask-go.js';
 import { invalid } from '../../domain/errors.js';
 import { getMyProfile, setMyUpi, updateMyProfile } from '../../domain/person-edits.js';
@@ -69,6 +69,7 @@ export function register(app: FastifyInstance, ctx: Ctx, deps: V1Deps): void {
     const input = checkVaultLink(req.body);
     vaultLinks.take(req.personId);
     if (input.start === 'add_documents' && !deps.features.visa) throw invalid('add_documents is not on yet (features.visa)', 'start');
+    if (input.context) await requireMember(ctx.pool, input.context.trip_id, req.personId); // only a trip you are in (403 otherwise)
     return vaultLink(deps.go, req.personId, input.start, input.context);
   });
 

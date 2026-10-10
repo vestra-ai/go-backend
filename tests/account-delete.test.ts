@@ -31,10 +31,11 @@ describe('deleting an account', () => {
     await h.flush();
     expect([r.status, r.body]).toEqual([202, null]);
     expect(h.go.requests.slice(before).map((q) => [q.method, q.params])).toEqual([['forget_person', { person_id: 'p_kabir' }]]); // everywhere: no trip id
-    const after = h.go.events.slice(mark).map((e) => [e.type, e.data.changed ?? e.data.person_id ?? e.data.by?.kind]);
+    const after = h.go.events.slice(mark).map((e) => [e.type, e.data.changed ?? e.data.person_id ?? e.data.by?.kind ?? [e.data.message?.author.kind, e.data.message?.text]]);
     expect(after).toEqual([
       ['person.updated', ['from_city', 'earliest_leave', 'know']], // the answers cleared, while he was still in the trip
-      ['person.left', 'p_kabir'], // and nothing after it: no budget event
+      ['person.left', 'p_kabir'],
+      ['message.created', ['system', 'Former member left']], // the room's pill for the leave, already anonymised (Go has just forgotten Kabir), and nothing after it
     ]);
     expect((await rows(h.pool, `select name, photo_url, email, phone, upi_id, from_city_default, deleted_at is not null as deleted, auth_user_id is not null as linked from people where person_id = 'p_kabir'`))[0])
       .toEqual({ name: 'Former member', photo_url: null, email: null, phone: null, upi_id: null, from_city_default: null, deleted: true, linked: true });
@@ -52,6 +53,23 @@ describe('deleting an account', () => {
     expect((await t.api(kabir, 'POST', v1('/trips/t_goa/messages'), { client_message_id: 'k2', text: 'still here?' })).status).toBe(401);
     expect((await t.api(kabir, 'DELETE', v1('/me'), { confirm: true })).status).toBe(401);
     expect((await t.api(null, 'GET', v1('/invites/inv_t_goa'))).body.joined_count).toBe(4);
+  });
+
+  it('after Go has forgotten, nothing it is sent carries the name or photo again: person.updated, person.left and the "left" line all say "Former member"', async () => {
+    const priya = t.as('p_priya');
+    await h.pool.query(`update people set photo_url = 'https://x.example/priya.png' where person_id = 'p_priya'`);
+    await t.api(priya, 'PUT', v1('/trips/t_goa/me/join-answers'), { from_city: 'Delhi', know: ['Vegetarian'] });
+    await h.flush();
+    const mark = h.go.events.length;
+    expect((await t.api(priya, 'DELETE', v1('/me'), { confirm: true })).status).toBe(202);
+    await h.flush();
+    const sent = h.go.events.slice(mark);
+    expect(sent.map((e) => e.type)).toEqual(['person.updated', 'person.left', 'message.created']);
+    const [updated, , line] = sent;
+    expect(updated!.data.person).toMatchObject({ person_id: 'p_priya', name: 'Former member' });
+    expect(updated!.data.person.photo_url).toBeUndefined();
+    expect(line!.data.message).toMatchObject({ author: { kind: 'system' }, text: 'Former member left' });
+    expect(JSON.stringify(sent)).not.toMatch(/Priya|priya\.png/); // the person id (p_priya) stays; the name and photo never go again
   });
 
   it('when Go does not answer, nothing happens: 502 go_unavailable, still a member, still a person', async () => {

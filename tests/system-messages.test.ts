@@ -1,5 +1,6 @@
 // The server's own messages in the room (decision D8, app contract §4.6): author { kind: "system" }, a change number
-// each, never an outbox event; and the anchor message that carries the vote card of a person-opened poll.
+// each, and a `message.created` event at that same number (the message as Go reads it); and the anchor message that
+// carries the vote card of a person-opened poll.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { check } from '../src/contract/index.js';
 import { appApi } from './helpers/app-api.js';
@@ -18,9 +19,15 @@ type Who = Awaited<ReturnType<Harness['signIn']>>;
 let rahul: Who, priya: Who, kabir: Who, trip: string, code: string;
 const pills = async (tripId: string) => (await rows(h.pool, `select seq, text, card from messages where trip_id = $1 and author_kind = 'system' order by seq`, [tripId])).map((r) => ({ seq: r.seq as number, text: r.text as string, card: r.card }));
 const outboxSeqs = async (tripId: string) => (await rows(h.pool, 'select seq from outbox where trip_id = $1 order by seq', [tripId])).map((r) => r.seq as number);
+const outboxAt = async (tripId: string, seq: number) => (await rows(h.pool, 'select body from outbox where trip_id = $1 and seq = $2', [tripId, seq]))[0]?.body;
+/** The event a system message takes: `message.created` at the pill's own change number, author system, its text, no ledger. */
+const pillEvent = (seq: number, text: string, card?: unknown) => ({
+  trip_id: trip, seq, type: 'message.created',
+  data: { message: { seq, updated_seq: seq, author: { kind: 'system' }, text, attachments: [], mentions_go: false, mentions: [], reactions: [], withheld: false, deleted: false, ...(card ? { card } : {}) } },
+});
 
 describe('trip created, joined, left', () => {
-  it('"Trip created · Rahul joined" is change 2 (after trip.created), "Priya joined" follows her events; neither has an outbox row', async () => {
+  it('"Trip created · Rahul joined" is change 2 (after trip.created), "Priya joined" follows her events; each pill reaches Go as message.created at its own change number', async () => {
     [rahul, priya, kabir] = [await h.signIn('Rahul'), await h.signIn('Priya'), await h.signIn('Kabir')];
     const r = await t.api(rahul, 'POST', '/app/v1/trips', { title: 'Goa' });
     trip = r.body.trip_id;
@@ -28,31 +35,43 @@ describe('trip created, joined, left', () => {
     await t.api(priya, 'POST', `/app/v1/invites/${code}/accept`, { join_answers: { from_city: 'Delhi' } });
     await t.api(kabir, 'POST', `/app/v1/invites/${code}/accept`, {});
     expect(await pills(trip)).toEqual([{ seq: 2, text: 'Trip created · Rahul joined', card: null }, { seq: 4, text: 'Priya joined', card: null }, { seq: 6, text: 'Kabir joined', card: null }]);
-    expect(await outboxSeqs(trip)).toEqual([1, 3, 5]); // trip.created; person.joined; person.joined (no budget event)
+    // trip.created; the pill; person.joined; the pill; person.joined (no budget event); the pill: one event per change number.
+    expect(await outboxSeqs(trip)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect((await rows(h.pool, 'select body from outbox where trip_id = $1 order by seq', [trip])).map((r) => r.body.type))
+      .toEqual(['trip.created', 'message.created', 'person.joined', 'message.created', 'person.joined', 'message.created']);
+    expect(await outboxAt(trip, 2)).toMatchObject(pillEvent(2, 'Trip created · Rahul joined'));
+    expect(await outboxAt(trip, 4)).toMatchObject(pillEvent(4, 'Priya joined'));
+    expect(await outboxAt(trip, 6)).toMatchObject(pillEvent(6, 'Kabir joined'));
+    for (const seq of [2, 4, 6]) expect(check('Event', await outboxAt(trip, seq))).toMatchObject({ ok: true });
     const room = (await t.api(rahul, 'GET', `/app/v1/trips/${trip}/messages`)).body.messages;
     expect(room.map((m: any) => [m.author, m.text])).toEqual([[{ kind: 'system' }, 'Trip created · Rahul joined'], [{ kind: 'system' }, 'Priya joined'], [{ kind: 'system' }, 'Kabir joined']]);
     for (const m of room) expect(check('Message', m)).toMatchObject({ ok: true });
     expect(h.live.events.filter((e) => e.tripId === trip && e.event.kind === 'message')).toHaveLength(3); // shown live like any message
   });
 
-  it('Go sees them in read_messages (author.kind system passes the contract) and was never sent an event for them', async () => {
+  it('Go sees them in read_messages (author.kind system passes the contract) and was sent each as message.created, the same message it reads', async () => {
     await h.flush();
     const page = (await h.go.call('read_messages', { trip_id: trip, after_seq: 0 })).result;
     expect(check('MessagesPage', page)).toMatchObject({ ok: true });
     expect(page.messages.map((m: any) => [m.seq, m.author.kind])).toEqual([[2, 'system'], [4, 'system'], [6, 'system']]);
-    expect(h.go.events.filter((e) => e.trip_id === trip).map((e) => e.seq)).toEqual([1, 3, 5]);
+    const sent = h.go.events.filter((e) => e.trip_id === trip);
+    expect(sent.map((e) => [e.seq, e.type])).toEqual([[1, 'trip.created'], [2, 'message.created'], [3, 'person.joined'], [4, 'message.created'], [5, 'person.joined'], [6, 'message.created']]);
+    // The event carries the message exactly as read_messages answers it.
+    expect(sent.filter((e) => e.type === 'message.created').map((e) => e.data.message)).toEqual(page.messages);
   });
 
   it('"Kabir left" after person.left', async () => {
     await t.api(kabir, 'POST', `/app/v1/trips/${trip}/leave`);
     expect((await pills(trip)).at(-1)).toMatchObject({ seq: 8, text: 'Kabir left' });
-    expect((await outboxSeqs(trip)).at(-1)).toBe(7);
+    expect((await outboxSeqs(trip)).slice(-2)).toEqual([7, 8]);
+    expect((await outboxAt(trip, 7)).type).toBe('person.left');
+    expect(await outboxAt(trip, 8)).toMatchObject(pillEvent(8, 'Kabir left'));
   });
 });
 
 describe('a person-opened vote, a decided vote, a booking', () => {
   let decision: string;
-  it('POST /decisions answers the decision and the anchor message carrying the vote card, which is in the room at once and never an event', async () => {
+  it('POST /decisions answers the decision and the anchor message carrying the vote card, which is in the room at once and reaches Go as message.created with the vote card', async () => {
     const outbox = (await outboxSeqs(trip)).length;
     const r = await t.api(priya, 'POST', `/app/v1/trips/${trip}/decisions`, { client_id: 'poll-1', question: 'Where do we stay?', kind: 'choice', anonymous: false, options: [{ label: 'Villa Sol' }, { label: 'Casa Azul' }] });
     expect(r.status).toBe(201);
@@ -62,8 +81,11 @@ describe('a person-opened vote, a decided vote, a booking', () => {
     expect(check('Message', r.body.message)).toMatchObject({ ok: true });
     expect(check('Card', r.body.message.card)).toMatchObject({ ok: true });
     await h.flush();
-    expect((await outboxSeqs(trip)).length).toBe(outbox + 1); // decision.opened only
-    expect(h.go.events.filter((e) => e.trip_id === trip).at(-1)).toMatchObject({ type: 'decision.opened', seq: r.body.message.seq - 1 });
+    expect((await outboxSeqs(trip)).length).toBe(outbox + 2); // decision.opened, then the anchor's message.created
+    const [opened, anchor] = h.go.events.filter((e) => e.trip_id === trip).slice(-2);
+    expect(opened).toMatchObject({ type: 'decision.opened', seq: r.body.message.seq - 1 });
+    expect(anchor).toMatchObject(pillEvent(r.body.message.seq, 'Where do we stay?', r.body.message.card));
+    expect(anchor!.data.message.message_id).toBe(r.body.message.message_id);
     // A repeat of the same press answers the same two objects.
     const again = await t.api(priya, 'POST', `/app/v1/trips/${trip}/decisions`, { client_id: 'poll-1', question: 'Where do we stay?', kind: 'choice', anonymous: false, options: [{ label: 'Villa Sol' }, { label: 'Casa Azul' }] });
     expect([again.status, again.body.message.message_id, again.body.decision.decision_id]).toEqual([201, r.body.message.message_id, decision]);
@@ -71,7 +93,7 @@ describe('a person-opened vote, a decided vote, a booking', () => {
     expect((await t.api(rahul, 'POST', `/app/v1/trips/${trip}/cards/${r.body.message.card.card_id}/actions`, { action_id: 'vote' })).status).toBe(404);
   });
 
-  it('"Villa Sol won · 2 votes" after decision.closed and the decided line, no event; a tie writes no pill', async () => {
+  it('"Villa Sol won · 2 votes" after decision.closed and the decided line, as its own message.created; a tie writes no pill', async () => {
     await t.api(rahul, 'PUT', `/app/v1/trips/${trip}/decisions/${decision}/vote`, { option_index: 0 });
     await t.api(priya, 'PUT', `/app/v1/trips/${trip}/decisions/${decision}/vote`, { option_index: 0 }); // everyone voted: it closes
     await h.flush();
@@ -79,6 +101,7 @@ describe('a person-opened vote, a decided vote, a booking', () => {
     const line = h.go.events.find((e) => e.type === 'record.changed' && e.data.line.decision_id === decision)!;
     expect((await pills(trip)).at(-1)).toEqual({ seq: line.seq + 1, text: 'Villa Sol won · 2 votes', card: null });
     expect(line.seq).toBe(closed.seq + 1);
+    expect(h.go.events.find((e) => e.trip_id === trip && e.seq === line.seq + 1)).toMatchObject(pillEvent(line.seq + 1, 'Villa Sol won · 2 votes'));
     const tie = (await t.api(priya, 'POST', `/app/v1/trips/${trip}/decisions`, { client_id: 'poll-2', question: 'Tie?', kind: 'choice', anonymous: false, options: [{ label: 'A' }, { label: 'B' }] })).body.decision.decision_id;
     await t.api(rahul, 'PUT', `/app/v1/trips/${trip}/decisions/${tie}/vote`, { option_index: 0 });
     await t.api(priya, 'PUT', `/app/v1/trips/${trip}/decisions/${tie}/vote`, { option_index: 1 });
@@ -92,10 +115,12 @@ describe('a person-opened vote, a decided vote, a booking', () => {
     await h.go.call('add_booking', { request_id: 'rq_sm_book', trip_id: trip, kind: 'cab', title: 'Airport cab', vendor: 'Kabir Cabs', ref: 'c1', amount_minor: 100000, currency: 'INR', payer_person_id: rahul.id, for_person_ids: [rahul.id] });
     expect((await pills(trip)).at(-1)!.text).toBe('Airport cab booked');
     await h.flush();
-    // Every pill took a change number; no pill has an event; every event has its own number: together, no gaps.
-    const seqs = [...await outboxSeqs(trip), ...(await pills(trip)).map((p) => p.seq)].sort((a, b) => a - b);
+    expect(await outboxAt(trip, (await pills(trip)).at(-1)!.seq)).toMatchObject({ type: 'message.created', data: { message: { author: { kind: 'system' }, text: 'Airport cab booked' } } });
+    // Every change number has exactly one event, a pill's being its message.created: no gaps, no repeats.
+    const seqs = await outboxSeqs(trip);
     expect(seqs).toEqual(Array.from({ length: seqs.length }, (_, i) => i + 1));
-    expect(new Set(seqs).size).toBe(seqs.length);
+    const types = new Map((await rows(h.pool, 'select seq, body from outbox where trip_id = $1', [trip])).map((r) => [Number(r.seq), r.body]));
+    for (const p of await pills(trip)) expect(types.get(p.seq), `pill ${p.seq}`).toMatchObject({ type: 'message.created', data: { message: { author: { kind: 'system' }, text: p.text } } });
   });
 
   it('a cancellation vote a person proposes gets its anchor too', async () => {

@@ -8,7 +8,7 @@ import type { Duplex } from 'node:stream';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { Ctx } from '../context.js';
 import { requireMember } from '../domain/actions.js';
-import type { MessageRow } from '../domain/mappers.js';
+import { visibleSql, visibleTo, type MessageRow } from '../domain/mappers.js';
 import { messagesForApp } from '../domain/room.js';
 import type { Message } from '../domain/types.js';
 import type { ChangeKind, LiveEvent } from './live.js';
@@ -63,6 +63,12 @@ export class LiveHub {
   private readonly byPerson = new Map<string, Set<Client>>();
   private heartbeat: NodeJS.Timeout | undefined;
   private unsubscribe: (() => void) | undefined;
+  /**
+   * The last frame still being routed for each trip (and each person's home). A `message` frame waits on a database read
+   * while a `trip_changed` would go at once, so without this a later `trip_changed` overtook an earlier message, and an app
+   * that keeps the highest seq it saw could resume past a message it never got. Frames for one trip go out in order.
+   */
+  private readonly queues = new Map<string, Promise<void>>();
   private readonly log: (msg: string, err?: unknown) => void;
 
   constructor(private readonly ctx: Ctx, private readonly opts: LiveHubOptions = {}) {
@@ -72,7 +78,7 @@ export class LiveHub {
   /** Takes the upgrades for LIVE_PATH on this HTTP server and starts routing events. Anything else on `upgrade` is closed. */
   attach(server: Server): void {
     server.on('upgrade', (req, socket, head) => void this.onUpgrade(req, socket, head));
-    this.unsubscribe = this.ctx.live.subscribe((tripId, event) => void this.route(tripId, event).catch((err) => this.log(`routing ${event.kind} failed`, err)));
+    this.unsubscribe = this.ctx.live.subscribe((tripId, event) => this.inOrder(event.kind === 'home' ? `home:${event.person_id}` : tripId, () => this.route(tripId, event).catch((err) => this.log(`routing ${event.kind} failed`, err))));
     this.heartbeat = setInterval(() => this.beat(), this.opts.heartbeatMs ?? HEARTBEAT_SECONDS * 1000);
     this.heartbeat.unref?.();
   }
@@ -165,7 +171,9 @@ export class LiveHub {
           if (!t || typeof t !== 'object') continue;
           const { trip_id, since_seq } = t as { trip_id?: unknown; since_seq?: unknown };
           if (typeof trip_id !== 'string') continue;
-          await this.subscribe(client, trip_id, typeof since_seq === 'number' && since_seq >= 0 ? Math.floor(since_seq) : 0);
+          // In the trip's queue, like its live frames: a frame published before the replay is read is covered by the replay,
+          // and one published after it reaches the socket after the replay's trip_changed, never before it.
+          await this.inOrder(trip_id, () => this.subscribe(client, trip_id, typeof since_seq === 'number' && since_seq >= 0 ? Math.floor(since_seq) : 0));
         }
         return;
       }
@@ -198,6 +206,7 @@ export class LiveHub {
    * the messages changed after it as `message` frames, oldest change first, then one `trip_changed` with the trip's current
    * seq when that moved; more than REPLAY_MAX_MESSAGES changed messages (or more than a frame's worth) is a `resync`.
    * The subscription is in place before the replay is read, so a change that lands meanwhile is seen (twice at worst).
+   * Only the messages this person may see are replayed (and counted toward the limit).
    */
   private async subscribe(client: Client, tripId: string, sinceSeq: number): Promise<void> {
     try {
@@ -212,7 +221,10 @@ export class LiveHub {
     try {
       await db.query('begin transaction isolation level repeatable read read only');
       const seq = (await db.query('select seq from trips where trip_id = $1', [tripId])).rows[0]?.seq as number | undefined;
-      const { rows } = await db.query<MessageRow>('select * from messages where trip_id = $1 and updated_seq > $2 order by updated_seq limit $3', [tripId, sinceSeq, REPLAY_MAX_MESSAGES + 1]);
+      const { rows } = await db.query<MessageRow>(
+        `select * from messages where trip_id = $1 and updated_seq > $2 and ${visibleSql('$4')} order by updated_seq limit $3`,
+        [tripId, sinceSeq, REPLAY_MAX_MESSAGES + 1, client.personId],
+      );
       const messages = rows.length > REPLAY_MAX_MESSAGES ? null : await messagesForApp(this.ctx, db, rows);
       await db.query('commit');
       if (seq === undefined) return;
@@ -233,6 +245,17 @@ export class LiveHub {
 
   // ---------------------------------------------------------------- server → app
 
+  /** Runs `work` after the previous work queued under `key` has finished (successfully or not). */
+  private inOrder(key: string, work: () => Promise<void>): Promise<void> {
+    const next = (this.queues.get(key) ?? Promise.resolve()).then(work, work);
+    const settled = next.catch(() => {}); // the queue keeps going after a failure; the caller still sees it
+    this.queues.set(key, settled);
+    void settled.finally(() => {
+      if (this.queues.get(key) === settled) this.queues.delete(key);
+    });
+    return next;
+  }
+
   private async route(tripId: string, event: LiveEvent): Promise<void> {
     if (event.kind === 'home') {
       for (const c of this.byPerson.get(event.person_id) ?? []) this.send(c, { type: 'home_changed' });
@@ -241,17 +264,30 @@ export class LiveHub {
     const subscribers = this.byTrip.get(tripId);
     if (!subscribers?.size) return;
     switch (event.kind) {
+      case 'left':
+        // Found against production (10 Oct 2026): a person who left kept getting every message on their open socket.
+        for (const c of [...subscribers]) {
+          if (c.personId !== event.person_id) continue;
+          subscribers.delete(c);
+          c.trips.delete(tripId);
+        }
+        return;
       case 'message': {
         const row = (await this.ctx.pool.query<MessageRow>('select * from messages where message_id = $1', [event.message_id])).rows[0];
-        if (!row) return;
+        // A later change to this message committed before this read: its own notice, queued behind this one, sends the
+        // message as it is now. Sending it here would put that later seq ahead of the trip_changed frames between them.
+        if (!row || Number(row.updated_seq) > event.updated_seq) return;
+        // Per subscriber: a message with `visible_to_person_ids` goes only to the people it names.
+        const readers = [...subscribers].filter((c) => visibleTo(row, c.personId));
+        if (readers.length === 0) return;
         const [message] = await messagesForApp(this.ctx, this.ctx.pool, [row]);
-        for (const c of subscribers) this.send(c, { type: 'message', trip_id: tripId, message: message! });
+        for (const c of readers) this.send(c, { type: 'message', trip_id: tripId, message: message! });
         return;
       }
       case 'card': {
-        const row = (await this.ctx.pool.query<Pick<MessageRow, 'card'>>('select card from messages where message_id = $1', [event.message_id])).rows[0];
+        const row = (await this.ctx.pool.query<Pick<MessageRow, 'card' | 'visible_to_person_ids'>>('select card, visible_to_person_ids from messages where message_id = $1', [event.message_id])).rows[0];
         if (!row?.card) return;
-        for (const c of subscribers) this.send(c, { type: 'card', trip_id: tripId, message_id: event.message_id, card: row.card });
+        for (const c of subscribers) if (visibleTo(row, c.personId)) this.send(c, { type: 'card', trip_id: tripId, message_id: event.message_id, card: row.card });
         return;
       }
       case 'trip':

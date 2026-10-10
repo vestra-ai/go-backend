@@ -45,7 +45,9 @@ export function titleForPerson(storedTitle: string, booking: Pick<BookingRow, 'j
   const j = booking.journey as JourneyLike | null;
   if (!j) return storedTitle;
   const stop = (s: JourneyLike['origin']) => s.code ?? s.name;
-  const flight = [j.carrier_code, j.number].filter(Boolean).join(' ').trim() || j.carrier_name;
+  // Go's numbers usually carry the code already ("6E 515"): don't write it twice.
+  const code = j.carrier_code && j.number?.toUpperCase().startsWith(j.carrier_code.toUpperCase()) ? undefined : j.carrier_code;
+  const flight = [code, j.number].filter(Boolean).join(' ').trim() || j.carrier_name;
   let title = `${stop(j.origin)} → ${stop(j.destination)}${flight ? ` · ${flight}` : ''}`;
   const seat = (booking.passengers as Passenger[] | null)?.find((p) => p.person_id === me)?.seat;
   if (seat) title += `, Seat ${seat}`;

@@ -11,7 +11,7 @@ import { change } from '../db/write-change.js';
 import { SocketCallError, SocketTimeoutError } from '../go/go-socket.js';
 import { Forbidden, requireMember } from './actions.js';
 import { invalid, notFound } from './errors.js';
-import { personForGo } from './mappers.js';
+import { personForGo, visibleSql } from './mappers.js';
 import { activePeople } from './snapshot.js';
 
 export interface GoClient {
@@ -45,6 +45,12 @@ export async function askGo<T = Record<string, unknown>>(go: GoClient, method: s
     if (err instanceof SocketCallError) {
       if (err.code === 429) throw new GoUnavailable(429, 'Go is busy. Try again in a moment.', err.retryAfterSeconds);
       if (err.code === 404 || err.code === 409) throw new GoUnavailable(err.code, err.message);
+      // Go found our params invalid: a contract mismatch between the two sides (seen on 10 Oct 2026 with vault_link
+      // add_documents, which production Go did not have yet). Logged so it is not mistaken for Go being down.
+      if (err.code === 422) {
+        console.error(`[go] ${method} refused by Go as invalid: ${err.message}`);
+        throw new GoUnavailable(502, 'Go could not do that. Try again later.');
+      }
       throw new GoUnavailable(503, 'Go could not do that right now. Try again.');
     }
     throw err;
@@ -83,9 +89,15 @@ export async function cardTap(
   log: (msg: string, err?: unknown) => void = (m, e) => console.error(`[card_tap] ${m}`, e ?? ''),
 ) {
   await requireMember(ctx.pool, tripId, personId);
-  const m = (await ctx.pool.query(`select card->>'kind' as kind from messages where trip_id = $1 and card_id = $2 and author_kind = 'go'`, [tripId, input.card_id])).rows[0];
+  // A card on a message that is not for this person is answered as an unknown card.
+  const m = (await ctx.pool.query(`select card->>'kind' as kind, card from messages where trip_id = $1 and card_id = $2 and author_kind = 'go' and ${visibleSql('$3')}`, [tripId, input.card_id, personId])).rows[0];
   if (!m) throw notFound(`card ${input.card_id} is not one of Go's cards in this trip`);
   if (!GO_CARD_KINDS.has(m.kind)) throw invalid(`${m.kind} cards are handled by the Server, not Go`, 'card_id');
+  // The button must be on the card as it stands now: Go may have replaced it (paid, expired, declined) without buttons.
+  // Seen on 10 Oct 2026: a tap on an expired pay card reached Go, which started a second payment for a paid stay.
+  const card = m.card as { actions?: Array<{ action_id: string }> | null; suggestion?: { cta?: { action_id?: string } | null } | null };
+  const buttons = new Set([...(card.actions ?? []).map((a) => a.action_id), ...(card.suggestion?.cta?.action_id ? [card.suggestion.cta.action_id] : [])]);
+  if (!buttons.has(input.action_id)) throw invalid(`this card has no "${input.action_id}" button (now)`, 'action_id');
   try {
     return await askGo(go, 'card_tap', {
       tap_id: input.press_id ? tapIdFor(personId, input.press_id) : newId('tap'),
@@ -117,12 +129,16 @@ export async function catchUp(ctx: Ctx, go: GoClient, tripId: string, personId: 
   const since = new Date(member.last_seen_at ?? member.joined_at);
   const away = (Date.now() - since.getTime()) / 3_600_000;
   const unread = (await ctx.pool.query(
-    `select count(*)::int as n from messages where trip_id = $1 and sent_at > $2 and deleted = false and author_kind <> 'system' and (author_person_id is distinct from $3)`, // the room's own pills (joined, booked, money lines) are a record, not unread
+    // The room's own pills (joined, booked, money lines) are a record, not unread; a message that is not for them is not unread either.
+    `select count(*)::int as n from messages where trip_id = $1 and sent_at > $2 and deleted = false and author_kind <> 'system' and (author_person_id is distinct from $3) and ${visibleSql('$3')}`,
     [tripId, since, personId],
   )).rows[0].n as number;
   if (!force && away < AWAY_HOURS && unread < UNREAD_MESSAGES) return null;
   try {
-    return await askGo(go, 'catch_up', { trip_id: tripId, person_id: personId, since: since.toISOString() });
+    const answer = await askGo<{ summary?: string | null; items?: unknown[] }>(go, 'catch_up', { trip_id: tripId, person_id: personId, since: since.toISOString() });
+    // Go had nothing to say (no summary, no items): the app shows nothing, so answer as "not needed" (204).
+    if (!answer.summary && !(answer.items?.length)) return null;
+    return answer;
   } catch (err) {
     if (err instanceof GoUnavailable && err.status === 504) return null;
     throw err;
@@ -149,7 +165,7 @@ export const vaultLink = (go: GoClient, personId: string, start?: VaultStart, co
  * learn them again, and sends `person.updated` where they are still in the trip and something was cleared.
  * The room's messages stay: the rest of the group can still see them.
  */
-export async function forgetPerson(ctx: Ctx, go: GoClient, personId: string, tripId?: string) {
+export async function forgetPerson(ctx: Ctx, go: GoClient, personId: string, tripId?: string, afterGoForgot?: () => Promise<void>) {
   if (tripId) {
     const ever = await ctx.pool.query('select 1 from trip_people where trip_id = $1 and person_id = $2', [tripId, personId]);
     if (!ever.rowCount) throw new Forbidden(`${personId} was never in trip ${tripId}`);
@@ -159,11 +175,12 @@ export async function forgetPerson(ctx: Ctx, go: GoClient, personId: string, tri
     ...(tripId ? { trip_id: tripId } : {}),
   });
   if (result.remaining_facts !== 0) throw new GoUnavailable(502, 'Go says some facts are still left after forgetting');
+  await afterGoForgot?.(); // before the person.updated events below, which carry the person as they are now
   const trips = tripId
     ? [tripId]
     : (await ctx.pool.query('select trip_id from trip_people where person_id = $1', [personId])).rows.map((r) => r.trip_id as string);
   for (const id of trips) {
-    await withTx(ctx.pool, async (db, after) => {
+    await withTx(ctx.pool, async (db) => {
       const cleared = await db.query(
         `update trip_people set from_city = null, earliest_leave = null, know = '[]'
           where trip_id = $1 and person_id = $2 and (from_city is not null or earliest_leave is not null or know <> '[]'::jsonb)
@@ -174,7 +191,7 @@ export async function forgetPerson(ctx: Ctx, go: GoClient, personId: string, tri
       if (!cleared.rowCount || cleared.rows[0].left_at !== null) return;
       const person = (await activePeople(db, id)).find((p) => p.person_id === personId)!;
       const seq = await change(db, id, 'person.updated', { person: personForGo(person), changed: ['from_city', 'earliest_leave', 'know'] });
-      after(() => ctx.live.publish(id, { kind: 'trip', seq }));
+      await ctx.live.publish(id, { kind: 'trip', seq, kinds: ['people'] });
     });
   }
   return { deleted_facts: result.deleted_facts, remaining_facts: 0 as const };

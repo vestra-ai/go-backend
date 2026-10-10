@@ -15,8 +15,10 @@ const trip = opt('trip');
 const sinceArg = opt('since');
 const since = sinceArg ? Date.now() - Number(sinceArg.slice(0, -1)) * { s: 1e3, m: 6e4, h: 36e5 }[sinceArg.slice(-1) as 's' | 'm' | 'h']! : 0;
 
-const env = loadEnv();
-const client = new pg.Client({ connectionString: env.DATABASE_URL });
+// `--env <file>` reads another settings file (as `pnpm dev:real --env <file>` does); without DATABASE_URL in it, the
+// database is dev:real's local one, as dev:real itself falls back to.
+const env = loadEnv(opt('env') ?? '.env');
+const client = new pg.Client({ connectionString: env.DATABASE_URL ?? `postgres://postgres:postgres@localhost:${env.DEV_PG_PORT ?? 54330}/go` });
 await client.connect();
 
 type Entry = Record<string, any>;

@@ -23,7 +23,7 @@ const refused = (status: number, code: string, msg: string, field: string | null
 export const routes: RouteMeta[] = [
   {
     method: 'GET', path: '/app/v1/trips/:trip/messages', section: SECTIONS.messages, title: 'Read messages',
-    summary: 'History mode: no cursor (the newest page) or ?before_seq=<n>, newest limit (default 50, max 100) by seq ascending, has_more = older exist. Changes mode: ?after_seq=<n>&limit= (default and max 200), updated_seq > n ascending (edits, deletes, reactions, replaced cards). Both cursors: 422. seq = the trip change number the page matches.',
+    summary: 'History mode: no cursor (the newest page) or ?before_seq=<n>, newest limit (default 50, max 100) by seq ascending, has_more = older exist. Changes mode: ?after_seq=<n>&limit= (default and max 200), updated_seq > n ascending (edits, deletes, reactions, replaced cards). Both cursors: 422. seq = the trip change number the page matches. Only the messages you can see: one of Go\'s with visible_to_person_ids not naming you is never returned (a gap in seq); author.former / reactions[].former mark people no longer in the trip.',
     example: { query: { limit: '50' }, responses: [{ name: 'page', status: 200, body: { messages: [message], has_more: true, seq: 57 } }, refused(422, 'invalid', 'send before_seq (history) or after_seq (changes), not both', 'after_seq')] },
   },
   {
@@ -59,7 +59,7 @@ export function register(app: FastifyInstance, ctx: Ctx, deps: V1Deps): void {
   app.get('/app/v1/trips/:trip/messages', {
     // The limit's own range depends on the mode, so the domain checks it; here only that it is a whole number.
     schema: { querystring: { type: 'object', properties: { before_seq: seqParam, after_seq: seqParam, limit: { type: 'integer', minimum: 1, maximum: 10000 } } } },
-    ...inTrip(ctx, (req, trip) => pageMessages(ctx, trip, req.query)),
+    ...inTrip(ctx, (req, trip, me) => pageMessages(ctx, trip, me, req.query)),
   });
   app.post('/app/v1/trips/:trip/messages', withTrip((trip, me, r) => postPersonMessage(ctx, trip, me, checkPostMessage(r.body)), 201));
   app.patch('/app/v1/trips/:trip/messages/:id', withTrip((trip, me, r) => editMessage(ctx, trip, me, r.params.id!, checkEditMessage(r.body).text)));

@@ -14,3 +14,7 @@ supabase/.branches
 
 # Local build evidence and scratch from agent sessions
 output/
+
+# Local settings files for other environments (staging, …); only .env.example is shared
+.env.*
+!.env.example

@@ -20,10 +20,22 @@ export interface MessageRow {
   quick_replies: unknown[] | null;
   /** A money line's app-only member (rev 4 §5.3): which movement and which row. Never sent to Go. */
   ledger?: Ledger | null;
+  /** Who may see the message in the app (1.1 overlay, migration 013); null is everyone. Go sees every message, with this list. */
+  visible_to_person_ids?: string[] | null;
 }
 export interface ReactionRow { message_id: string; person_id: string | null; emoji: string }
 
 export const reactionOf = (r: ReactionRow): Reaction => compact({ emoji: r.emoji, person_id: r.person_id ?? undefined });
+
+/** True when this person may see the message in the app: it has no list, or the list names them. */
+export const visibleTo = (row: Pick<MessageRow, 'visible_to_person_ids'>, personId: string): boolean =>
+  !row.visible_to_person_ids || row.visible_to_person_ids.includes(personId);
+
+/**
+ * The same test in SQL, for a query on `messages` (or on `alias.`): `param` is the placeholder holding the reader's
+ * person id. Every app read of the room uses it, so a person outside the list never learns the message exists.
+ */
+export const visibleSql = (param: string, alias = ''): string => `(${alias}visible_to_person_ids is null or ${alias}visible_to_person_ids ? ${param})`;
 
 export const actorOf = (row: Pick<MessageRow, 'author_kind' | 'author_person_id'>): Actor =>
   // openapi-typescript names the discriminator values after the schemas, so the literal needs a cast.
@@ -42,13 +54,14 @@ export function messageForGo(row: MessageRow, reactions: ReactionRow[]): Message
     author: actorOf(row),
     text: hidden ? undefined : row.text ?? undefined,
     attachments: hidden ? [] : (row.attachments as Message['attachments']),
-    reply_to: row.reply_to ?? undefined,
+    reply_to: row.withheld ? undefined : row.reply_to ?? undefined,
     about_message_id: row.withheld ? undefined : row.about_message_id ?? undefined,
     mentions_go: row.withheld ? false : row.mentions_go,
     mentions: row.withheld ? [] : row.mentions,
     reactions: reactions.map(reactionOf),
     card: (row.card as Message['card']) ?? undefined,
-    quick_replies: row.quick_replies ?? undefined, // 1.1 overlay: not in the generated 1.0 types yet
+    quick_replies: row.quick_replies ?? undefined, // 1.1
+    visible_to_person_ids: row.visible_to_person_ids ?? undefined, // our 1.1 overlay: Go sees every message, and whom it is for
     withheld: row.withheld,
     deleted: row.deleted,
     edited_at: iso(row.edited_at),
@@ -170,22 +183,28 @@ export const recordLineOf = (r: RecordLineRow): RecordLine =>
     source: r.source, created_at: iso(r.created_at)!, updated_at: iso(r.updated_at)!,
   }) as unknown as RecordLine;
 
-/** A message as the app shows it to the room: the text is always there, even when its author paused Go. */
-export function messageForApp(row: MessageRow, reactions: ReactionRow[]): Message {
+/**
+ * A message as the app shows it to the room: the text is always there, even when its author paused Go. `former` holds the
+ * people who are no longer in the trip (they left, or deleted their account): their messages and reactions say
+ * `former: true`, because the app cannot find them among the trip's people and draws "Former member". App only.
+ */
+export function messageForApp(row: MessageRow, reactions: ReactionRow[], former: ReadonlySet<string> = new Set()): Message {
+  const author = actorOf(row);
   return compact({
     message_id: row.message_id,
     seq: row.seq,
     updated_seq: row.updated_seq,
-    author: actorOf(row),
+    author: row.author_person_id && former.has(row.author_person_id) ? { ...author, former: true } : author,
     text: row.deleted ? undefined : row.text ?? undefined,
     attachments: row.deleted ? [] : (row.attachments as Message['attachments']),
     reply_to: row.reply_to ?? undefined,
     about_message_id: row.about_message_id ?? undefined,
     mentions_go: row.mentions_go,
     mentions: row.mentions,
-    reactions: reactions.map(reactionOf),
+    reactions: reactions.map((r) => (r.person_id && former.has(r.person_id) ? { ...reactionOf(r), former: true } : reactionOf(r))),
     card: (row.card as Message['card']) ?? undefined,
-    quick_replies: row.quick_replies ?? undefined, // 1.1 overlay: not in the generated 1.0 types yet
+    quick_replies: row.quick_replies ?? undefined, // 1.1
+    visible_to_person_ids: row.visible_to_person_ids ?? undefined, // the app shows "Only you can see this"
     ledger: row.deleted ? undefined : row.ledger ?? undefined, // app only: `messageForGo` has no such member
     withheld: false, // `withheld` is only for Go
     deleted: row.deleted,

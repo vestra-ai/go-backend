@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { openTx } from '../db/pool.js';
 
 /** What the app may re-read after a `trip_changed` (app contract §3.1, the optional `kinds` hint). */
 export type ChangeKind = 'trip' | 'people' | 'decision' | 'mandate' | 'record' | 'booking' | 'expense' | 'settlement' | 'itinerary' | 'budget';
@@ -17,9 +18,15 @@ export type LiveEvent =
   /** "Go is typing...", or a person typing. `until` is when it runs out by itself. */
   | { kind: 'typing'; who: { kind: 'go' } | { kind: 'person'; person_id: string }; on: boolean; until?: string }
   /** This person's home screen moved (a trip created or joined, someone left): routed by person, whatever the trip. */
-  | { kind: 'home'; person_id: string };
+  | { kind: 'home'; person_id: string }
+  /** This person left the trip: their sockets stop following it (after the frames about their own leaving). No frame. */
+  | { kind: 'left'; person_id: string };
 
 export interface Live {
+  /**
+   * Sends a live notice. Inside a transaction (`withTx`, `once`) it goes out with that transaction: delivered after the
+   * commit, in commit order, in the order published, and never on a rollback. Outside one it goes out now.
+   */
   publish(tripId: string, event: LiveEvent): Promise<void>;
   /** Calls `fn` for every live event from every instance. Returns a function that stops it. */
   subscribe(fn: (tripId: string, event: LiveEvent) => void): () => void;
@@ -42,8 +49,13 @@ export class PgLive implements Live {
     private readonly log: (msg: string) => void = (m) => console.error(`[live] ${m}`),
   ) {}
 
+  /**
+   * Inside a transaction the NOTIFY runs on its connection, so Postgres holds it until the commit and delivers the
+   * notices of concurrent transactions in commit order (a NOTIFY sent on a free pool connection after the commit could
+   * overtake, or be overtaken by, another transaction's). Typing and the like are in no transaction: they go now.
+   */
   async publish(tripId: string, event: LiveEvent): Promise<void> {
-    await this.pool.query('select pg_notify($1, $2)', [CHANNEL, JSON.stringify({ trip_id: tripId, ...event })]);
+    await (openTx()?.db ?? this.pool).query('select pg_notify($1, $2)', [CHANNEL, JSON.stringify({ trip_id: tripId, ...event })]);
   }
 
   subscribe(fn: (tripId: string, event: LiveEvent) => void): () => void {

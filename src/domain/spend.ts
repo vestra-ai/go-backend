@@ -21,6 +21,7 @@ export function spendCheck(
   req: SpendRequest,
   hasOutstanding: boolean, // another unused, uncancelled, unexpired approval exists for this vote
   now: Date = new Date(),
+  alreadyPaid = false, // the vote already has a confirmed booking: paying again would charge twice
 ): Denial | null {
   if (!decision) return { reason: 'decision_not_found', detail: 'no such vote in this trip' };
   if (decision.status !== 'closed') return { reason: 'decision_not_closed', detail: `the vote is ${decision.status}` };
@@ -35,6 +36,9 @@ export function spendCheck(
   if (m.refundable_only && !(req.refundable_until && new Date(req.refundable_until) > now)) {
     return { reason: 'not_refundable', detail: 'the mandate is refundable only and refundable_until is missing or past' };
   }
+  // Contract 1.1 has no reason for "already booked"; the nearest is approval_outstanding, with a detail that says which.
+  // Checked before a waiting approval: when both hold, "already booked" is what Go needs to hear.
+  if (alreadyPaid) return { reason: 'approval_outstanding', detail: 'this vote is already booked: a second payment would charge twice (cancel the booking first)' };
   if (hasOutstanding) return { reason: 'approval_outstanding', detail: 'an earlier spend approval for this vote is still waiting' };
   return null;
 }

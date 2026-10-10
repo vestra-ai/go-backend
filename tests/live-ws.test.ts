@@ -125,6 +125,73 @@ describe('subscribe and replay', () => {
   });
 });
 
+describe('order', () => {
+  it('frames for one trip go out in the order they were published: messages read from the database are not overtaken by a trip_changed published right after them', async () => {
+    await seedTrip(h.pool, 't_order');
+    const start = (await rows(h.pool, `select seq from trips where trip_id = 't_order'`))[0].seq as number;
+    const c = await connect('p_priya');
+    c.subscribe('t_order', start - 1);
+    await c.until((f) => f.type === 'trip_changed' && f.trip_id === 't_order'); // subscribed
+    const mark = c.frames.length;
+    const ids = [1, 2, 3].map((i) => `m_order_${i}`);
+    for (const [i, id] of ids.entries()) {
+      await h.pool.query(
+        `insert into messages (message_id, trip_id, seq, updated_seq, author_kind, author_person_id, text) values ($1, 't_order', $2, $2, 'person', 'p_rahul', $3)`,
+        [id, start + 1 + i, `in order ${i}`],
+      );
+    }
+    await h.pool.query(`update trips set seq = $1 where trip_id = 't_order'`, [start + 4]);
+    // All in one tick: each message frame waits on a database read, the trip_changed would not.
+    for (const [i, id] of ids.entries()) void h.live.publish('t_order', { kind: 'message', message_id: id, updated_seq: start + 1 + i });
+    void h.live.publish('t_order', { kind: 'trip', seq: start + 4, kinds: ['people'] });
+    await c.until((f) => f.type === 'trip_changed' && f.seq === start + 4);
+    await settle(100);
+    expect(c.frames.slice(mark).filter((f) => f.type !== 'ping').map((f) => (f.type === 'message' ? f.message.message_id : [f.type, f.seq]))).toEqual([...ids, ['trip_changed', start + 4]]);
+  });
+
+  // Found against production (10 Oct 2026): a reaction's notice read a message that two later reactions had already moved
+  // to seq 42, and that frame went out ahead of trip_changed 38 and 40. An app keeping the highest seq skipped both.
+  it('a message notice that finds the message already moved on sends nothing: the later notice sends it, after the trip_changed between them', async () => {
+    await seedTrip(h.pool, 't_stale');
+    const start = (await rows(h.pool, `select seq from trips where trip_id = 't_stale'`))[0].seq as number;
+    const c = await connect('p_priya');
+    c.subscribe('t_stale', start - 1);
+    await c.until((f) => f.type === 'trip_changed' && f.trip_id === 't_stale');
+    const mark = c.frames.length;
+    await h.pool.query(`insert into messages (message_id, trip_id, seq, updated_seq, author_kind, author_person_id, text) values ('m_stale', 't_stale', $1, $2, 'person', 'p_rahul', 'hi')`, [start + 1, start + 3]);
+    await h.pool.query(`update trips set seq = $1 where trip_id = 't_stale'`, [start + 3]);
+    await h.live.publish('t_stale', { kind: 'message', message_id: 'm_stale', updated_seq: start + 1 }); // its row is at start + 3 by now
+    await h.live.publish('t_stale', { kind: 'trip', seq: start + 2, kinds: ['budget'] });
+    await h.live.publish('t_stale', { kind: 'message', message_id: 'm_stale', updated_seq: start + 3 });
+    await c.until((f) => f.type === 'message' && f.trip_id === 't_stale');
+    await settle(100);
+    expect(c.frames.slice(mark).filter((f) => f.type !== 'ping').map((f) => (f.type === 'message' ? ['message', f.message.updated_seq] : [f.type, f.seq])))
+      .toEqual([['trip_changed', start + 2], ['message', start + 3]]);
+  });
+
+  // Found against production (10 Oct 2026): a person who left kept getting every message of the trip on their open socket.
+  it('a person who leaves gets the frames about their own leaving and nothing after; the others keep theirs', async () => {
+    await seedTrip(h.pool, 't_leave');
+    const seq = (await rows(h.pool, `select seq from trips where trip_id = 't_leave'`))[0].seq as number;
+    const leaver = await connect('p_kabir');
+    const stays = await connect('p_arjun');
+    for (const c of [leaver, stays]) {
+      c.subscribe('t_leave', seq - 1);
+      await c.until((f) => f.type === 'trip_changed' && f.trip_id === 't_leave');
+    }
+    const mark = leaver.frames.length;
+    expect((await t.api(t.as('p_kabir'), 'POST', '/app/v1/trips/t_leave/leave', {})).status).toBe(204);
+    await leaver.until((f) => f.type === 'message' && f.trip_id === 't_leave' && /left$/.test(f.message.text ?? ''));
+    const r = await t.api(t.as('p_rahul'), 'POST', '/app/v1/trips/t_leave/messages', { client_message_id: 'cm-after-leave', text: 'after Kabir left' });
+    await stays.until((f) => f.type === 'message' && f.message.message_id === (r.body.message_id ?? r.body.message?.message_id));
+    await settle(150);
+    const after = leaver.frames.slice(mark).filter((f) => f.trip_id === 't_leave');
+    expect(after.map((f) => f.type)).toEqual(['trip_changed', 'message']); // person.left, then "Kabir left"
+    leaver.subscribe('t_leave', 0);
+    expect(await leaver.until((f) => f.type === 'error' && f.trip_id === 't_leave')).toMatchObject({ code: 'forbidden' });
+  });
+});
+
 describe('typing', () => {
   it('fans a person\'s typing out to the other subscribers with a 6 s expiry, never back to them and never to Go; at most one per 2 s per trip', async () => {
     const seq = (await rows(h.pool, `select seq from trips where trip_id = 't_goa'`))[0].seq as number;

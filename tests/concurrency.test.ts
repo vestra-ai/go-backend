@@ -58,6 +58,11 @@ describe('at the same moment', () => {
 
   it('the same booking request arriving twice at once gets the first answer both times, never a fresh 409', async () => {
     const [{ decision_id }] = await rows(h.pool, 'select decision_id from spend_approvals limit 1');
+    // The test above booked this vote ('Villa'), and a vote with a confirmed booking gets no second approval
+    // (paying again would charge twice). Cancel that booking first so a fresh approval can be issued.
+    const [{ booking_id }] = await rows(h.pool, "select booking_id from bookings where title = 'Villa' and status = 'confirmed'");
+    const cancelled = await h.go.call('update_booking', { request_id: 'rq_cancel_villa', trip_id: 't_goa', booking_id, status: 'cancelled' });
+    expect(cancelled.error).toBeUndefined();
     const a = await h.go.call('request_spend_approval', { request_id: 'rq_sp_new', trip_id: 't_goa', decision_id, amount_minor: 90000, currency: 'INR', merchant: 'm', purpose: 'p' });
     expect(a.result.status).toBe('approved');
     const book = () => h.go.call('add_booking', {

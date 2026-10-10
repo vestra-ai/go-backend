@@ -37,7 +37,7 @@ export function instant(value: string, field: string): Date {
  * vote it did not open, so the server posts a system message carrying the `vote` card (decision D8) and answers both.
  */
 export async function openPersonVote(ctx: Ctx, tripId: string, personId: string, input: OpenVoteBody): Promise<{ decision: DecisionForPerson; message: Message }> {
-  const made = await onceIfKeyed(ctx.pool, tripId, input.client_id && `app:vote:${personId}:${input.client_id}`, async (db, after) => {
+  const made = await onceIfKeyed(ctx.pool, tripId, input.client_id && `app:vote:${personId}:${input.client_id}`, async (db) => {
     await requireMember(db, tripId, personId);
     const closesAt = input.closes_at ? instant(input.closes_at, 'closes_at') : null;
     if (closesAt && closesAt.getTime() <= Date.now()) throw invalid('closes_at must be in the future');
@@ -48,13 +48,13 @@ export async function openPersonVote(ctx: Ctx, tripId: string, personId: string,
       question: input.question, kind: input.kind, anonymous: input.anonymous, options, closesAt: closesAt?.toISOString() ?? null, openedBy: personId,
     });
     const seq = await change(db, tripId, 'decision.opened', { decision: decisionOf(row, []), by: { kind: 'person', person_id: personId } });
-    const message = await postSystemMessage(ctx, db, after, tripId, input.question, voteCardFor(row.decision_id, input.question));
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['decision'] }));
+    await ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['decision'] }); // before the anchor's notice: live frames in change-number order
+    const message = await postSystemMessage(ctx, db, tripId, input.question, voteCardFor(row.decision_id, input.question));
     return { decision_id: row.decision_id, message_id: message.message_id };
   });
   const [decision, message] = await Promise.all([
     ctx.pool.query('select * from decisions where decision_id = $1', [made.decision_id]).then((r) => decisionForPerson(r.rows[0], [], personId)),
-    loadMessageForApp(ctx, ctx.pool, tripId, made.message_id),
+    loadMessageForApp(ctx, ctx.pool, tripId, made.message_id, personId),
   ]);
   return { decision, message };
 }
@@ -71,7 +71,7 @@ const endsBeforeStarts = (starts: Date | null, ends: Date | null) => !!starts &&
  * plus the change number of `booking.changed`.
  */
 export async function addPersonBooking(ctx: Ctx, tripId: string, personId: string, input: AddBookingBody): Promise<BookingForApp & { seq: number }> {
-  return withTx(ctx.pool, async (db, after) => {
+  return withTx(ctx.pool, async (db) => {
     await requireMember(db, tripId, personId);
     const currency = (await db.query('select currency from trips where trip_id = $1', [tripId])).rows[0]!.currency as string;
     await assertPeopleInTrip(db, tripId, [input.payer_person_id, ...input.for_person_ids], 'payer_person_id/for_person_ids');
@@ -113,8 +113,8 @@ export async function addPersonBooking(ctx: Ctx, tripId: string, personId: strin
         )).rows[0]!;
     const lineSeq = await nextSeq(db, tripId);
     await emit(db, tripId, lineSeq, 'record.changed', { line: recordLineOf(line), change: decided ? 'updated' : 'added', by: { kind: 'system' } });
-    await postSystemMessage(ctx, db, after, tripId, bookedText(input.title)); // the room's pill (D8), after the events
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq: lineSeq, kinds: ['booking', 'record'] }));
+    await ctx.live.publish(tripId, { kind: 'trip', seq: lineSeq, kinds: ['booking', 'record'] }); // before the pill's notice
+    await postSystemMessage(ctx, db, tripId, bookedText(input.title)); // the room's pill (D8), after the events
     return { ...bookingForApp(bookingOf(booking), [], personId), seq };
   });
 }
@@ -125,7 +125,7 @@ export async function addPersonBooking(ctx: Ctx, tripId: string, personId: strin
  * `null` clears a date. The ends-before-starts rule is checked on the merged result.
  */
 export async function updatePersonBooking(ctx: Ctx, tripId: string, personId: string, bookingId: string, input: UpdateBookingBody) {
-  return withTx(ctx.pool, async (db, after) => {
+  return withTx(ctx.pool, async (db) => {
     await requireMember(db, tripId, personId);
     const current = (await db.query<BookingRow>('select * from bookings where trip_id = $1 and booking_id = $2 for update', [tripId, bookingId])).rows[0];
     if (!current) throw notFound(`booking ${bookingId} does not exist in trip ${tripId}`);
@@ -150,7 +150,7 @@ export async function updatePersonBooking(ctx: Ctx, tripId: string, personId: st
       [bookingId, ...changes.map(([, value]) => value)],
     )).rows[0]!;
     const seq = await change(db, tripId, 'booking.changed', { booking: bookingOf(updated), change: 'updated', by: by(personId) });
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['booking'] }));
+    await ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['booking'] });
     return { seq };
   });
 }
@@ -167,7 +167,7 @@ export const CANCEL_VOTE_HOURS = 24;
  * (see `closeDecision`). Cancelling records the group's decision only: nothing is cancelled with the vendor.
  */
 export async function proposeCancelBooking(ctx: Ctx, tripId: string, personId: string, bookingId: string, _input: CancelVoteBody) {
-  return withTx(ctx.pool, async (db, after) => {
+  return withTx(ctx.pool, async (db) => {
     await requireMember(db, tripId, personId);
     const booking = await lockBooking(db, tripId, bookingId);
     if (!booking) throw notFound(`booking ${bookingId} does not exist in trip ${tripId}`);
@@ -185,8 +185,8 @@ export async function proposeCancelBooking(ctx: Ctx, tripId: string, personId: s
       cancelsBookingId: bookingId,
     });
     const seq = await change(db, tripId, 'decision.opened', { decision: decisionOf(row, []), by: by(personId) });
-    await postSystemMessage(ctx, db, after, tripId, row.question, voteCardFor(row.decision_id, row.question)); // the poll's anchor in the room (D8)
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['decision'] }));
+    await ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['decision'] }); // before the anchor's notice: live frames in change-number order
+    await postSystemMessage(ctx, db, tripId, row.question, voteCardFor(row.decision_id, row.question)); // the poll's anchor in the room (D8)
     return { decision_id: row.decision_id, seq };
   });
 }

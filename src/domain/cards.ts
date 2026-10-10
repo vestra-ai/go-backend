@@ -9,7 +9,7 @@ import { AUDIO, MAX_UPLOAD_BYTES, UPLOAD_EXPIRES_HOURS, extensionFor } from '../
 import { requireMember } from './actions.js';
 import { STORED_LINK_TTL_SECONDS } from './attachments.js';
 import { conflict, notFound, unavailable } from './errors.js';
-import { messageForGo, type MessageRow } from './mappers.js';
+import { messageForGo, visibleSql, type MessageRow } from './mappers.js';
 import { loadMessageForApp } from './room.js';
 import type { Message } from './types.js';
 
@@ -26,18 +26,19 @@ export interface CardItem { message_id: string; card: unknown; posted_at: string
 /**
  * GET /trips/:trip/cards?kind=&state=: the latest version of each card in the room (a replace_card writes the card in
  * place, so the row is always the latest), newest first, at most 100. Go's cards and the Server's own (the vote card of
- * a person-opened poll) alike; a deleted message's card is gone. Cards hidden by for_person_ids/only_for_person_ids are
- * not filtered here: the app draws them as it draws the room, and `for_person_ids` is returned as stored.
+ * a person-opened poll) alike; a deleted message's card is gone. A card on a message that is not for this person
+ * (`visible_to_person_ids`) is not there. Cards hidden by for_person_ids/only_for_person_ids are not filtered here: the
+ * app draws them as it draws the room, and `for_person_ids` is returned as stored.
  */
-export async function listCards(ctx: Ctx, tripId: string, q: CardsQuery): Promise<{ items: CardItem[] }> {
+export async function listCards(ctx: Ctx, tripId: string, personId: string, q: CardsQuery): Promise<{ items: CardItem[] }> {
   const states = q.state ? [...new Set(q.state.split(',').map((s) => s.trim()).filter(Boolean))] : null;
   const { rows } = await ctx.pool.query(
     `select message_id, card, sent_at from messages
       where trip_id = $1 and card is not null and deleted = false and author_kind in ('go', 'system')
         and ($2::text is null or card->>'kind' = $2)
-        and ($3::text[] is null or card->>'state' = any($3))
+        and ($3::text[] is null or card->>'state' = any($3)) and ${visibleSql('$5')}
       order by seq desc limit $4`,
-    [tripId, q.kind ?? null, states, CARDS_MAX],
+    [tripId, q.kind ?? null, states, CARDS_MAX, personId],
   );
   return { items: rows.map((r) => ({ message_id: r.message_id, card: r.card, posted_at: new Date(r.sent_at).toISOString() })) };
 }
@@ -58,8 +59,8 @@ export async function shareCallRecording(ctx: Ctx, tripId: string, personId: str
   await requireMember(ctx.pool, tripId, personId);
   const key = `app:share:${cardId}`;
   const shared = (await ctx.pool.query('select answer from go_requests where trip_id = $1 and request_id = $2', [tripId, key])).rows[0];
-  if (shared) return loadMessageForApp(ctx, ctx.pool, tripId, (shared.answer as { message_id: string }).message_id);
-  const m = (await ctx.pool.query(`select card from messages where trip_id = $1 and card_id = $2 and author_kind = 'go' and deleted = false`, [tripId, cardId])).rows[0];
+  if (shared) return loadMessageForApp(ctx, ctx.pool, tripId, (shared.answer as { message_id: string }).message_id, personId);
+  const m = (await ctx.pool.query(`select card from messages where trip_id = $1 and card_id = $2 and author_kind = 'go' and deleted = false and ${visibleSql('$3')}`, [tripId, cardId, personId])).rows[0];
   if (!m) throw notFound(`card ${cardId} is not one of Go's cards in this trip`);
   const card = m.card as CallCardLike;
   if (card.kind !== 'call' || card.state !== 'ended' || !card.recording_url) throw conflict(`card ${cardId} is not an ended call with a recording`);
@@ -75,7 +76,7 @@ export async function shareCallRecording(ctx: Ctx, tripId: string, personId: str
   const business = card.business ?? 'the business';
   const text = `Call with ${business}${card.outcome ? ` · ${card.outcome}` : ''}`.slice(0, 4000);
   const name = `${business} call.${extensionFor(copied.mime)}`;
-  const made = await once(ctx.pool, tripId, key, async (db, after) => {
+  const made = await once(ctx.pool, tripId, key, async (db) => {
     const member = await requireMember(db, tripId, personId);
     const upload_id = newId('up');
     // The recording becomes an upload of the sharer, already used: the room mints fresh one-hour links for it on every read.
@@ -94,10 +95,10 @@ export async function shareCallRecording(ctx: Ctx, tripId: string, personId: str
       [newId('m'), tripId, seq, personId, text, JSON.stringify([attachment]), member.go_paused],
     )).rows[0]!;
     await emit(db, tripId, seq, 'message.created', { message: messageForGo(row, []) });
-    after(() => ctx.live.publish(tripId, { kind: 'message', message_id: row.message_id, updated_seq: seq }));
+    await ctx.live.publish(tripId, { kind: 'message', message_id: row.message_id, updated_seq: seq });
     return { message_id: row.message_id };
   });
-  return loadMessageForApp(ctx, ctx.pool, tripId, made.message_id);
+  return loadMessageForApp(ctx, ctx.pool, tripId, made.message_id, personId);
 }
 
 /** The MIME a recording link suggests by its extension, for the stored path before the bytes are fetched; the real type comes from the fetch. */

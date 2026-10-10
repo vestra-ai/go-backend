@@ -193,3 +193,16 @@ describe('the rate limit (app contract Appendix A: 20 votes a minute per person)
     }
   });
 });
+
+// Found against production Go (10 Oct 2026): "Yes won · 2 votes" and a decided line reading just "Yes" said nothing about
+// what was decided, in the room, the record and Go's catch-up.
+describe('a yes/no vote that closes', () => {
+  it('names its question in the decided line and the pill', async () => {
+    const did = (await t.api(as('p_priya'), 'POST', '/app/v1/trips/t_goa/decisions', { client_id: 'yn-scuba', question: 'Scuba on day 2?', kind: 'yesno', anonymous: false, options: [{ label: 'Yes' }, { label: 'No' }] })).body.decision.decision_id;
+    for (const who of ['p_priya', 'p_arjun']) await vote(who, did, { option_index: 0 });
+    expect((await t.api(as('p_priya'), 'POST', `/app/v1/trips/t_goa/decisions/${did}/close`)).status).toBe(200);
+    const line = (await rows(h.pool, `select text from record_lines where decision_id = $1`, [did]))[0];
+    const pill = (await rows(h.pool, `select text from messages where trip_id = 't_goa' and author_kind = 'system' order by seq desc limit 1`))[0];
+    expect([line?.text, pill?.text]).toEqual(['Scuba on day 2? Yes', 'Scuba on day 2? Yes won · 2 votes']);
+  });
+});

@@ -26,7 +26,7 @@ export interface NewSettlement {
  * currency (422 otherwise). Answers the settlement, the transfers as they now stand, and the change number.
  */
 export async function recordSettlement(ctx: Ctx, tripId: string, personId: string, input: NewSettlement): Promise<{ settlement: Settlement; transfers: Transfer[]; seq: number }> {
-  return withTx(ctx.pool, async (db, after) => {
+  return withTx(ctx.pool, async (db) => {
     await requireMember(db, tripId, personId);
     const trip = (await db.query('select currency from trips where trip_id = $1', [tripId])).rows[0];
     if (input.to_person_id === personId) throw invalid('to_person_id: you cannot pay yourself', 'to_person_id');
@@ -39,14 +39,18 @@ export async function recordSettlement(ctx: Ctx, tripId: string, personId: strin
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *`,
       [newId('st'), tripId, personId, input.to_person_id, input.amount_minor, input.currency, input.method, input.note ?? null, seq],
     )).rows[0]!;
-    // The event's shape still names a confirmation (the proposal's wording): recorded is the whole of it now, so both times are the same.
+    // Contract 1.1: { settlement: Settlement, by }. Recorded is the whole of it now (nobody confirms), so its status is always
+    // confirmed and both times are the same.
     const recordedAt = iso(row.created_at)!;
-    await emit(db, tripId, seq, 'settlement.recorded', compact({
-      settlement_id: row.settlement_id, from_person_id: row.from_person_id, to_person_id: row.to_person_id, amount_minor: row.amount_minor,
-      currency: row.currency, method: row.method, note: row.note ?? undefined, status: 'confirmed', recorded_at: recordedAt, confirmed_at: recordedAt,
-    }));
-    after(() => moneyChanged(ctx, tripId, seq));
-    await postPayback({ ctx, db, after, tripId }, settlementOf(row)); // the room's line: the next change number, no event
+    await emit(db, tripId, seq, 'settlement.recorded', {
+      settlement: compact({
+        settlement_id: row.settlement_id, from_person_id: row.from_person_id, to_person_id: row.to_person_id, amount_minor: row.amount_minor,
+        currency: row.currency, method: row.method, note: row.note ?? undefined, status: 'confirmed', recorded_at: recordedAt, confirmed_at: recordedAt,
+      }),
+      by: { kind: 'person', person_id: personId },
+    });
+    await moneyChanged(ctx, tripId, seq);
+    await postPayback({ ctx, db, tripId }, settlementOf(row)); // the room's line: the next change number, sent to Go as message.created
     const { money } = await tripMoney(db, tripId);
     return { settlement: settlementOf(row), transfers: money.transfers, seq };
   });
