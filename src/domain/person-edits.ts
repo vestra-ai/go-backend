@@ -39,6 +39,7 @@ export function maskUpi(upiId: string): string {
   return `${local.slice(0, 3)}••••${suffix}`;
 }
 
+// Me keeps its empty members as null (contract §2 says so), unlike the other answers.
 const own = (r: PersonRecord, counts: MeCounts): Me => ({
   person_id: r.person_id, name: r.name, email: r.email, photo_url: r.photo_url, auth_provider: r.auth_provider, from_city: r.from_city_default,
   has_upi: !!r.upi_id, upi_id_masked: r.upi_id ? maskUpi(r.upi_id) : null,
@@ -193,7 +194,7 @@ export async function updateTripDetails(ctx: Ctx, tripId: string, personId: stri
     assertItinerarySize(input.itinerary);
     input.itinerary.forEach((day, i) => {
       const checked = check('Day', day);
-      if (!checked.ok) throw invalid(`itinerary[${i}] ${checked.message}`);
+      if (!checked.ok) throw invalid(`itinerary[${i}] ${checked.message}`, `itinerary[${i}]`);
     });
   }
   return withTx(ctx.pool, async (db) => {

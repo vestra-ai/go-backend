@@ -40,7 +40,7 @@ export async function openPersonVote(ctx: Ctx, tripId: string, personId: string,
   const made = await onceIfKeyed(ctx.pool, tripId, input.client_id && `app:vote:${personId}:${input.client_id}`, async (db) => {
     await requireMember(db, tripId, personId);
     const closesAt = input.closes_at ? instant(input.closes_at, 'closes_at') : null;
-    if (closesAt && closesAt.getTime() <= Date.now()) throw invalid('closes_at must be in the future');
+    if (closesAt && closesAt.getTime() <= Date.now()) throw invalid('closes_at must be in the future', 'closes_at');
     const currency = (await db.query('select currency from trips where trip_id = $1', [tripId])).rows[0]!.currency as string;
     const options = input.options.map((o) =>
       compact({ label: o.label, image_url: o.image_url, price_minor: o.price_minor, currency: o.price_minor === undefined ? undefined : currency, note: o.note }));
@@ -84,9 +84,9 @@ export async function addPersonBooking(ctx: Ctx, tripId: string, personId: strin
     if (endsBeforeStarts(startsAt, endsAt)) throw invalid('ends_at must not be before starts_at');
     if (input.decision_id) {
       const d = (await db.query('select status, cancels_booking_id from decisions where trip_id = $1 and decision_id = $2', [tripId, input.decision_id])).rows[0];
-      if (!d) throw invalid(`decision_id: ${input.decision_id} is not a vote in this trip`);
-      if (d.status !== 'closed') throw invalid(`decision_id: ${input.decision_id} is not a closed vote`);
-      if (d.cancels_booking_id) throw invalid(`decision_id: ${input.decision_id} is a vote about cancelling a booking`);
+      if (!d) throw invalid(`decision_id: ${input.decision_id} is not a vote in this trip`, 'decision_id');
+      if (d.status !== 'closed') throw invalid(`decision_id: ${input.decision_id} is not a closed vote`, 'decision_id');
+      if (d.cancels_booking_id) throw invalid(`decision_id: ${input.decision_id} is a vote about cancelling a booking`, 'decision_id');
     }
     // Row locks before the change number (which locks the trip row), as on Go's path: a person undoing this line at the same moment must not deadlock with us.
     const decided = input.decision_id

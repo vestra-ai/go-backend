@@ -61,11 +61,11 @@ export function register(app: FastifyInstance, ctx: Ctx, deps: V1Deps): void {
     schema: { querystring: { type: 'object', properties: { before_seq: seqParam, after_seq: seqParam, limit: { type: 'integer', minimum: 1, maximum: 10000 } } } },
     ...inTrip(ctx, (req, trip, me) => pageMessages(ctx, trip, me, req.query)),
   });
-  app.post('/app/v1/trips/:trip/messages', withTrip((trip, me, r) => postPersonMessage(ctx, trip, me, checkPostMessage(r.body)), 201));
-  app.patch('/app/v1/trips/:trip/messages/:id', withTrip((trip, me, r) => editMessage(ctx, trip, me, r.params.id!, checkEditMessage(r.body).text)));
-  app.delete('/app/v1/trips/:trip/messages/:id', withTrip((trip, me, r) => deleteMessage(ctx, trip, me, r.params.id!)));
+  app.post('/app/v1/trips/:trip/messages', withTrip(ctx, (trip, me, r) => postPersonMessage(ctx, trip, me, checkPostMessage(r.body)), 201));
+  app.patch('/app/v1/trips/:trip/messages/:id', withTrip(ctx, (trip, me, r) => editMessage(ctx, trip, me, r.params.id!, checkEditMessage(r.body).text)));
+  app.delete('/app/v1/trips/:trip/messages/:id', withTrip(ctx, (trip, me, r) => deleteMessage(ctx, trip, me, r.params.id!)));
   const reactions = new RateLimiter(() => ctx.limits?.reactionsPerMinute ?? REACTIONS_PER_MINUTE, 60_000, { what: 'reactions' });
-  app.put('/app/v1/trips/:trip/messages/:id/reaction', withTrip((trip, me, r) => {
+  app.put('/app/v1/trips/:trip/messages/:id/reaction', withTrip(ctx, (trip, me, r) => {
     const { emoji } = checkPutReaction(r.body);
     reactions.take(`${me}:${trip}`);
     return setReaction(ctx, trip, me, r.params.id!, emoji);

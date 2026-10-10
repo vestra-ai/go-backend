@@ -143,6 +143,24 @@ and baggage at check-in) still waits on your answers from the rev 4 asks.
 
 Go replying to chatter that didn't mention it is fine: that's Go's call.
 
+## 8b. Seen in the final run (10 Oct, after 19:50 IST)
+
+- **Stay search was down.** Twice, "@Go find stays for 6–9 Nov" got "ixigo wouldn't load its stays" and a notice card
+  linking to ixigo, with no options card. Each attempt also posted **two identical** "Searching hotels on ixigo" working
+  cards.
+- **No mandate for a vote a person opened.** After the group's own vote closed ("Villa Sol, Anjuna won"), "@Go Asha
+  pays, cap ₹55,000" got "isn't something I can book here", and Go never called `set_mandate`. So "Yes, book it", the
+  spend approval and the pay card can't be reached for any stay Go didn't find itself.
+- **A forget notice goes to the whole room.** After `forget_person`, Go posts "Go forgot you in this trip" to everyone.
+  It should be an owner-only note (`visible_to_person_ids: [that person]`, item 3).
+- **`forget_person` took longer than 2 s once** (2,096 ms, so our Server answered the person 503). Go still forgot.
+  Please answer within 2 s.
+
+**Questions:**
+10. Is the stay search back? Is a single working card per search intended?
+11. Should Go set a mandate on a closed vote a person opened (when the winning option is bookable on ixigo)? If not,
+    what should the app tell the group?
+
 ## 9. For your information (no change for Go)
 
 - **A leaver's and a deleted account's messages** stay in the room. The app shows their author as "Former member".
@@ -169,6 +187,7 @@ Go replying to chatter that didn't mention it is fine: that's Go's call.
 | 6c | `price_minor` is the whole-stay total everywhere | | | |
 | 7 | `get_checkin` / `submit_checkin` in `methods.json`; B8 answers | | | |
 | 8 | No self-announced expenses, no repeated vote results, no reasoning text in the room | | | |
+| 8b | Stay search back, one working card; mandate for person-opened votes; forget notice owner-only; `forget_person` within 2 s | | | |
 
 Anything else Go needs from the Server that isn't covered here? Please list it in your reply. After this round we freeze
 the contract for launch.

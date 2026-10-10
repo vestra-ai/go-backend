@@ -102,7 +102,7 @@ try {
   const kabir = await signUp('Kabir Rehearsal');
   const trip = await call(priya.access, 'POST', '/app/v1/trips', { title: 'Rehearsal trip' });
   expect(trip.status === 201, 'Priya creates a trip', JSON.stringify(trip.body));
-  const joined = await call(kabir.access, 'POST', `/app/v1/invites/${trip.body.invite_url.split('/j/')[1]}/accept`, { join_answers: { from_city: 'Pune' } });
+  const joined = await call(kabir.access, 'POST', `/app/v1/invites/${trip.body.invite_url.split('/invite/')[1]}/accept`, { join_answers: { from_city: 'Pune' } });
   expect(joined.status === 200 && joined.body?.trip_id === trip.body.trip_id && typeof joined.body?.landing === 'string', 'Kabir joins with his own Supabase token');
   const msg = await call(kabir.access, 'POST', `/app/v1/trips/${trip.body.trip_id}/messages`, { client_message_id: 'rh-1', text: '@Go hello from the rehearsal' });
   expect(msg.status === 201, 'Kabir talks to Go');

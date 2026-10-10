@@ -87,7 +87,7 @@ Settings (all in `.env.example`, each with a comment):
 |---|---|
 | Go | `GO_URL`, `GO_SIGNING_SECRET`, `GO_SPEND_PRIVATE_KEY`, `INSTANCE_NAME` (unique per server copy; default `<hostname>-<pid>`) |
 | Database | `DATABASE_URL`, `DATABASE_CA_CERT` (Supabase TLS), `DB_POOL_MAX` (default 30; the outbox uses at most a third) |
-| Server | `PORT` (8080), `PUBLIC_BASE_URL` (invite links are `<it>/j/<code>`), `APP_ORIGINS` (the web app's exact addresses, comma-separated, no wildcard; none by default) |
+| Server | `PORT` (8080), `PUBLIC_BASE_URL` (invite links are `<it>/invite/<code>`), `APP_ORIGINS` (the web app's exact addresses, comma-separated, no wildcard; none by default) |
 | Sign-in | `SUPABASE_URL` (sets `AUTH_MODE=supabase`), `SUPABASE_JWT_SECRET` (legacy projects only), `AUTH_MODE` (`supabase` \| `dev`; `dev` is refused in production), `APP_SESSION_SECRET` (dev tokens only) |
 | Files | `SUPABASE_SECRET_KEY` (Storage; sets `STORAGE=supabase`), `SUPABASE_STORAGE_BUCKET` (default `go-files`), `STORAGE` (`supabase` \| `memory`) |
 | Feature flags | `FEATURE_CHECKIN`, `FEATURE_VISA`, `FEATURE_CALLS`, `FEATURE_VOTE_RETRACT`, `FEATURE_VOTE_FLEXIBLE`, `FEATURE_CLAIM` (`1` or `0`; unset = the default: off). `docs/API.md` §9 says what each hides |

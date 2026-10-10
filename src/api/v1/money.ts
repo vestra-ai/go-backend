@@ -70,7 +70,7 @@ export function register(app: FastifyInstance, ctx: Ctx, _deps: V1Deps): void {
     reply.header('cache-control', 'private, no-store');
     return readMoneyView(ctx, req.params.trip, req.personId); // membership is checked inside, with the read
   });
-  app.get('/app/v1/trips/:trip/transactions', { ...privateRead, ...inTrip(ctx, (req, trip, me) => listTransactions(ctx, trip, me, transactionsQuery(req.query ?? {}))) });
+  app.get('/app/v1/trips/:trip/transactions', { ...privateRead, ...inTrip(ctx, (req, trip, me) => listTransactions(ctx, trip, me, transactionsQuery(req.query ?? {})), 200, 'private, no-store') });
 
   // ---- expenses
   app.get('/app/v1/trips/:trip/expenses', { ...privateRead, ...inTrip(ctx, (req, trip, me) => (noStatusQuery(req.query?.status), listExpenses(ctx, trip, me))) });

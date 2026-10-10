@@ -113,7 +113,7 @@ it('setup: two people make a trip through the real server', async () => {
   const t = await api('/app/v1/trips', { method: 'POST', body: { title: 'Goa with the fake Go' }, token: rahul.token });
   expect(t.status).toBe(201);
   trip = t.body.trip_id;
-  expect((await api(`/app/v1/invites/${t.body.invite_url.split('/j/')[1]}/accept`, { method: 'POST', body: {}, token: priya.token })).status).toBe(200);
+  expect((await api(`/app/v1/invites/${t.body.invite_url.split('/invite/')[1]}/accept`, { method: 'POST', body: {}, token: priya.token })).status).toBe(200);
 });
 
 it('a message that names Go: the app sees "Go is typing...", Go\'s ✅ on the message, then Go\'s reply with a card', async () => {

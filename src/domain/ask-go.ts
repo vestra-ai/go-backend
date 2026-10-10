@@ -90,9 +90,10 @@ export async function cardTap(
 ) {
   await requireMember(ctx.pool, tripId, personId);
   // A card on a message that is not for this person is answered as an unknown card.
-  const m = (await ctx.pool.query(`select card->>'kind' as kind, card from messages where trip_id = $1 and card_id = $2 and author_kind = 'go' and ${visibleSql('$3')}`, [tripId, input.card_id, personId])).rows[0];
+  const m = (await ctx.pool.query(`select card->>'kind' as kind, card, author_kind from messages where trip_id = $1 and card_id = $2 and author_kind in ('go', 'system') and ${visibleSql('$3')}`, [tripId, input.card_id, personId])).rows[0];
   if (!m) throw notFound(`card ${input.card_id} is not one of Go's cards in this trip`);
-  if (!GO_CARD_KINDS.has(m.kind)) throw invalid(`${m.kind} cards are handled by the Server, not Go`, 'card_id');
+  // A record card (a vote, including a person-opened poll's card on a system message) is the Server's: 422, as §4.7 says.
+  if (m.author_kind !== 'go' || !GO_CARD_KINDS.has(m.kind)) throw invalid(`${m.kind} cards are handled by the Server, not Go`, 'card_id');
   // The button must be on the card as it stands now: Go may have replaced it (paid, expired, declined) without buttons.
   // Seen on 10 Oct 2026: a tap on an expired pay card reached Go, which started a second payment for a paid stay.
   const card = m.card as { actions?: Array<{ action_id: string }> | null; suggestion?: { cta?: { action_id?: string } | null } | null };

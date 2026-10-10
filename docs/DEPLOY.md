@@ -28,7 +28,7 @@ Not secret (set on the service):
 | `SUPABASE_URL` | `https://rbltcfpcqkefazsonzbb.supabase.co` |
 | `DATABASE_CA_CERT` | `certs/prod-ca-2021.crt` |
 | `DB_POOL_MAX` | `10` |
-| `PUBLIC_BASE_URL` | the service's public address (invite links are `<it>/j/<code>`) |
+| `PUBLIC_BASE_URL` | the web app's public address: invite links are `<it>/invite/<code>` (production: `https://go-frontend-three.vercel.app`) |
 | `APP_ORIGINS` | the web app's exact address(es), comma-separated, no wildcard |
 | `SUPABASE_STORAGE_BUCKET` | `go-files`: the private Storage bucket (above). Default `go-files` when unset |
 | `GO_CONTRACT` | `1.0` (the default, and what Go spoke on 8 Oct 2026): a re-split expense takes its change number but sends no event, because Go 1.0's `expense.changed` knows only `added` and `removed`; Go reads the expense's state on its next `read_trip`. Set `1.1` the day Keshav's team ships `docs/GO-CHANGES.md` |

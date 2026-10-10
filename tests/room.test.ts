@@ -20,7 +20,7 @@ describe('read_trip', () => {
   it('answers a TripSnapshot that matches the contract, at the current change number', async () => {
     const f = await h.go.call('read_trip', { trip_id: 't_goa' });
     expect(check('TripSnapshot', f.result)).toMatchObject({ ok: true });
-    expect(f.result).toMatchObject({ trip_id: 't_goa', seq: 1, title: 'Goa 🌴', status: 'planning', invite_url: 'https://go.example/j/inv_t_goa' });
+    expect(f.result).toMatchObject({ trip_id: 't_goa', seq: 1, title: 'Goa 🌴', status: 'planning', invite_url: 'https://go.example/invite/inv_t_goa' });
     expect(f.result.people.map((p: any) => p.person_id)).toEqual(['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir']);
   });
 

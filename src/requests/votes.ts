@@ -13,7 +13,7 @@ export const openVote = (ctx: Ctx) => async (p: any, raw: Record<string, unknown
     const trip = await tripOf(db, p.trip_id);
     for (const [i, o] of (p.options as Array<{ currency?: string }>).entries()) assertCurrency(trip, o.currency, `options.${i}.currency`);
     if (p.options.length < 2 || p.options.length > 10) throw invalid('options must have 2 to 10 options');
-    if (p.closes_at && new Date(p.closes_at).getTime() <= Date.now()) throw invalid('closes_at must be in the future');
+    if (p.closes_at && new Date(p.closes_at).getTime() <= Date.now()) throw invalid('closes_at must be in the future', 'closes_at');
     const people = await db.query('select count(*)::int as n from trip_people where trip_id = $1 and left_at is null', [p.trip_id]);
     // Options are kept as Go sent them (raw), so `option_ref` and anything added later comes back unchanged.
     const row = (await db.query<DecisionRow>(

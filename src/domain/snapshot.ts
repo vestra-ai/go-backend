@@ -7,7 +7,7 @@ import { moneyOf } from './money.js';
 import type { BudgetSummary, TripSnapshot } from './types.js';
 import type { Db } from '../db/pool.js';
 
-export const inviteUrl = (base: string, code: string) => `${base.replace(/\/+$/, '')}/j/${code}`;
+export const inviteUrl = (base: string, code: string) => `${base.replace(/\/+$/, '')}/invite/${code}`;
 
 /** People now in the trip, in the order they joined. Someone who left is not in the trip. */
 export async function activePeople(db: Db, tripId: string): Promise<PersonRow[]> {

@@ -34,7 +34,7 @@ describe('creating and joining a trip', () => {
     const r = await api(rahul, 'POST', '/app/v1/trips', { title: 'Goa 🌴', destination: { name: 'Goa' }, dates: { start: '2026-11-06', end: '2026-11-09' }, plan_minor: 7500000 });
     expect(r.status).toBe(201);
     trip = r.body.trip_id;
-    code = r.body.invite_url.split('/j/')[1];
+    code = r.body.invite_url.split('/invite/')[1];
     await h.flush();
     const e = events('trip.created')[0]!;
     expect(e).toMatchObject({ trip_id: trip, seq: 1 });

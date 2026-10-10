@@ -85,7 +85,7 @@ are defined at https://vestrago.vercel.app/llms-full.txt (1.0.0) plus the 1.1 ad
   `{ "amount_minor": 5420000, "currency": "INR" }`. Never a float. A trip has one currency (default `INR`).
 - Times are ISO 8601 with an offset (`2026-11-06T18:10:00Z`); a time with no `Z` or offset is `422`. Dates are
   `YYYY-MM-DD`, a real calendar date from year 1. An itinerary time of day is `HH:MM`.
-- Field names are `snake_case`. **In answers, null and missing mean the same thing**; the Server leaves null members out.
+- Field names are `snake_case`. **In answers, null and missing mean the same thing**; the Server leaves null members out (except `Me`, whose empty members are `null`).
 - **Bodies are strict.** Every write body is checked against its definition: an unknown field, a
   value of the wrong type (`"5"` is not `5`), a missing required field, a string over its limit, an enum value that is
   not listed, all answer `422 invalid` with `field`. `null` is accepted only where this page says a field clears
@@ -178,10 +178,10 @@ type Id = string; type Iso = string; type Currency = string;
 
 // ---- who I am (§4.1) --------------------------------------------------------
 interface Me {
-  person_id: Id; name: string; email: string | null; photo_url?: string;
+  person_id: Id; name: string; email: string | null; photo_url: string | null;
   auth_provider: "google" | "email" | string | null;   // as Supabase reports it; "dev" with dev sign-in
-  from_city?: string;                                  // profile default; per-trip answers live on Person.from_city
-  has_upi: boolean; upi_id_masked?: string;            // "aar••••@okhdfc"
+  from_city: string | null;                            // profile default; per-trip answers live on Person.from_city
+  has_upi: boolean; upi_id_masked: string | null;      // "aar••••@okhdfc"; Me keeps its empty members as null
   counts: { active_trips: number; past_trips: number };
   created_at: Iso;
   seq?: number | null;                                 // on PATCH /me and PUT/DELETE /me/upi only: the last change number written, null when nothing was sent to Go
@@ -420,7 +420,7 @@ the trip receives `trip_changed kinds: ["people"]` and `home_changed`; open vote
 | `POST /trips` | anyone | **Everything optional** (strict): `title` (1-80), `destination_hint` (1-80; becomes the title when there is none, else "New trip", and the `destination` `{ name }` when none is sent, so a trip made from an Idea starts at stage `deciding`), `dates { start, end }` (`YYYY-MM-DD`, start ≤ end), `from_city` (1-60; saved as **your** join answer), `destination` (contract `Place`: `name` 1-120, `place_id` ≤ 256, `address` ≤ 200, `lat`, `lng`, `photo_url`, `photos` ≤ 12 × `{ url, label? 1-40 }`), `vibe` (≤ 10 strings ≤ 40), `stay` (≤ 80), `plan_minor` (≥ 0), `currency` (`^[A-Z]{3}$`, default `INR`) | `201 TripView` (`people` = you as organizer, `invite_url` set) | 422 | `trip.created` is change **1**; the system message "Trip created · Aarav joined" is change 2, so `TripView.seq` is 2. Live: `trip_changed kinds: ["trip","people"]`, `home_changed` |
 | `GET /trips/:trip` | member | `?include=people,decisions,bookings,expenses,money,itinerary,record` keeps only those parts (the rest of the view always comes); `If-None-Match` | `TripView` (§2) with `ETag: "<seq>"`, `private, no-cache`; `304` when the ETag matches | 403; 422 `include` for an unknown part | — |
 | `PATCH /trips/:trip` | **any member** | any of `title` (1-80), `dates { start, end }`, `status` (`planning` \| `booked` \| `on_trip` \| `over`, in any direction), `itinerary` (the **whole** itinerary: ≤ 30 days, each a contract `Day`, ≤ 262,144 bytes as JSON, item `booking_id`s must be this trip's; fields the Server does not know, including the 1.1 `person_ids`, `audience`, `Day.image_url`, are stored as sent), `budget_per_person_minor` (**the group's one budget**: a whole number ≥ 1 in the trip's currency, the same for everyone; `null` clears it, the only field here that can be cleared). Strict; at least one field | `{ "seq" }`, or `{ "seq": null }` when nothing differed (key order inside objects is ignored) | 422 | `trip.updated` by the person naming only the fields that differed (`budget` for the budget). Live: `trip_changed` |
-| `GET /trips/:trip/invite` | member | — | `{ "invite_url", "code" }` (`invite_url` is `<PUBLIC_BASE_URL>/j/<code>`) | | — |
+| `GET /trips/:trip/invite` | member | — | `{ "invite_url", "code" }` (`invite_url` is `<PUBLIC_BASE_URL>/invite/<code>`) | | — |
 | `POST /trips/:trip/invite/rotate` | **organizer** | — | `{ "invite_url", "code" }`. The old link answers `state: "revoked"` from now on and cannot be accepted | 403 | nothing (Go reads the link with the trip) |
 | `GET /trips/:trip/me` | member | — | `{ "from_city", "earliest_leave", "know", "role", "go_paused" }`: your own answers in this trip | | — |
 | `PUT /trips/:trip/me/join-answers` | member | `JoinAnswers` (below); strict; at least one field | your own `Person` (whole) plus `seq` (`null` when nothing changed) | 422 | `person.updated` with `changed` among `from_city`, `earliest_leave`, `know` (only what differs). Live: `trip_changed` |

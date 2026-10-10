@@ -31,7 +31,7 @@ describe('trip created, joined, left', () => {
     [rahul, priya, kabir] = [await h.signIn('Rahul'), await h.signIn('Priya'), await h.signIn('Kabir')];
     const r = await t.api(rahul, 'POST', '/app/v1/trips', { title: 'Goa' });
     trip = r.body.trip_id;
-    code = r.body.invite_url.split('/j/')[1];
+    code = r.body.invite_url.split('/invite/')[1];
     await t.api(priya, 'POST', `/app/v1/invites/${code}/accept`, { join_answers: { from_city: 'Delhi' } });
     await t.api(kabir, 'POST', `/app/v1/invites/${code}/accept`, {});
     expect(await pills(trip)).toEqual([{ seq: 2, text: 'Trip created · Rahul joined', card: null }, { seq: 4, text: 'Priya joined', card: null }, { seq: 6, text: 'Kabir joined', card: null }]);
@@ -90,7 +90,7 @@ describe('a person-opened vote, a decided vote, a booking', () => {
     const again = await t.api(priya, 'POST', `/app/v1/trips/${trip}/decisions`, { client_id: 'poll-1', question: 'Where do we stay?', kind: 'choice', anonymous: false, options: [{ label: 'Villa Sol' }, { label: 'Casa Azul' }] });
     expect([again.status, again.body.message.message_id, again.body.decision.decision_id]).toEqual([201, r.body.message.message_id, decision]);
     // The vote card is the server's: a tap on it is not for Go.
-    expect((await t.api(rahul, 'POST', `/app/v1/trips/${trip}/cards/${r.body.message.card.card_id}/actions`, { action_id: 'vote' })).status).toBe(404);
+    expect((await t.api(rahul, 'POST', `/app/v1/trips/${trip}/cards/${r.body.message.card.card_id}/actions`, { action_id: 'vote' })).status).toBe(422); // a record card is the Server's (§4.7), on a system message too
   });
 
   it('"Villa Sol won · 2 votes" after decision.closed and the decided line, as its own message.created; a tie writes no pill', async () => {

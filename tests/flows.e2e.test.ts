@@ -41,7 +41,7 @@ const outboxCount = async (tripId: string) => (await rows(h.pool, 'select count(
 /** A new trip made through the app: the organizer creates it, everyone else joins by the invite link. */
 async function newTrip(title: string, organizer: Who, others: Who[] = [], answers: Record<string, unknown> = {}) {
   const t = await api(organizer, 'POST', '/app/v1/trips', { title });
-  const code = t.body.invite_url.split('/j/')[1];
+  const code = t.body.invite_url.split('/invite/')[1];
   for (const o of others) await api(o, 'POST', `/app/v1/invites/${code}/accept`, { join_answers: answers[o.id] ?? {} });
   await h.flush();
   return { id: t.body.trip_id as string, code: code as string };
@@ -148,9 +148,9 @@ describe('F2. A trip starts (guide: "A trip starts")', () => {
     const mark = h.go.events.length;
     const t = await api(rahul, 'POST', '/app/v1/trips', { title: 'Goa 🌴 F2' });
     expect(t.status).toBe(201);
-    expect(t.body.invite_url).toMatch(/\/j\/[A-Za-z0-9_-]+$/);
+    expect(t.body.invite_url).toMatch(/\/invite\/[A-Za-z0-9_-]+$/);
     trip = t.body.trip_id;
-    code = t.body.invite_url.split('/j/')[1];
+    code = t.body.invite_url.split('/invite/')[1];
     await h.flush();
     const [created, pill] = eventsFor(trip, mark);
     expect(pill).toMatchObject({ type: 'message.created', seq: 2, data: { message: { seq: 2, author: { kind: 'system' }, text: 'Trip created · Rahul joined' } } }); // the room's pill, change 2

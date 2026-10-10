@@ -9,7 +9,7 @@ export interface Ctx {
   live: Live;
   /** Where uploaded files live (Supabase Storage, or the in-process fake). */
   storage: Storage;
-  /** The app's public address, for invite links: <base>/j/<code> */
+  /** The app's public address, for invite links: <base>/invite/<code> */
   publicBaseUrl: string;
   /** GO_SPEND_PRIVATE_KEY (PEM) */
   spendPrivateKey: string;

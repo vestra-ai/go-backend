@@ -119,7 +119,7 @@ describe('subscribe and replay', () => {
     expect(await c.until((f) => f.type === 'home_changed')).toEqual({ type: 'home_changed' });
     const others = await connect('p_rahul');
     await others.until((f) => f.type === 'hello');
-    await t.api(t.as('p_rahul'), 'POST', `/app/v1/invites/${r.body.invite_url.split('/j/')[1]}/accept`, {});
+    await t.api(t.as('p_rahul'), 'POST', `/app/v1/invites/${r.body.invite_url.split('/invite/')[1]}/accept`, {});
     expect(await others.until((f) => f.type === 'home_changed')).toEqual({ type: 'home_changed' }); // the joiner's home gained a trip
     expect(await c.until((f) => f.type === 'home_changed' && c.of('home_changed').length === 2)).toBeTruthy(); // the organizer's card shows one more face
   });

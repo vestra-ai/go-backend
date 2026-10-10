@@ -64,7 +64,7 @@ describe('the whole app works with Supabase tokens', () => {
     const ben = await auth.mint({ name: 'Ben', email: 'ben@gmail.com' });
     const trip = await api(asha, 'POST', '/app/v1/trips', { title: 'Goa with Supabase sign-in' });
     expect(trip.status).toBe(201);
-    const code = trip.body.invite_url.split('/j/')[1];
+    const code = trip.body.invite_url.split('/invite/')[1];
     expect((await api(ben, 'POST', `/app/v1/invites/${code}/accept`, { join_answers: { from_city: 'Pune' } })).body).toMatchObject({ landing: 'trip_home' });
     expect((await api(ben, 'POST', `/app/v1/trips/${trip.body.trip_id}/messages`, { client_message_id: 'sb-1', text: '@Go hello from Supabase' })).status).toBe(201);
     expect((await api(asha, 'PATCH', '/app/v1/me', { name: 'Asha' })).status).toBe(200);

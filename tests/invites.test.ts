@@ -73,15 +73,15 @@ describe('rotation', () => {
     expect((await t.api(t.as('p_priya'), 'POST', v1('/trips/t_goa/invite/rotate'))).status).toBe(403);
     const r = await t.api(t.as('p_rahul'), 'POST', v1('/trips/t_goa/invite/rotate'));
     const code: string = r.body.code;
-    expect([r.status, code.length >= 10, r.body.invite_url]).toEqual([200, true, `https://go.example/j/${code}`]);
+    expect([r.status, code.length >= 10, r.body.invite_url]).toEqual([200, true, `https://go.example/invite/${code}`]);
     expect((await preview('inv_t_goa')).body).toMatchObject({ state: 'revoked', trip: { trip_id: 't_goa' } });
     const late = await h.signIn('Late');
     expect((await t.api(late, 'POST', v1('/invites/inv_t_goa/accept'), {})).status).toBe(409);
     expect((await preview(code, late)).body.state).toBe('pending');
     expect((await t.api(late, 'POST', v1(`/invites/${code}/accept`), {})).status).toBe(200);
-    expect((await t.api(t.as('p_rahul'), 'GET', v1('/trips/t_goa/invite'))).body).toEqual({ invite_url: `https://go.example/j/${code}`, code });
-    expect((await h.go.call('read_trip', { trip_id: 't_goa' })).result.invite_url).toBe(`https://go.example/j/${code}`);
-    expect((await t.api(t.as('p_rahul'), 'GET', v1('/trips/t_goa'))).body.invite_url).toBe(`https://go.example/j/${code}`);
+    expect((await t.api(t.as('p_rahul'), 'GET', v1('/trips/t_goa/invite'))).body).toEqual({ invite_url: `https://go.example/invite/${code}`, code });
+    expect((await h.go.call('read_trip', { trip_id: 't_goa' })).result.invite_url).toBe(`https://go.example/invite/${code}`);
+    expect((await t.api(t.as('p_rahul'), 'GET', v1('/trips/t_goa'))).body.invite_url).toBe(`https://go.example/invite/${code}`);
     expect((await rows(h.pool, `select code, revoked_at is not null as revoked from invites where trip_id = 't_goa' order by created_at`)).map((x) => [x.code, x.revoked])).toEqual([['inv_t_goa', true], [code, false]]);
   });
 

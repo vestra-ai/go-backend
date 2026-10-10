@@ -86,26 +86,26 @@ export function register(app: FastifyInstance, ctx: Ctx, deps: V1Deps): void {
   app.get('/app/v1/trips/:trip/decisions/:id', inTrip(ctx, (req, trip, me) => getDecision(ctx, trip, me, req.params.id!)));
   app.post('/app/v1/trips/:trip/decisions', inTrip(ctx, (req, trip, me) => (requirePressKey(req), openPersonVote(ctx, trip, me, checkOpenVote(req.body))), 201));
   const votes = new RateLimiter(() => ctx.limits?.votesPerMinute ?? VOTES_PER_MINUTE, 60_000, { what: 'votes' });
-  app.put('/app/v1/trips/:trip/decisions/:id/vote', withTrip((t, me, r) => {
+  app.put('/app/v1/trips/:trip/decisions/:id/vote', withTrip(ctx, (t, me, r) => {
     const { option_index, flexible } = checkCastVote(r.body);
     if ((option_index === undefined) === (flexible === undefined)) throw invalid('send option_index or flexible: true, not both', option_index === undefined ? 'option_index' : 'flexible');
     if (flexible && !deps.features.vote_flexible) throw conflict('"I\'m flexible" is not on yet (features.vote_flexible)');
     votes.take(me);
     return castVote(ctx, t, me, r.params.id!, flexible ? { flexible: true } : { option_index: option_index! });
   }));
-  app.delete('/app/v1/trips/:trip/decisions/:id/vote', withTrip((t, me, r) => {
+  app.delete('/app/v1/trips/:trip/decisions/:id/vote', withTrip(ctx, (t, me, r) => {
     if (!deps.features.vote_retract) throw conflict('taking a vote back is not on yet (features.vote_retract)');
     votes.take(me);
     return retractVote(ctx, t, me, r.params.id!);
   }));
-  app.post('/app/v1/trips/:trip/decisions/:id/close', withTrip((t, me, r) => closeVoteByPerson(ctx, t, me, r.params.id!)));
-  app.post('/app/v1/trips/:trip/decisions/:id/cancel', withTrip((t, me, r) => cancelDecision(ctx, t, me, r.params.id!)));
-  app.post('/app/v1/trips/:trip/decisions/:id/mandate/confirm', withTrip((t, me, r) => answerMandate(ctx, t, me, r.params.id!, 'confirm')));
-  app.post('/app/v1/trips/:trip/decisions/:id/mandate/decline', withTrip((t, me, r) => answerMandate(ctx, t, me, r.params.id!, 'decline')));
+  app.post('/app/v1/trips/:trip/decisions/:id/close', withTrip(ctx, (t, me, r) => closeVoteByPerson(ctx, t, me, r.params.id!)));
+  app.post('/app/v1/trips/:trip/decisions/:id/cancel', withTrip(ctx, (t, me, r) => cancelDecision(ctx, t, me, r.params.id!)));
+  app.post('/app/v1/trips/:trip/decisions/:id/mandate/confirm', withTrip(ctx, (t, me, r) => answerMandate(ctx, t, me, r.params.id!, 'confirm')));
+  app.post('/app/v1/trips/:trip/decisions/:id/mandate/decline', withTrip(ctx, (t, me, r) => answerMandate(ctx, t, me, r.params.id!, 'decline')));
   app.get('/app/v1/trips/:trip/record', {
     schema: { querystring: { type: 'object', properties: { include_undone: { type: 'string', enum: ['1', '0', 'true', 'false'] } } } },
     ...inTrip(ctx, (req, trip) => getRecord(ctx, trip, req.query.include_undone === '1' || req.query.include_undone === 'true')),
   });
-  app.post('/app/v1/trips/:trip/record/:line_id/undo', withTrip((t, me, r) => undoRecordLine(ctx, t, me, r.params.line_id!)));
-  app.post('/app/v1/trips/:trip/record/:line_id/redo', withTrip((t, me, r) => redoRecordLine(ctx, t, me, r.params.line_id!)));
+  app.post('/app/v1/trips/:trip/record/:line_id/undo', withTrip(ctx, (t, me, r) => undoRecordLine(ctx, t, me, r.params.line_id!)));
+  app.post('/app/v1/trips/:trip/record/:line_id/redo', withTrip(ctx, (t, me, r) => redoRecordLine(ctx, t, me, r.params.line_id!)));
 }
