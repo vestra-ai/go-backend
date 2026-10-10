@@ -190,7 +190,7 @@ interface Me {
 // ---- home (§4.2) ------------------------------------------------------------
 interface PersonLite { person_id: Id; name: string; photo_url?: string }
 interface TripSummary {
-  trip_id: Id; title: string; status: "planning" | "booked" | "on_trip" | "over";
+  trip_id: Id; title: string; status: "planning" | "booked" | "on_trip" | "over";   // title: the automatic name (§4.4)
   stage: "new" | "deciding" | "planned";               // §4.4
   destination?: Place; dates?: { start: string; end: string };
   photo_url?: string;                                  // the destination's cover photo: `destination.photo_url`, else the first of `destination.photos` (§7)
@@ -203,6 +203,8 @@ interface TripSummary {
 /** One debt of mine on the home screen (§4.2): whom I owe, how much, in which trip. `to` is the stored person, even when they have left the trip. */
 interface Owed { trip_id: Id; trip_title: string; to: PersonLite; amount_minor: number; currency: Currency }
 interface PastTripSummary { trip_id: Id; title: string; photo_url?: string; dates?: { start: string; end: string }; people_count: number; all_settled: boolean }
+/** One open item of mine on the home screen (§4.2): the trip's NeedsYouItem (§4.11), and which trip. `trip_title` is the automatic name (§4.4). */
+type HomeNeedsYouItem = NeedsYouItem & { trip_id: Id; trip_title: string };
 interface Idea { idea_id: string; name: string; tag: string; travel: { mode: "flight" | "car" | "train" | "bus"; duration_minutes: number }; image_url?: string; destination_hint: string }
 
 // ---- one trip (§4.4) --------------------------------------------------------
@@ -309,7 +311,7 @@ Every frame is a JSON object with a `type`. Unknown types, and frames that are n
 | `card` | Go replaced one of its cards in place (`replace_card`: a call moved on, a pay card became paid, people dropped from `for_person_ids`) | `{ "type":"card", "trip_id", "message_id", "card": Card }`. No `seq` in the frame, but the **message's `updated_seq` moves**, so `GET …/messages?after_seq=` returns the replaced card after a long time offline. A `message` frame with the message at its new `updated_seq` follows. |
 | `typing` | Go or a person started or stopped typing | `{ "type":"typing", "trip_id", "who": {"kind":"go"} \| {"kind":"person","person_id"}, "on": boolean, "until"?: Iso }`. Go's runs out 10 s after the Server heard it, a person's 6 s; `on: false` hides it at once. Not sent back to the one typing. |
 | `trip_changed` | any change that is **not a message**: a vote cast or closed, mandate, record line, booking, expense, settlement, someone joined or left, itinerary, the group budget, trip details | `{ "type":"trip_changed", "trip_id", "seq", "kinds"?: ["decision","record"] }`. When `seq` is higher than the app holds, re-read what is showing. `kinds` (a hint, not always present) is one or more of `trip`, `people`, `decision`, `mandate`, `record`, `booking`, `expense`, `settlement`, `itinerary`, `budget`. |
-| `home_changed` | my home screen's data moved: a trip created or joined, someone left | `{ "type":"home_changed" }`. Re-read `GET /home`. (A trip's `attention` changing alone sends `trip_changed` to that trip, not `home_changed`: re-read home on resume or when an open trip changes. The same goes for `owes`.) |
+| `home_changed` | my home screen's data moved: a trip created, joined, reset or renamed (title, destination, dates, status), someone left, or **my open items** changed: a vote opened, cast by me, closed or cancelled; a mandate set for me or answered; a Go card naming me posted or replaced; a record line naming me; money that changes what anyone owes | `{ "type":"home_changed" }`. Re-read `GET /home`. Still re-read home on resume. |
 | `resync` | the Server cannot replay what the client missed | `{ "type":"resync", "trip_id" }`. Re-read the room from scratch (§3.3). |
 | `error` | a `subscribe` was refused | `{ "type":"error", "trip_id", "code": "forbidden" \| "too_many_trips" }` |
 | `ping` | every 25 s | `{ "type":"ping" }`. Answer `pong`. |
@@ -378,7 +380,8 @@ am in that are not over, `past_trips` = over).
 `GET /home` → the whole screen in one read (`private, no-store`):
 
 ```json
-{ "me": PersonLite, "trips": [TripSummary], "past_trips": [PastTripSummary], "owes": [Owed], "seq_hint": 4812 }
+{ "me": PersonLite, "trips": [TripSummary], "past_trips": [PastTripSummary], "owes": [Owed],
+  "needs_you": { "items": [HomeNeedsYouItem], "total": 7 }, "seq_hint": 4812 }
 ```
 
 - `trips`: trips I am in that are not `over`, latest activity first (the trip's last change, else its creation).
@@ -392,8 +395,27 @@ am in that are not over, `past_trips` = over).
   for my flight (`"Web check-in is open"`, `features.checkin`), else a `checklist` card row of mine still `todo`/`started`
   (`"<card title> needed"`, e.g. `"Indonesia e-VOA needed"`, `features.visa`); otherwise `needs_you` with the count when it is above zero,
   `all_set` for a `planned` trip, else `collecting`.
+- `needs_you`: **every open item of mine** across my trips that are not `over`, one home card each: the same items as
+  each trip's `GET /trips/:trip/needs-you` (§4.11), each with `trip_id` and `trip_title`. At most 50 are listed; `total`
+  is the real count. Order: votes closing soonest first (a vote with no closing time after the timed ones), then
+  mandates waiting on me, then Go's cards for me, then `settle_up`, then record lines by due date (undated last), then
+  the rest (`checkin`); each group oldest `since` first. `{ "items": [], "total": 0 }` when there is nothing.
+- **Tapping a home card opens the same action in a popup**, in its trip, from what the item's `target` carries:
+
+  | `kind` | `target` | Load the popup with | Act with |
+  |---|---|---|---|
+  | `vote` | `decision_id`, `message_id` of the vote card (when there is one), `cancels_booking_id` | `GET /trips/:trip/decisions/:decision_id` (with `my_vote`) | `PUT /trips/:trip/decisions/:id/vote` |
+  | `mandate` | `decision_id`, `card_id`, `message_id` of the mandate card | `GET /trips/:trip/decisions/:decision_id` (its `mandate`) | `POST /trips/:trip/decisions/:id/mandate/confirm` or `/decline` |
+  | `card` | `card_id`, `message_id` | `GET /trips/:trip/cards` (no `kind`): the item whose `card.card_id` is `target.card_id`, its latest version | `POST /trips/:trip/cards/:card_id/actions` |
+  | `settle_up` | `transfer { to_person_id, amount_minor, currency }` | nothing to load: the payee and the amount are in `target`, the name in the item's `title` | `POST /trips/:trip/settlements`, or `POST /trips/:trip/transfers/pay-link` |
+  | `record_line` | `line_id` | `GET /trips/:trip/record`: the line with that `line_id` | — (Go or the people close it; `POST /trips/:trip/record/:line_id/undo`) |
+  | `checkin` | `booking_id` | `GET /trips/:trip/bookings/:booking_id/checkin` | the check-in sheets (§4.12) |
+
+  `message_id`, when present, also lets the app jump to the card in the room. An item can be gone by the time it is
+  tapped (someone closed the vote): the popup's own read answers that, and home re-reads on `home_changed`.
+- Titles (`TripSummary.title`, `PastTripSummary.title`, `Owed.trip_title`, `trip_title`) are the automatic name (§4.4).
 - `seq_hint`: the highest `seq` among my trips. Nothing to act on.
-- Live: `home_changed` ⇒ re-read.
+- Live: `home_changed` ⇒ re-read (§3.1: it also fires when my open items change).
 
 `GET /discover/ideas?from_city=<name ≤ 60>&limit=<1-20, default 8>` → `{ "items": [Idea], "from_city": string | null }`
 (`private, max-age=86400`). A curated table on the Server: the rows for the city asked for (else my profile `from_city`,
@@ -407,7 +429,7 @@ are signed in. There is no "Not now", no "Decline" and no list of pending invite
 
 | Method & path | Request | Answer | Errors |
 |---|---|---|---|
-| `GET /invites/:code` **public** (a valid token personalises `state`) | — | `{ "code", "state": "pending" \| "already_member" \| "expired" \| "revoked", "trip": { "trip_id", "title", "destination"?, "dates"?, "photo_url"? }, "inviter": PersonLite, "people_preview": [PersonLite], "joined_count" }`. **Read-only**: it never changes anything. `revoked` = the organizer rotated the link; `expired` = the trip is over. A link in either state shows only the trip's name and picture: `people_preview: []`, `joined_count: 0`, no `dates`. | 404 bad code; 429 above 30/min per IP address |
+| `GET /invites/:code` **public** (a valid token personalises `state`) | — | `{ "code", "state": "pending" \| "already_member" \| "expired" \| "revoked", "trip": { "trip_id", "title", "destination"?, "dates"?, "photo_url"? }, "inviter": PersonLite, "people_preview": [PersonLite], "joined_count" }`. **Read-only**: it never changes anything. `revoked` = the organizer rotated the link; `expired` = the trip is over. A link in either state shows only the trip's name and picture: `people_preview: []`, `joined_count: 0`, no `dates`. `trip.title` is the automatic name (§4.4). | 404 bad code; 429 above 30/min per IP address |
 | `POST /invites/:code/accept` | `{ "join_answers"?: JoinAnswers }` (§4.4; strict) | `200 { "trip_id", "seq", "landing": "chat" \| "trip_home" }`. `chat` when the room already has a message from Go or a person. Already a member: the trip's current `seq` and the landing, nothing else happens. Someone who left and comes back is a member again with the new answers. | 404 bad code; 409 rotated link or trip over; 422 |
 
 Accepting: Go hears `person.joined` with the answers; the Server posts the system message "Priya joined"; everyone in
@@ -439,6 +461,14 @@ amount per person in the chat, and a trip carries it as `budget_per_person_minor
 `TripView.budget.per_person_minor` and `TripSummary.budget_per_person_minor` (both absent when no budget is set). The
 other members of `TripView.budget` (`lowest`, `answered`, `of`) keep the Go contract's shape and mean nothing to the app.
 Go's in-app link `go://trips/<trip>/sheet/budget` opens the group budget editor.
+
+**The automatic name.** A trip whose stored `title` is still exactly `"New trip"` and which has a destination with a
+name is shown as `"<destination.name> - <year>"`, for example `"Hampi - 2026"`: the year of `dates.start` when dates are
+set, else the current year in India (Asia/Kolkata). It is worked out on every app read: `TripView.title`, the home
+cards (`TripSummary.title`, `PastTripSummary.title`, `Owed.trip_title`, `needs_you[].trip_title`) and the invite
+preview's `trip.title`. Nothing is stored and no event is sent; Go's `read_trip` and events keep `"New trip"`. A title a
+person or Go set is shown as it is. When the destination or dates change, `trip_changed` (and `home_changed`) bring the
+new name on the next read.
 
 **`stage`** (on `TripSummary` and `TripView`, computed from the trip's own fields, never from record lines):
 `new` = no destination **and** no dates; `planned` = destination **and** dates **and** at least one confirmed booking
@@ -695,7 +725,8 @@ booking that covers you is **reworded from the booking**: "BLR → GOX · 6E 531
 | `settle_up` | each net transfer where I owe | "Settle up with Rahul" / "₹5,800 left of your share" / "Record" | `transfer { to_person_id, amount_minor, currency }` | the transfer is gone (a settlement recorded) |
 | `checkin` | each confirmed flight covering me whose cached check-in state is open (`features.checkin`) | "Web check-in is open" / "6E 5313 · Fri 6 Nov · closes 19:40" / "Check in now" | `booking_id` | the check-in is done or closed |
 
-`TripView.needs_you_count` and the home card use this list's length. A change moves `trip_changed`; re-read.
+`TripView.needs_you_count` and the home card use this list's length. A change moves `trip_changed`; re-read. `GET /home`
+lists the same items across all my active trips in `needs_you` (§4.2), with what each popup opens.
 
 `GET /trips/:trip/cards?kind=<kind>&state=<a,b>` → `{ "items": [ { "message_id", "card": Card, "posted_at" } ] }`: the
 **latest version** of each card in the room (after `replace_card`), newest first, at most 100. `kind` is any card kind
@@ -839,8 +870,8 @@ Server filters `private` items and builds `scope=me`); the `checklist` card; `re
 | Room sets after a stay is picked | the `rooms` card: `{ card_id, kind: "rooms", fallback_text, for_person_ids?, title, option_id?, arrangements: [{ arrangement_id, label?, rooms: [{ room_type_id, label, person_ids, price_minor }], total_minor, per_person: [{ person_id, amount_minor }] }], actions }` | the room; `GET …/cards?kind=rooms`; "needs you" for `for_person_ids`. A tap is `POST …/cards/:card_id/actions` with `option_id` = the `arrangement_id` (§4.7) |
 | The group budget set by Go | `budget_per_person_minor` through Go's `update_trip` | the same fields as §4.4 |
 | Different room prices | no new shape: Go adds one expense per room, split among that room's people | §4.9 |
-| Flight options for one person | an `options` card with `for_person_ids` and `only_for_person_ids` naming them; everyone sees it, only they can act. When Go also sends `visible_to_person_ids` (Server overlay), only they see it at all | §4.6, §4.7 |
-| A message only some people can see | `visible_to_person_ids` on the `Message` (Server overlay on Go's `post_message`): each traveller's own options and booking flow, an organizer-only note | §1.7, §4.6 |
+| Flight options for one person | an `options` card with `for_person_ids` and `only_for_person_ids` naming them; everyone sees it, only they can act. When Go also sends `visible_to_person_ids` (official since 1.2), only they see it at all | §4.6, §4.7 |
+| A message only some people can see | `visible_to_person_ids` on the `Message` (official in Go's 1.2 `post_message`): each traveller's own options and booking flow, an organizer-only note | §1.7, §4.6 |
 
 **Designed, not built** (waiting for Go's team to agree its half): paying for a seat or extra baggage at check-in
 through the same `pay` card and vault as a stay (`CheckinState.extras`, `extra_ids`). Until then

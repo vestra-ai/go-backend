@@ -2,13 +2,14 @@
 // there is no "Not now" and no "Decline".
 // A link is a row of `invites`; the trip's `invite_code` mirrors the one that works, so Go's read of `invite_url` is
 // unchanged. A rotated link stays in the table and answers `state: "revoked"`.
-import type { Ctx } from '../context.js';
+import { nowOf, type Ctx } from '../context.js';
 import type { Db } from '../db/pool.js';
 import { withTx } from '../db/pool.js';
 import { Forbidden, joinTrip, newInviteCode, type JoinAnswers } from './actions.js';
 import { conflict, notFound } from './errors.js';
 import { compact, type PersonRow } from './mappers.js';
 import { activePeople, inviteUrl } from './snapshot.js';
+import { tripTitle } from './trip-title.js';
 import type { Place } from './types.js';
 
 export type InviteState = 'pending' | 'already_member' | 'expired' | 'revoked';
@@ -66,7 +67,7 @@ export async function invitePreview(ctx: Ctx, code: string, viewerId?: string): 
     state,
     trip: compact({
       trip_id: invite.trip_id,
-      title: invite.title,
+      title: tripTitle(invite, nowOf(ctx)), // the automatic name, as on the trip screen
       destination: invite.destination ?? undefined,
       dates: !closed && invite.dates_start && invite.dates_end ? { start: invite.dates_start, end: invite.dates_end } : undefined,
       photo_url: invite.destination?.photo_url ?? undefined,

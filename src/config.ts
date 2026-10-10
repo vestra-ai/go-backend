@@ -32,6 +32,11 @@ export interface Config {
    * Flip it to 1.1 the day Keshav's team ships docs/GO-CHANGES.md.
    */
   goContract: GoContract;
+  /**
+   * The key for the App team's internal routes (/internal/v1: look a person up, delete or forget them, reset a test trip),
+   * sent as `x-internal-key`. Unset: every internal route answers 404, as if it did not exist.
+   */
+  internalApiKey?: string;
 }
 
 export type GoContract = '1.0' | '1.1';
@@ -97,6 +102,7 @@ export function loadConfig(): Config {
     features: featureOverrides(),
     ...storageConfig(),
     goContract: goContractOf(),
+    internalApiKey: process.env.INTERNAL_API_KEY || undefined,
   };
 }
 

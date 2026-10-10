@@ -35,7 +35,7 @@ describe('pay by UPI', () => {
     expect(Math.abs(Date.parse(r.body.expires_at) - Date.now() - 10 * 60_000)).toBeLessThan(60_000);
     const usd = await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_usd/transfers/pay-link', { to_person_id: 'p_rahul', amount_minor: 1250 });
     expect(usd.body.upi_uri).toContain('am=12.50&cu=USD');
-    expect([(await rows(h.pool, `select seq from trips where trip_id = 't_goa'`))[0].seq, h.live.events.filter((e) => e.tripId === 't_goa').length]).toEqual([seqBefore, 2]); // no change number, no notice beyond the expense's own two (its line in the room and the money notice)
+    expect([(await rows(h.pool, `select seq from trips where trip_id = 't_goa'`))[0].seq, h.live.events.filter((e) => e.tripId === 't_goa' && e.event.kind !== 'home').length]).toEqual([seqBefore, 2]); // no change number, no notice beyond the expense's own two (its line in the room and the money notice; home notices aside)
     expect(upiPayUri({ pa: 'a@b', pn: 'A', amount_minor: 5000, currency: 'JPY', tn: 'x'.repeat(60) })).toBe(`upi://pay?pa=a%40b&pn=A&am=5000&cu=JPY&tn=${'x'.repeat(50)}`); // yen have no fraction; the note is cut to UPI's 50
   });
 

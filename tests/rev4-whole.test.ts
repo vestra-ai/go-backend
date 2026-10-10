@@ -1,6 +1,6 @@
 // Rev 4 as a whole (block B8, criteria A12 and A13). One walk through every Part 1 change, twice: against a Go set to
 // GO_CONTRACT=1.0 (no event for a re-split), where everything the Server sends or answers must be valid against Go's official
-// contract/go.json (1.1.0) ALONE, with none of the Server's own overlay, and against a Go on 1.1. And the route list the
+// contract/go.json (1.2.0) ALONE, with none of the Server's own overlay, and against a Go on 1.1. And the route list the
 // contract document is written from.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sections } from '../src/api/v1/index.js';

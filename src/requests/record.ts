@@ -2,6 +2,7 @@ import type { Ctx } from '../context.js';
 import { newId } from '../db/ids.js';
 import { once } from '../db/once.js';
 import { change } from '../db/write-change.js';
+import { publishHome } from '../domain/actions.js';
 import { conflict, invalid, notFound } from '../domain/errors.js';
 import { recordLineOf } from '../domain/mappers.js';
 import type { RecordLineRow } from '../domain/mappers.js';
@@ -28,6 +29,7 @@ export const addRecordLine = (ctx: Ctx) => async (p: any) =>
     )).rows[0]!;
     const seq = await change(db, p.trip_id, 'record.changed', { line: recordLineOf(line), change: 'added', by: { kind: 'go' } });
     await ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: ['record'] });
+    await publishHome(ctx, p.trip_id, line.person_ids); // an open line naming them is one of their open items
     return { line_id: line.line_id, seq };
   });
 
@@ -55,5 +57,6 @@ export const updateRecordLine = (ctx: Ctx) => async (p: any) =>
       by: { kind: 'go' },
     });
     await ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: ['record'] });
+    await publishHome(ctx, p.trip_id, [...current.person_ids, ...updated.person_ids]); // named before or after
     return { seq };
   });

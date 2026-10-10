@@ -206,7 +206,12 @@ export class GoSocket {
       const e = err instanceof SocketCallError ? err : new SocketCallError(500, 'internal error', 'internal');
       if (!(err instanceof SocketCallError)) this.opts.log?.(`handler ${frame.method} failed: ${(err as Error).stack ?? err}`);
       const data = e.dataCode ? { data: { code: e.dataCode, retry_after_seconds: e.retryAfterSeconds } } : {};
-      answer({ error: { code: e.code, message: e.message.slice(0, 500), ...data } });
+      const message = e.message.slice(0, 500);
+      // Every refusal is printed, in production too (there is no traffic log there): ids, the code, the field and our
+      // own message. Never the params, which carry names and words.
+      const field = (err as { field?: string | null }).field;
+      console.warn(`[go] ${frame.method} answered ${e.code} trip=${fp.trip_id ?? '-'} request=${fp.request_id ?? '-'}${field ? ` field=${field}` : ''}: ${message}`);
+      answer({ error: { code: e.code, message, ...data } });
     }
   }
 }

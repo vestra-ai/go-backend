@@ -8,13 +8,13 @@ the history of each proposal are in [`GO-CHANGES.md`](GO-CHANGES.md); the coveri
 It describes the Server as of contract rev 4 (10 Oct 2026), after the first integration run against production Go on
 10 Oct 2026 (what changed in that run is marked "since 10 Oct").
 
-**Where the shapes are defined.** Go's official contract **1.1.0**, from `vestra-ai/go-brain` `packages/contract`
-(branch `build`, commit `aff5dc1`), held in this repository as `contract/go.json` (shapes), `contract/methods.json`
+**Where the shapes are defined.** Go's official contract **1.2.0**, from `vestra-ai/go-brain` `packages/contract`
+(branch `build`, commit `a7e1f479`), held in this repository as `contract/go.json` (shapes), `contract/methods.json`
 (methods) and `contract/socket.json`; the signing and spend-approval test vectors are identical to Go's. The Server
-checks every frame against those files. `contract/extensions-1.1.json` adds only the two web check-in requests (section
-2) and one optional member, `visible_to_person_ids`, on `PostMessage` and `Message` (section 4), none of them in Go's
-contract yet. Where this page and those files differ, the files are what the Server checks
-against.
+checks every frame against those files. `contract/extensions-1.1.json` (now `1.2.0+server-checkin`) adds only the two
+web check-in requests (section 2), not in Go's contract yet. `visible_to_person_ids` on `PostMessage` and `Message` was
+the Server's overlay until 1.2 made it official. Where this page and those files differ, the files are what the Server
+checks against.
 
 ```
  App (PWA)  ──HTTP + one WebSocket──►  Server  ──one signed WebSocket, JSON-RPC 2.0──►  Go
@@ -158,6 +158,14 @@ error `-32601`; params that do not match the contract with `422`, `data.code: "i
   N being the people in the trip. `per_person_minor` is the one addition; the rest is the 1.0 shape.
 - **`read_trip` · money.** `money.transfers` is the fewest payments that square everyone up, from every expense and
   every recorded payback. Go reads it and never works it out.
+- **`read_trip` · title.** `title` is the stored title, `"New trip"` included. The app shows a trip still called "New
+  trip" as "<destination> - <year>" (for example "Hampi - 2026"); that name is worked out on the app's reads only, is
+  never stored, and is never in `read_trip`, the snapshot or an event. To name the trip, Go sends `update_trip { title }`.
+- **A test trip that was reset.** The App team can delete a test trip and everything in it (an internal route, never
+  used on real trips). Nothing more is sent about it, events not yet delivered included, and every request naming it
+  answers `404 not_found`, `read_trip` too: the trip no longer exists.
+- **Every error the Server answers is logged** on our side as one line: the method, the code, `trip_id`, `request_id`,
+  the field when known, and the message (never the params). Quote the `request_id` when asking us about a refusal.
 - **`update_trip`** accepts `budget_per_person_minor` (1.1): a whole number ≥ 1 in the trip's currency. A frame carrying
   only that field is accepted. A value different from the stored one is saved and `trip.updated changed: ["budget"]` is
   sent by Go; the same value again changes nothing and sends no event. Missing or `null` means unchanged, so Go cannot
@@ -166,16 +174,41 @@ error `-32601`; params that do not match the contract with `422`, `data.code: "i
   units go one each to the first people in joining order). `approval_id` (1.1) names the vault payment it belongs to
   and changes nothing else. **For rooms at different prices, send one `add_expense` per room**, split among that
   room's people.
-- **`request_spend_approval`** is granted only for a closed `choice` vote that has a mandate the payer confirmed, in the
-  mandate's currency, at or under its cap, refundable when the mandate requires it, with no other approval for that vote
-  still waiting, and (since 10 Oct) **no confirmed booking for that vote**: a second payment for a stay that is already
-  booked would charge twice. That case is denied with `approval_outstanding` and a `detail` starting "this vote is
-  already booked" (1.1 has no closer reason); once the booking is cancelled, a new approval can be granted. The payer is
-  always the mandate's payer. Anything else is denied with a reason.
+- **`request_spend_approval`** has two forms (1.2: `RequestSpendApproval = RequestTicketSpendApproval |
+  RequestGroupSpendApproval`). A repeat of the same `request_id` gets the same answer, token included, in both.
+  - **The group form** (`decision_id`) is granted only for a closed `choice` vote that has a mandate the payer confirmed,
+    in the mandate's currency, at or under its cap, refundable when the mandate requires it, with no confirmed booking for
+    that vote and no other approval for it still waiting. Denials, in this order: `decision_not_found`,
+    `decision_not_closed`, `no_mandate`, `payer_declined`, `payer_has_not_confirmed`, `currency_mismatch`, `over_cap`,
+    `not_refundable`, **`already_booked`** (1.2; before 1.2 this was `approval_outstanding` with a detail "this vote is
+    already booked"), `approval_outstanding`. Once the booking is cancelled a new approval can be granted. The payer is
+    always the mandate's payer.
+  - **The ticket form** (1.2: `kind: "ticket"`, `for_person_id`, no `decision_id`) is one traveller's own ticket, paid
+    by them. Your request names no card or option, so the Server grants it against **that person's own pick**: each
+    time a person taps an option on one of your `options` cards (`card_tap` with `option_id`), the Server keeps the pick
+    (who, card, option, the option's `price_minor` and `currency` as the card showed them, and when) before it sends you
+    the tap, even when you then do not answer. The checks, in this order:
+    1. `for_person_id` is in the trip now; else **`not_in_trip`**.
+    2. That person picked an option in the **last 30 minutes**, in the request's `currency`, at a price the amount fits:
+       `amount_minor ≤ ceil(price_minor × 1.05)` (fares move), or any amount when the option had no `price_minor`. The
+       most recent such pick is used. Else **`payer_has_not_confirmed`**, detail "no option picked by this traveller in
+       the last 30 minutes at this price".
+    3. No unused, uncancelled, unexpired ticket approval for the same person, card and option (a second tap on the same
+       option is the same pick); else **`approval_outstanding`**.
+    4. No confirmed booking made with a ticket approval for the same person, card and option; else **`already_booked`**.
+       A cancelled booking does not count.
+
+    The signed claims carry `for_person_id` and `kind: "ticket"`, no `decision_id`, and `payer_person_id` =
+    `for_person_id`, in Go's key order (`… trip_id, for_person_id, kind, payer_person_id …`). The Server never signs
+    claims that fail Go's `spendFormProblem`.
+- **`add_booking` with a ticket approval:** send no `decision_id`, `for_person_ids: [for_person_id]` exactly, and
+  `payer_person_id: for_person_id`; `amount_minor` at most the approval's, in its currency. Anything else is `409`
+  (`data.code: "conflict"`) and the approval stays unused. On success the approval is marked used, as for a group one.
+  A group approval cannot be used for a booking with no `decision_id`, nor a ticket approval for one with a vote.
 - **`post_message` · cards.** A card is stored exactly as sent and reaches the app unchanged, so every field below
   passes through. `mentions` and a card's `for_person_ids` put the message in those people's "needs you" list.
-- **`post_message` · `visible_to_person_ids`** (Server overlay, optional): a message only some people can see. 1 to 30
-  unique ids, each a person in the trip now (otherwise `422`, `data.code: "invalid"`, nothing stored); left out or
+- **`post_message` · `visible_to_person_ids`** (official since 1.2, optional): a message only some people can see. 1 to 30
+  ids (a repeated id is stored once), each a person in the trip now (otherwise `422`, `data.code: "invalid"`, nothing stored); left out or
   `null` means everyone, as before. Only those people see the message in the app: in the room, live, in "needs you",
   in the chat preview and unread counts; to anyone else it does not exist (a tap on its card from them never reaches
   you). Use it for each traveller's own flight options and booking flow, or a note for one person ("your ixigo money
@@ -187,7 +220,7 @@ error `-32601`; params that do not match the contract with `422`, `data.code: "i
 
 ## 5. Shapes added on top of contract 1.0
 
-All in Go's official contract 1.1.0 (section "Where the shapes are defined"), all optional, all checked when present.
+All in Go's official contract 1.2.0 (section "Where the shapes are defined"), all optional, all checked when present.
 On 10 Oct 2026 **production Go still answered contract 1.0.0** on `/v1/health`, did not send any of the rev 4 shapes
 below, and refused `expense.changed` `change: "updated"`, which is why production runs `GO_CONTRACT=1.0`.
 
@@ -199,7 +232,7 @@ below, and refused `expense.changed` `change: "updated"`, which is why productio
 | `OptionsCard` | `option_kind: "cab"` |
 | `Card` | the `checklist` card; **the `rooms` card** |
 | `CallCard` | `recording_url`, `duration_s` |
-| `Message` · `PostMessage` | `quick_replies`: up to 6 of `{ label 1-40, text? ≤ 2000 }`; `visible_to_person_ids` (1-30 unique person ids; the Server's overlay, not in Go's 1.1.0, section 4) |
+| `Message` · `PostMessage` | `quick_replies`: up to 6 of `{ label 1-40, text? ≤ 2000 }`; `visible_to_person_ids` (1-30 person ids; official since 1.2, section 4) |
 | `Attachment` | a `location` attachment; `duration_s` on a file attachment |
 | `Booking` · `AddBooking` | `details`, `return_journey`, `passengers`, `documents` |
 | `ItineraryItem` · `Day` | `person_ids`, `audience`; `Day.image_url` |
@@ -267,7 +300,7 @@ payment is required and nothing reaches Go. Proposed, and built only once Go's t
 - The approval: `request_spend_approval` today needs a vote and a confirmed mandate (section 4), which a personal seat
   or bag does not have. Proposed: a personal form naming the flight booking and the traveller in place of
   `decision_id`, granted only when that person is in the trip, the booking covers them, their check-in is submitted and
-  waiting, the currency matches and the amount is at most the total of what they chose; the payer is that traveller.
+  waiting, the currency matches and the amount is at most the total of what they chose; the payer is that traveller. 1.2's ticket form (section 4) covers a traveller's own ticket from an options card; a seat or bag at check-in would need the pick to come from the check-in instead of a card tap.
 - Questions for Go: what the signed approval should carry in place of `decision_id`; how `add_booking` or the vault
   refers to it afterwards; and what state the check-in returns to when the payment is abandoned or fails.
 

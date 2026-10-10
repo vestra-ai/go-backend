@@ -20,7 +20,7 @@ export interface MessageRow {
   quick_replies: unknown[] | null;
   /** A money line's app-only member (rev 4 §5.3): which movement and which row. Never sent to Go. */
   ledger?: Ledger | null;
-  /** Who may see the message in the app (1.1 overlay, migration 013); null is everyone. Go sees every message, with this list. */
+  /** Who may see the message in the app (official since 1.2, migration 013); null is everyone. Go sees every message, with this list. */
   visible_to_person_ids?: string[] | null;
 }
 export interface ReactionRow { message_id: string; person_id: string | null; emoji: string }
@@ -61,7 +61,7 @@ export function messageForGo(row: MessageRow, reactions: ReactionRow[]): Message
     reactions: reactions.map(reactionOf),
     card: (row.card as Message['card']) ?? undefined,
     quick_replies: row.quick_replies ?? undefined, // 1.1
-    visible_to_person_ids: row.visible_to_person_ids ?? undefined, // our 1.1 overlay: Go sees every message, and whom it is for
+    visible_to_person_ids: row.visible_to_person_ids ?? undefined, // official since 1.2: Go sees every message, and whom it is for
     withheld: row.withheld,
     deleted: row.deleted,
     edited_at: iso(row.edited_at),

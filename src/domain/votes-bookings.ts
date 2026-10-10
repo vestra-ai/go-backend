@@ -18,7 +18,7 @@ import { loadMessageForApp } from './room.js';
 import { bookedText, postSystemMessage, voteCardFor } from './system-messages.js';
 import type { Message } from './types.js';
 import { lockBooking, openDecision } from './voting.js';
-import { decisionForPerson, requireMember, type DecisionForPerson } from './actions.js';
+import { decisionForPerson, publishHomeAll, requireMember, type DecisionForPerson } from './actions.js';
 
 /**
  * A checked date-time as an instant. The contract's format admits timezone offsets Postgres refuses, leap seconds
@@ -50,6 +50,7 @@ export async function openPersonVote(ctx: Ctx, tripId: string, personId: string,
     const seq = await change(db, tripId, 'decision.opened', { decision: decisionOf(row, []), by: { kind: 'person', person_id: personId } });
     await ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['decision'] }); // before the anchor's notice: live frames in change-number order
     const message = await postSystemMessage(ctx, db, tripId, input.question, voteCardFor(row.decision_id, input.question));
+    await publishHomeAll(ctx, tripId, db); // a new open item for everyone, with its card
     return { decision_id: row.decision_id, message_id: message.message_id };
   });
   const [decision, message] = await Promise.all([
@@ -187,6 +188,7 @@ export async function proposeCancelBooking(ctx: Ctx, tripId: string, personId: s
     const seq = await change(db, tripId, 'decision.opened', { decision: decisionOf(row, []), by: by(personId) });
     await ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['decision'] }); // before the anchor's notice: live frames in change-number order
     await postSystemMessage(ctx, db, tripId, row.question, voteCardFor(row.decision_id, row.question)); // the poll's anchor in the room (D8)
+    await publishHomeAll(ctx, tripId, db);
     return { decision_id: row.decision_id, seq };
   });
 }

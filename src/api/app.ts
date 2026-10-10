@@ -7,6 +7,7 @@ import { DevAuth, type Authenticator } from './auth.js';
 import { corsHeaders } from './cors.js';
 import { handleError, newRequestId, sendError } from './errors.js';
 import { registerIdempotency } from './idempotency.js';
+import { isInternal, registerInternal } from './internal.js';
 import { sections } from './v1/index.js';
 import type { V1Deps } from './v1/shared.js';
 
@@ -24,6 +25,8 @@ export interface AppDeps {
   /** The live socket hub's settings (tests shorten the heartbeat), and a way to get hold of the hub. */
   live?: LiveHubOptions;
   onLiveHub?: (hub: LiveHub) => void;
+  /** INTERNAL_API_KEY: opens the App team's /internal/v1 routes to requests that send it. Unset, they answer 404. */
+  internalKey?: string;
 }
 
 /** True for a person whose account was deleted (people.deleted_at set). An unknown person id is not deleted: trip routes answer 403 for them. */
@@ -37,22 +40,24 @@ async function isDeleted(pool: Ctx['pool'], personId: string): Promise<boolean> 
  * error shape, sign-in and the Idempotency-Key store; the routes live one file per contract section in src/api/v1.
  * The app talks only to this, never to Go.
  */
-export function buildApp({ ctx, go, sessionSecret, auth: authenticator = new DevAuth(sessionSecret), origins = [], features = {}, live, onLiveHub }: AppDeps): FastifyInstance {
+export function buildApp({ ctx, go, sessionSecret, auth: authenticator = new DevAuth(sessionSecret), origins = [], features = {}, live, onLiveHub, internalKey }: AppDeps): FastifyInstance {
   const app = Fastify({
     logger: false,
     genReqId: () => newRequestId(),
     // Fastify answers a malformed address (bad percent-encoding) itself, before any hook runs: give that answer the
     // same headers and error shape as every other response.
     frameworkErrors: (err, req, reply) => {
-      for (const [name, value] of Object.entries(corsHeaders(origins, req.headers.origin))) reply.header(name, value);
+      if (!isInternal(req.url)) for (const [name, value] of Object.entries(corsHeaders(origins, req.headers.origin))) reply.header(name, value);
       reply.header('x-request-id', req.id);
       return sendError(reply as FastifyReply, { status: err.statusCode ?? 400, code: 'bad_request', message: err.message }, req.id);
     },
   });
 
   // The request id on every response, the cross-origin headers, and the preflight answered here, before any sign-in.
+  // The internal routes get no cross-origin headers at all, and no preflight answer: a browser page can never call them.
   app.addHook('onRequest', async (req, reply) => {
     reply.header('x-request-id', req.id);
+    if (isInternal(req.url)) return;
     const preflight = req.method === 'OPTIONS' && !!req.headers['access-control-request-method'];
     for (const [name, value] of Object.entries(corsHeaders(origins, req.headers.origin, preflight))) reply.header(name, value);
     if (preflight) return reply.code(204).send();
@@ -108,6 +113,7 @@ export function buildApp({ ctx, go, sessionSecret, auth: authenticator = new Dev
 
   const deps: V1Deps = { go, authenticator, sessionSecret, origins, features: resolveFeatures(features), live, onLiveHub };
   for (const section of sections) section.register(app, ctx, deps);
+  registerInternal(app, ctx, go, internalKey);
   // The in-process storage fake serves its own upload and download endpoints; Supabase Storage needs none.
   ctx.storage.attach?.(app);
   return app;

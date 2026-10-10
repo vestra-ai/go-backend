@@ -8,7 +8,7 @@ import { withTx } from '../db/pool.js';
 import { change } from '../db/write-change.js';
 import { check } from '../contract/index.js';
 import type { PatchMeBody, PatchTripBody, PatchTripMeBody } from '../api/bodies.js';
-import { Forbidden, requireMember as requireMemberTx } from './actions.js';
+import { Forbidden, publishHomeAll, requireMember as requireMemberTx } from './actions.js';
 import { resolveUploadUrl } from './attachments.js';
 import { invalid, notFound } from './errors.js';
 import { knowWithVibe } from './join-answers.js';
@@ -231,6 +231,8 @@ export async function updateTripDetails(ctx: Ctx, tripId: string, personId: stri
     const seq = await change(db, tripId, 'trip.updated', { by: { kind: 'person', person_id: personId }, changed });
     const kinds: ChangeKind[] = ['trip', ...(changed.includes('budget') ? ['budget' as const] : []), ...(changed.includes('itinerary') ? ['itinerary' as const] : [])];
     await ctx.live.publish(tripId, { kind: 'trip', seq, kinds });
+    // The home cards show the name and the dates, and a trip that is over moves to past_trips (or back).
+    if (['title', 'dates', 'status'].some((f) => changed.includes(f))) await publishHomeAll(ctx, tripId, db);
     return { seq };
   });
 }

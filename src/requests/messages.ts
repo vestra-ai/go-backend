@@ -3,6 +3,7 @@ import { newId } from '../db/ids.js';
 import { once } from '../db/once.js';
 import { withTx } from '../db/pool.js';
 import { nextSeq, emit } from '../db/write-change.js';
+import { publishHome, publishHomeAll } from '../domain/actions.js';
 import { noteCheckinSignal } from '../domain/checkin.js';
 import { conflict, invalid, notFound } from '../domain/errors.js';
 import { messageForGo } from '../domain/mappers.js';
@@ -18,6 +19,16 @@ const RECORD_CARD_IDS: Array<[key: string, table: string, column: string]> = [
 
 type RawCard = Record<string, unknown> & { card_id: string; kind: string; fallback_text: string; for_person_ids?: string[] };
 
+/**
+ * `home_changed` for the people a card puts on (or takes off) their home's open items: the ones it names in
+ * `for_person_ids`, before and after a replace. A vote or mandate card tells everyone: the open item now has its card.
+ */
+async function cardMovedHome(ctx: Ctx, db: import('pg').PoolClient, tripId: string, cards: Array<RawCard | null | undefined>): Promise<void> {
+  if (cards.some((c) => c?.kind === 'vote' || c?.kind === 'mandate')) return publishHomeAll(ctx, tripId, db);
+  const named = cards.flatMap((c) => (Array.isArray(c?.for_person_ids) ? c.for_person_ids : []));
+  if (named.length) await publishHome(ctx, tripId, named);
+}
+
 export const postMessage = (ctx: Ctx) => async (p: any, raw: Record<string, unknown>) =>
   once(ctx.pool, p.trip_id, p.request_id, async (db, after) => {
     const trip = await tripOf(db, p.trip_id);
@@ -25,8 +36,9 @@ export const postMessage = (ctx: Ctx) => async (p: any, raw: Record<string, unkn
     const mentions: string[] = [...new Set<string>(p.mentions ?? [])];
     await assertPeopleInTrip(db, trip.trip_id, mentions, 'mentions');
     await assertMessagesInTrip(db, trip.trip_id, [p.reply_to], 'reply_to');
-    // Our 1.1 overlay: a message only these people see in the app (1 to 30 unique ids, checked with the params), each in the trip now.
-    const visibleTo: string[] | null = p.visible_to_person_ids ?? null;
+    // Official since 1.2: a message only these people see in the app (1 to 30 ids, checked with the params), each in the trip now.
+    // 1.2 does not ask the ids to be unique, so a repeat is stored once.
+    const visibleTo: string[] | null = p.visible_to_person_ids ? [...new Set<string>(p.visible_to_person_ids)] : null;
     if (visibleTo) await assertPeopleInTrip(db, trip.trip_id, visibleTo, 'visible_to_person_ids');
 
     // The card goes in as one JSON value, exactly as it arrived (raw.card), never rebuilt from the checked params.
@@ -59,6 +71,7 @@ export const postMessage = (ctx: Ctx) => async (p: any, raw: Record<string, unkn
     // Live notices go out with the transaction, at the commit and in commit order.
     await ctx.live.publish(trip.trip_id, { kind: 'message', message_id: row.message_id, updated_seq: seq });
     await ctx.live.publish(trip.trip_id, { kind: 'typing', who: { kind: 'go' }, on: false });
+    if (card) await cardMovedHome(ctx, db, trip.trip_id, [card]);
     // A notice card linking go://…/checkin/<booking> is Go saying "check-in is open" (§4.12): its own database work, after the commit.
     if (card) after(async () => void (await noteCheckinSignal(ctx, trip.trip_id, card)));
     return { message_id: row.message_id, seq };
@@ -73,7 +86,7 @@ export const replaceCard = (ctx: Ctx) => async (p: { trip_id: string }, raw: Rec
   withTx(ctx.pool, async (db, after) => {
     await tripOf(db, p.trip_id);
     const card = raw.card as RawCard;
-    const found = await db.query('select message_id from messages where trip_id = $1 and card_id = $2 and author_kind = $3 for update', [p.trip_id, card.card_id, 'go']);
+    const found = await db.query('select message_id, card from messages where trip_id = $1 and card_id = $2 and author_kind = $3 for update', [p.trip_id, card.card_id, 'go']);
     if (!found.rows[0]) throw notFound(`card ${card.card_id} is not on one of Go's messages in trip ${p.trip_id}`);
     const seq = await nextSeq(db, p.trip_id);
     await db.query('update messages set card = $2, updated_seq = $3 where message_id = $1', [found.rows[0].message_id, JSON.stringify(card), seq]);
@@ -82,6 +95,7 @@ export const replaceCard = (ctx: Ctx) => async (p: { trip_id: string }, raw: Rec
     // And the message as it now stands, at its new seq: an earlier notice for this message that finds it already moved
     // sends nothing (src/live/ws.ts), so this one carries whatever that earlier change was (a reaction, say).
     await ctx.live.publish(p.trip_id, { kind: 'message', message_id, updated_seq: seq });
+    await cardMovedHome(ctx, db, p.trip_id, [found.rows[0].card as RawCard, card]); // named before or after the replace
     after(async () => void (await noteCheckinSignal(ctx, p.trip_id, card))); // a notice replaced into the "check-in is open" signal counts too
     return { message_id };
   });

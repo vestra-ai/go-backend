@@ -1,4 +1,4 @@
-// A message only some people can see (our 1.1 overlay: post_message `visible_to_person_ids`, migration 013), and "Former
+// A message only some people can see (post_message `visible_to_person_ids`, official since 1.2; migration 013), and "Former
 // member" on messages and reactions by people no longer in the trip. Go reads every message; every app read leaves out
 // a message whose list does not name the reader, as if it did not exist: the room in both modes, single-message answers,
 // live frames and the replay, cards, needs-you, the trip's chat preview and unread count, catch-up, home, taps, reactions,
@@ -43,14 +43,18 @@ const connect = async (who: string) => {
 };
 
 describe('post_message with visible_to_person_ids (Go)', () => {
-  it('takes 1 to 30 unique ids of people in the trip now; anything else is 422 and nothing is stored', async () => {
+  it('takes 1 to 30 ids of people in the trip now; anything else is 422 and nothing is stored', async () => {
     const before = await tripSeq('t_goa');
     expect(await goPostError('t_goa', { text: 'x', visible_to_person_ids: [] })).toMatchObject({ code: 422 });
-    expect(await goPostError('t_goa', { text: 'x', visible_to_person_ids: ['p_priya', 'p_priya'] })).toMatchObject({ code: 422 });
     expect(await goPostError('t_goa', { text: 'x', visible_to_person_ids: Array.from({ length: 31 }, (_, i) => `p_${i}`) })).toMatchObject({ code: 422 });
     const stranger = await goPostError('t_goa', { text: 'x', visible_to_person_ids: ['p_priya', 'p_nobody'] });
     expect([stranger?.code, stranger?.message]).toEqual([422, expect.stringContaining('visible_to_person_ids: p_nobody')]);
     expect(await tripSeq('t_goa')).toBe(before);
+  });
+
+  it('a repeated id is stored once: 1.2 does not ask the ids to be unique', async () => {
+    const m = await goPost('t_goa', { text: 'Just for Priya', visible_to_person_ids: ['p_priya', 'p_priya'] });
+    expect((await rows(h.pool, 'select visible_to_person_ids from messages where message_id = $1', [m.message_id]))[0].visible_to_person_ids).toEqual(['p_priya']);
   });
 
   it('stores the list; read_messages returns every message to Go, with the list; null is everyone', async () => {

@@ -1,7 +1,7 @@
-// The contract is Go's official 1.1.0 (contract/go.json, socket.json, methods.json, from vestra-ai/go-brain
-// packages/contract). The Server's overlay (contract/extensions-1.1.json) holds its web check-in additions and visible_to_person_ids, laid over
-// the official files additively: every official schema and method is exactly as Go wrote it (PostMessage and Message gain
-// one optional member, `visible_to_person_ids`, and nothing else), and anything outside the contract is still refused.
+// The contract is Go's official 1.2.0 (contract/go.json, socket.json, methods.json, from vestra-ai/go-brain
+// packages/contract). The Server's overlay (contract/extensions-1.1.json) holds only its web check-in additions, laid over
+// the official files additively: every official schema and method is exactly as Go wrote it, and anything outside the
+// contract is still refused. `visible_to_person_ids` on PostMessage and Message is official since 1.2.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { CONTRACT_EXTENSIONS_VERSION, METHODS, check, mergeAdditive, parseParams, validator } from '../src/contract/index.js';
@@ -10,8 +10,6 @@ import { hasOfficial, officialGoJson, officialMethods, simplifyNullable, validOf
 const overlay = JSON.parse(readFileSync(new URL('../contract/extensions-1.1.json', import.meta.url), 'utf8'));
 const socket = JSON.parse(readFileSync(new URL('../contract/socket.json', import.meta.url), 'utf8'));
 const CHECKIN_SCHEMAS = ['CheckinState', 'GetCheckin', 'SubmitCheckin', 'SubmitCheckinResult'];
-/** Official schemas the overlay widens with `visible_to_person_ids` (a message only some people see in the app). */
-const WIDENED = ['Message', 'PostMessage'];
 
 /** Valid against the official files alone, and against the Server's own check (official + overlay): the two must agree. */
 const passes = (schema: string, value: unknown) => [validOfficial(schema, value), check(schema, value).ok];
@@ -42,16 +40,15 @@ const settlement = { settlement_id: 'st_1', from_person_id: 'p_a', to_person_id:
 const event = (type: string, data: unknown) => ({ event_id: 'e_1', trip_id: 't', seq: 9, occurred_at: '2026-10-05T06:50:30Z', type, data });
 
 describe('the official contract and the Server\'s overlay', () => {
-  it('the official contract is 1.1.0, in all three files', () => {
-    expect(officialMethods.contract).toBe('1.1.0');
-    expect(officialGoJson.info.version).toBe('1.1.0');
-    expect(socket.info.version).toBe('1.1.0');
+  it('the official contract is 1.2.0, in all three files', () => {
+    expect(officialMethods.contract).toBe('1.2.0');
+    expect(officialGoJson.info.version).toBe('1.2.0');
+    expect(socket.info.version).toBe('1.2.0');
   });
 
-  it('the overlay holds the check-in schemas and methods, none of them already in the official files, and widens Message and PostMessage', () => {
-    expect(CONTRACT_EXTENSIONS_VERSION).toBe('1.1.0+server-checkin');
-    expect(Object.keys(overlay.schemas).sort()).toEqual([...CHECKIN_SCHEMAS, ...WIDENED].sort());
-    for (const name of WIDENED) expect(Object.keys(overlay.schemas[name].properties), name).toEqual(['visible_to_person_ids']);
+  it('the overlay holds only the check-in schemas and methods, none of them already in the official files', () => {
+    expect(CONTRACT_EXTENSIONS_VERSION).toBe('1.2.0+server-checkin');
+    expect(Object.keys(overlay.schemas).sort()).toEqual([...CHECKIN_SCHEMAS].sort());
     expect(overlay.methods.map((m: any) => m.name)).toEqual(['get_checkin', 'submit_checkin']);
     expect(CHECKIN_SCHEMAS.filter(hasOfficial)).toEqual([]);
     expect(overlay.methods.filter((m: any) => officialMethods.methods.some((o: any) => o.name === m.name))).toEqual([]);
@@ -59,15 +56,7 @@ describe('the official contract and the Server\'s overlay', () => {
 
   it('the overlay only adds: every official schema and method is exactly as Go wrote it in the Server\'s checker', () => {
     for (const [name, schema] of Object.entries(officialGoJson.components.schemas)) {
-      const official = simplifyNullable(schema) as any;
-      if (!WIDENED.includes(name)) {
-        expect(validator(name).schema, name).toEqual(official);
-        continue;
-      }
-      const ours = validator(name).schema as any;
-      const { visible_to_person_ids, ...rest } = ours.properties;
-      expect({ ...ours, properties: rest }, name).toEqual(official);
-      expect(visible_to_person_ids, name).toMatchObject({ type: 'array', minItems: 1, maxItems: 30, uniqueItems: true });
+      expect(validator(name).schema, name).toEqual(simplifyNullable(schema));
     }
     for (const m of officialMethods.methods) expect(METHODS[m.name], m.name).toEqual(m);
     expect(Object.keys(METHODS).sort()).toEqual([...officialMethods.methods.map((m: any) => m.name), 'get_checkin', 'submit_checkin'].sort());
@@ -126,6 +115,27 @@ describe('1.1 shapes against the official files', () => {
     const link = { kind: 'vault', person_id: 'p', start: 'add_documents', context: { trip_id: 't', purpose: 'visa' } };
     expect([validOfficial(METHODS.vault_link!.params, link), parseParams('vault_link', link).ok]).toEqual([true, true]);
     expect(parseParams('vault_link', { ...link, start: 'add_passport' })).toMatchObject({ ok: false });
+  });
+});
+
+describe('1.2 shapes against the official files', () => {
+  it('post_message with visible_to_person_ids validates; an empty list is refused', () => {
+    const post = { request_id: 'r', trip_id: 't', text: 'Only for you', visible_to_person_ids: ['p_a'] };
+    expect([validOfficial(METHODS.post_message!.params, post), parseParams('post_message', post).ok]).toEqual([true, true]);
+    expect(parseParams('post_message', { ...post, visible_to_person_ids: [] })).toMatchObject({ ok: false });
+  });
+
+  it('request_spend_approval has two forms, the group vote and the ticket; a ticket with no for_person_id is refused', () => {
+    const base = { request_id: 'r', trip_id: 't', amount_minor: 592000, currency: 'INR', merchant: 'IndiGo', purpose: 'Flight' };
+    const group = { ...base, decision_id: 'd_1' };
+    const ticket = { ...base, kind: 'ticket', for_person_id: 'p_a' };
+    for (const p of [group, ticket]) expect([validOfficial('RequestSpendApproval', p), parseParams('request_spend_approval', p).ok]).toEqual([true, true]);
+    expect(parseParams('request_spend_approval', { ...base, kind: 'ticket' })).toMatchObject({ ok: false });
+    expect(parseParams('request_spend_approval', base)).toMatchObject({ ok: false });
+  });
+
+  it('the denial reasons gain not_in_trip and already_booked', () => {
+    for (const reason of ['not_in_trip', 'already_booked']) expect(passes('SpendDenied', { status: 'denied', reason })).toEqual([true, true]);
   });
 });
 

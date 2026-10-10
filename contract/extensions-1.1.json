@@ -1,6 +1,6 @@
 {
-  "contract": "1.1.0+server-checkin",
-  "description": "What the Server accepts beyond Go's official contract 1.1.0 (contract/go.json, from vestra-ai/go-brain packages/contract): the web check-in requests, behind the checkin flag, and `visible_to_person_ids` on post_message and Message (a message only some people see in the app). Not yet agreed with Go's team. Laid over the official files additively.",
+  "contract": "1.2.0+server-checkin",
+  "description": "What the Server accepts beyond Go's official contract 1.2.0 (contract/go.json, from vestra-ai/go-brain packages/contract): the web check-in requests, behind the checkin flag. Not yet agreed with Go's team. Laid over the official files additively. (`visible_to_person_ids` on post_message and Message was ours until 1.2 made it official.)",
   "schemas": {
     "GetCheckin": {
       "type": "object",
@@ -141,40 +141,6 @@
       "required": [
         "status"
       ]
-    },
-    "PostMessage": {
-      "type": "object",
-      "properties": {
-        "visible_to_person_ids": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 30,
-          "uniqueItems": true,
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          },
-          "description": "Overlay: only these people see the message in the app (each a person in the trip now; 1 to 30, unique). Left out or null: everyone, as before. Go keeps reading every message."
-        }
-      }
-    },
-    "Message": {
-      "type": "object",
-      "properties": {
-        "visible_to_person_ids": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 30,
-          "uniqueItems": true,
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          },
-          "description": "Overlay: the people this message is for, as post_message set it; absent means everyone. read_messages returns it; the app only ever receives messages that name the reader."
-        }
-      }
     }
   },
   "methods": [

@@ -4,6 +4,7 @@ import { newId } from '../db/ids.js';
 import { change, nextSeq, emit } from '../db/write-change.js';
 import type { Ctx } from '../context.js';
 import type { ChangeKind } from '../live/live.js';
+import { publishHomeAll } from './actions.js';
 import { conflict, notFound } from './errors.js';
 import { bookingOf, decisionOf, recordLineOf, tallyOf } from './mappers.js';
 import type { BookingRow, DecisionRow, RecordLineRow, VoteRow } from './mappers.js';
@@ -127,6 +128,7 @@ export async function closeDecision(
   }
   // The trip notice before the pill's message notice, so the live frames arrive in change-number order.
   await ctx.live.publish(tripId, { kind: 'trip', seq: last, kinds });
+  await publishHomeAll(ctx, tripId, db); // the vote leaves everyone's open items (a mandate may follow for the payer)
   // The room's pill, "Villa Sol won · 4 votes" (decision D8): after the events.
   if (result !== null && label !== null) await postSystemMessage(ctx, db, tripId, decidedText(label, decision.tally[result] ?? 0));
   return { decision, seq };

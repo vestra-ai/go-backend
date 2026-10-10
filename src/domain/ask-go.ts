@@ -73,6 +73,9 @@ export const tapIdFor = (personId: string, appTapId: string) => `tap_${createHas
 /** What the app shows when Go does not answer a tap (app contract §4.7: a refusal, not an HTTP error). */
 export const TAP_UNANSWERED = { result: 'refused', toast: "Go didn't answer. Try again." } as const;
 
+/** The options of a stored options card, as far as a pick needs them. */
+type OptionsCardRow = { options?: Array<{ option_id: string; price_minor?: number | null; currency?: string | null }> | null };
+
 /**
  * Someone tapped a button on one of Go's cards. The press id comes from the app (so a double tap that gets through is
  * still one tap), or is made here. Go acts on each tap_id once. `payload` (GO-CHANGES 1.2: `{ trip: oneway | round }`)
@@ -90,7 +93,7 @@ export async function cardTap(
 ) {
   await requireMember(ctx.pool, tripId, personId);
   // A card on a message that is not for this person is answered as an unknown card.
-  const m = (await ctx.pool.query(`select card->>'kind' as kind, card, author_kind from messages where trip_id = $1 and card_id = $2 and author_kind in ('go', 'system') and ${visibleSql('$3')}`, [tripId, input.card_id, personId])).rows[0];
+  const m = (await ctx.pool.query(`select message_id, card->>'kind' as kind, card, author_kind from messages where trip_id = $1 and card_id = $2 and author_kind in ('go', 'system') and ${visibleSql('$3')}`, [tripId, input.card_id, personId])).rows[0];
   if (!m) throw notFound(`card ${input.card_id} is not one of Go's cards in this trip`);
   // A record card (a vote, including a person-opened poll's card on a system message) is the Server's: 422, as §4.7 says.
   if (m.author_kind !== 'go' || !GO_CARD_KINDS.has(m.kind)) throw invalid(`${m.kind} cards are handled by the Server, not Go`, 'card_id');
@@ -99,6 +102,15 @@ export async function cardTap(
   const card = m.card as { actions?: Array<{ action_id: string }> | null; suggestion?: { cta?: { action_id?: string } | null } | null };
   const buttons = new Set([...(card.actions ?? []).map((a) => a.action_id), ...(card.suggestion?.cta?.action_id ? [card.suggestion.cta.action_id] : [])]);
   if (!buttons.has(input.action_id)) throw invalid(`this card has no "${input.action_id}" button (now)`, 'action_id');
+  // 1.2's ticket approval (rev 5 H): the person picked an option, so keep the pick, with the price the card showed, before
+  // Go hears of it. Kept even when Go then does not answer: the person did pick. An option not on the card is not a pick.
+  const picked = m.kind === 'options' && input.option_id ? (m.card as OptionsCardRow).options?.find((o) => o.option_id === input.option_id) : undefined;
+  if (picked) {
+    await ctx.pool.query(
+      'insert into option_picks (pick_id, trip_id, person_id, card_id, message_id, option_id, price_minor, currency) values ($1,$2,$3,$4,$5,$6,$7,$8)',
+      [newId('pk'), tripId, personId, input.card_id, m.message_id, picked.option_id, picked.price_minor ?? null, picked.currency ?? null],
+    );
+  }
   try {
     return await askGo(go, 'card_tap', {
       tap_id: input.press_id ? tapIdFor(personId, input.press_id) : newId('tap'),

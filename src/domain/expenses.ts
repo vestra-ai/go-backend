@@ -7,7 +7,7 @@ import type { Db } from '../db/pool.js';
 import { withTx } from '../db/pool.js';
 import { change, nextSeq } from '../db/write-change.js';
 import type { LiveEvent } from '../live/live.js';
-import { Forbidden, requireMember } from './actions.js';
+import { Forbidden, publishHomeAll, requireMember } from './actions.js';
 import { invalid, notFound } from './errors.js';
 import { expenseView, loadExpenses, type ExpenseStoredRow, type ExpenseView } from './ledger.js';
 import { postExpenseAdded, postExpenseRemoved, postSplitChanged } from './ledger-lines.js';
@@ -24,11 +24,12 @@ async function expenseUpdated(ctx: Ctx, db: Db, tripId: string, data: { expense:
 
 /**
  * Money moved: the app re-reads the money view and the expenses. `kinds` is the §3 `trip_changed` list; the WebSocket
- * carries it to the app.
+ * carries it to the app. Everyone's home too: what they owe (`owes`, the settle-up items) may have changed.
  */
-export function moneyChanged(ctx: Ctx, tripId: string, seq: number): Promise<void> {
+export async function moneyChanged(ctx: Ctx, tripId: string, seq: number): Promise<void> {
   const notice = { kind: 'trip' as const, seq, kinds: ['settlement', 'expense'] };
-  return ctx.live.publish(tripId, notice as LiveEvent);
+  await ctx.live.publish(tripId, notice as LiveEvent);
+  await publishHomeAll(ctx, tripId);
 }
 
 export interface ExpenseFields {

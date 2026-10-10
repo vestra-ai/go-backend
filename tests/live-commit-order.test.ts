@@ -46,7 +46,7 @@ beforeAll(async () => {
   sender = new PgLive(slowPool(pool, 150), () => {});
   listener = new PgLive(pool, () => {});
   await listener.listen();
-  listener.subscribe((tripId, event) => got.push({ tripId, event }));
+  listener.subscribe((tripId, event) => event.kind !== 'home' && got.push({ tripId, event })); // home notices are routed by person: not part of a trip's order
 });
 afterAll(async () => {
   await listener.close();

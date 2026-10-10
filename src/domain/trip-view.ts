@@ -2,15 +2,17 @@
 // caller's own corner (`me`), the chat button's numbers, the "needs you" count and what the caller may do, all from one
 // repeatable-read transaction so `seq` matches every number. Two app-only touches that Go never receives: a cancellation
 // vote carries `cancels_booking_id`, and a booking's `passengers` and `documents` are there only for the people it covers
-// (§1.7). Everyone in the trip sees where each person travels from and when they can leave (rev 4 §5.2).
+// (§1.7). Everyone in the trip sees where each person travels from and when they can leave (rev 4 §5.2). And the title
+// is the automatic name (src/domain/trip-title.ts) while the stored one is still "New trip".
 import type pg from 'pg';
-import type { Ctx } from '../context.js';
+import { nowOf, type Ctx } from '../context.js';
 import { Forbidden, needsYouIn } from './actions.js';
 import { bookingsForPerson } from './bookings.js';
 import { invalid } from './errors.js';
 import { actorOf, compact, visibleSql } from './mappers.js';
 import { buildSnapshot } from './snapshot.js';
 import { stageOf, type Stage } from './stage.js';
+import { tripTitle } from './trip-title.js';
 import type { Actor, Person, TripSnapshot } from './types.js';
 
 export interface TripView extends TripSnapshot {
@@ -85,6 +87,7 @@ export async function readTripView(ctx: Ctx, tripId: string, personId: string, i
     const mine = snap.people.find((p) => p.person_id === personId)!;
     const view: TripView = {
       ...snap,
+      title: tripTitle({ title: snap.title, destination: snap.destination, dates_start: snap.dates?.start }, nowOf(ctx)), // "Hampi - 2026" for a trip still called "New trip"
       decisions: snap.decisions.map((d) => (cancels.has(d.decision_id) ? ({ ...d, cancels_booking_id: cancels.get(d.decision_id) } as typeof d) : d)),
       bookings,
       stage: stageOf({ destination: snap.destination, dates: snap.dates, bookings: snap.bookings }),

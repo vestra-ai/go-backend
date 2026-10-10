@@ -252,7 +252,7 @@ describe('votes', () => {
       expect(a1.result.status).toBe('approved');
       const b1 = await ok('add_booking', { ...booking({ decision_id: d1, title: 'Booked stay', ref: 'BK-1' }), approval_id: a1.result.approval_id });
       const denied = (await ask({ decision_id: d1 })).result;
-      expect(denied).toMatchObject({ status: 'denied', reason: 'approval_outstanding' });
+      expect(denied).toMatchObject({ status: 'denied', reason: 'already_booked' });
       expect(denied.detail).toMatch(/^this vote is already booked/);
       expect(check('SpendApprovalResult', denied)).toMatchObject({ ok: true });
       expect((await rows(h.pool, "select count(*)::int as n from spend_approvals where decision_id = $1", [d1]))[0].n).toBe(1); // nothing new issued
@@ -264,7 +264,7 @@ describe('votes', () => {
       const d2 = await stay('Hand-booked stay?');
       const b2 = await ok('add_booking', booking({ decision_id: d2, title: 'Hand-booked stay', ref: 'BK-2' }));
       const denied2 = (await ask({ decision_id: d2 })).result;
-      expect(denied2).toMatchObject({ status: 'denied', reason: 'approval_outstanding' });
+      expect(denied2).toMatchObject({ status: 'denied', reason: 'already_booked' });
       expect(denied2.detail).toMatch(/^this vote is already booked/);
       await ok('update_booking', { booking_id: b2.booking_id, status: 'cancelled' });
       expect((await ask({ decision_id: d2 })).result.status).toBe('approved');

@@ -1,6 +1,7 @@
 import type { Ctx } from '../context.js';
 import { once } from '../db/once.js';
 import { change } from '../db/write-change.js';
+import { publishHomeAll } from '../domain/actions.js';
 import { invalid } from '../domain/errors.js';
 import type { ChangeKind } from '../live/live.js';
 import { assertDate, assertItinerarySize } from '../domain/limits.js';
@@ -52,5 +53,7 @@ export const updateTrip = (ctx: Ctx) => async (p: any, raw: Record<string, unkno
     const seq = await change(db, p.trip_id, 'trip.updated', { by: { kind: 'go' }, changed });
     const kinds: ChangeKind[] = ['trip', ...(changed.includes('itinerary') ? (['itinerary'] as const) : []), ...(budgetMoved ? (['budget'] as const) : [])];
     await ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds });
+    // The home cards show the name (the automatic one follows the destination and the dates), the place and the dates.
+    if (['title', 'destination', 'dates'].some((f) => changed.includes(f))) await publishHomeAll(ctx, p.trip_id, db);
     return { seq };
   });

@@ -1,14 +1,15 @@
 import type { Ctx } from '../context.js';
 import { newId } from '../db/ids.js';
 import { once } from '../db/once.js';
+import type { Db } from '../db/pool.js';
 import { change, emit, nextSeq } from '../db/write-change.js';
 import { conflict, invalid, notFound } from '../domain/errors.js';
 import { insertExpense, moneyChanged } from '../domain/expenses.js';
 import { postExpenseAdded } from '../domain/ledger-lines.js';
 import { bookingOf, recordLineOf } from '../domain/mappers.js';
 import type { BookingRow, RecordLineRow } from '../domain/mappers.js';
-import { approvalProblem, issueApproval, spendCheck } from '../domain/spend.js';
-import type { ApprovalRow } from '../domain/spend.js';
+import { approvalProblem, issueApproval, spendCheck, ticketCheck, ticketPickSql } from '../domain/spend.js';
+import type { ApprovalRow, PickRow } from '../domain/spend.js';
 import { loadDecisions } from '../domain/snapshot.js';
 import { bookedText, postSystemMessage } from '../domain/system-messages.js';
 import { assertCurrency, assertPeopleInTrip, requireSomething, tripOf } from './guards.js';
@@ -110,6 +111,7 @@ export const addExpense = (ctx: Ctx) => async (p: any) =>
 export const requestSpendApproval = (ctx: Ctx) => async (p: any) =>
   once(ctx.pool, p.trip_id, p.request_id, async (db) => {
     await tripOf(db, p.trip_id);
+    if (p.kind === 'ticket') return ticketApproval(ctx, db, p);
     // Lock the vote's row so two requests for the same vote at the same moment cannot both pass the last rule.
     const locked = await db.query('select decision_id from decisions where decision_id = $1 and trip_id = $2 for update', [p.decision_id, p.trip_id]);
     const decision = locked.rowCount ? (await loadDecisions(db, p.trip_id, p.decision_id))[0] : undefined;
@@ -122,14 +124,40 @@ export const requestSpendApproval = (ctx: Ctx) => async (p: any) =>
     const paid = await db.query(`select 1 from bookings where trip_id = $1 and decision_id = $2 and status = 'confirmed' limit 1`, [p.trip_id, p.decision_id]);
     const denial = spendCheck(decision, p, (outstanding.rowCount ?? 0) > 0, new Date(), (paid.rowCount ?? 0) > 0);
     if (denial) return { status: 'denied' as const, reason: denial.reason, detail: denial.detail.slice(0, 200) };
-    const { row, answer } = issueApproval(p.trip_id, decision!, p, ctx.spendPrivateKey);
-    await db.query(
-      `insert into spend_approvals (approval_id, trip_id, request_id, decision_id, payer_person_id, amount_minor, currency, merchant, approval, expires_at)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [row.approval_id, row.trip_id, row.request_id, row.decision_id, row.payer_person_id, row.amount_minor, row.currency, row.merchant, row.approval, row.expires_at],
-    );
+    const { row, answer } = issueApproval(p.trip_id, { decision: decision! }, p, ctx.spendPrivateKey);
+    await storeApproval(db, row);
     return answer;
   });
+
+/**
+ * 1.2's ticket form: one traveller's own ticket, with no vote. Go's request names only the traveller, so it is granted
+ * against their most recent pick on one of Go's options cards (option_picks, kept by the card tap) that fits the amount
+ * and currency. Outstanding and booked are judged for the same person, card and option, not the one pick row: a person
+ * who taps the same option twice must not get two tickets.
+ */
+async function ticketApproval(ctx: Ctx, db: Db, p: any) {
+  // Lock the traveller's row so two ticket requests for them at the same moment cannot both pass the last rules.
+  const member = await db.query('select 1 from trip_people where trip_id = $1 and person_id = $2 and left_at is null for update', [p.trip_id, p.for_person_id]);
+  const pick = member.rowCount ? (await db.query<PickRow>(ticketPickSql, [p.trip_id, p.for_person_id, p.amount_minor, p.currency])).rows[0] : undefined;
+  const samePick = `join option_picks k on k.pick_id = a.pick_id where k.trip_id = $1 and k.person_id = $2 and k.card_id = $3 and k.option_id = $4`;
+  const key = pick ? [p.trip_id, pick.person_id, pick.card_id, pick.option_id] : [];
+  const outstanding = pick ? await db.query(`select 1 from spend_approvals a ${samePick} and a.used_at is null and a.cancelled_at is null and a.expires_at > now() limit 1`, key) : undefined;
+  // A cancelled booking does not count, so a ticket can be bought again after it is cancelled.
+  const booked = pick ? await db.query(`select 1 from bookings b join spend_approvals a on a.approval_id = b.approval_id ${samePick} and b.status = 'confirmed' limit 1`, key) : undefined;
+  const denial = ticketCheck((member.rowCount ?? 0) > 0, pick, (outstanding?.rowCount ?? 0) > 0, (booked?.rowCount ?? 0) > 0);
+  if (denial) return { status: 'denied' as const, reason: denial.reason, detail: denial.detail.slice(0, 200) };
+  const { row, answer } = issueApproval(p.trip_id, { ticket: { for_person_id: p.for_person_id, pick_id: pick!.pick_id } }, p, ctx.spendPrivateKey);
+  await storeApproval(db, row);
+  return answer;
+}
+
+async function storeApproval(db: Db, row: ReturnType<typeof issueApproval>['row']) {
+  await db.query(
+    `insert into spend_approvals (approval_id, trip_id, request_id, decision_id, for_person_id, pick_id, payer_person_id, amount_minor, currency, merchant, approval, expires_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+    [row.approval_id, row.trip_id, row.request_id, row.decision_id, row.for_person_id, row.pick_id, row.payer_person_id, row.amount_minor, row.currency, row.merchant, row.approval, row.expires_at],
+  );
+}
 
 /** Releases an approval Go will not use. Cancelling one that is used, cancelled or expired still answers ok. */
 export const cancelSpendApproval = (ctx: Ctx) => async (p: { request_id: string; trip_id: string; approval_id: string }) =>

@@ -76,9 +76,10 @@ const auth = config.authMode === 'supabase'
   ? new SupabaseAuth({ supabaseUrl: config.supabaseUrl!, pool, jwtSecret: config.supabaseJwtSecret })
   : new DevAuth(sessionSecret);
 console.log(`sign-in: ${config.authMode}${config.authMode === 'supabase' ? ` (${config.supabaseUrl})` : ' tokens from POST /app/v1/dev/sign-in'}`);
-const app = buildApp({ ctx, go, sessionSecret, auth, origins: config.appOrigins, features: config.features });
+const app = buildApp({ ctx, go, sessionSecret, auth, origins: config.appOrigins, features: config.features, internalKey: config.internalApiKey });
 await app.listen({ port: config.port, host: '0.0.0.0' });
 console.log(`server ${config.instance} listening on :${config.port}`);
+console.log(`internal routes (/internal/v1): ${config.internalApiKey ? 'on (INTERNAL_API_KEY is set)' : 'off'}`);
 
 const shutdown = async () => {
   setTimeout(() => process.exit(1), 10_000).unref(); // never hang on the way out

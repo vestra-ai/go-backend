@@ -41,6 +41,7 @@ Secret (pasted by a person in Railway → service → Variables → Raw Editor; 
 | `DATABASE_URL` | Supabase session pooler string with the database password |
 | `GO_SIGNING_SECRET` | the socket signing secret shared with the Go team |
 | `GO_SPEND_PRIVATE_KEY` | our Ed25519 spend key (one line with `\n`); the Go team holds its public half |
+| `INTERNAL_API_KEY` | optional: the App team's key for the internal routes (`/internal/v1`: look a person up, delete or forget any person, reset a test trip; `docs/API.md` §10), sent as `x-internal-key`. Generate with `openssl rand -hex 32` and share it with the App team by one-time link. **Unset: every internal route answers `404`.** Rotate it by changing the variable (a redeploy) |
 | `SUPABASE_SECRET_KEY` | the project's secret key (`sb_secret_…`, Project Settings → API Keys): it signs Storage upload and download links. **With it set, `STORAGE` defaults to `supabase`**; without it the server keeps files in memory, warns at start, and loses them on every redeploy |
 
 Feature flags (`1` or `0`; unset = the default from `src/config.ts`). Each is served to the app by `GET /app/v1/config`
@@ -77,7 +78,9 @@ bypass in the code and nothing to remove later.
 
 - Build log: Node 22 and pnpm detected; the install succeeded.
 - Deploy log: `sign-in: supabase (…)`, `storage: supabase bucket go-files` (not the `STORAGE=memory` warning),
-  `go socket open`, `listening`.
+  `go socket open`, `listening`, and `internal routes (/internal/v1): on` or `off` as intended.
+- Every error the server answers Go with is a `warn` line: `[go] <method> answered <code> trip=… request=… field=…: <message>`.
+  Search the deploy log for `[go] ` and `answered` when Go reports a refusal. Internal calls are `[internal] …` lines.
 - `GET /health` and `GET /app/v1/health` return `{"ok":true,"go":true}`.
 - `GET /app/v1/config` returns the contract version and the `features` you expect.
 - `GET /app/v1/me` with no token returns `401` with the one error shape and an `X-Request-Id` header.
@@ -86,4 +89,5 @@ bypass in the code and nothing to remove later.
   of a small JPEG to it succeeds; a message naming the `upload_id` comes back with a signed `url` that loads.
 - From the web app's origin, a preflight (`OPTIONS` with `Access-Control-Request-Method`) answers `204` with
   `access-control-allow-headers: authorization, content-type, idempotency-key`.
+- `GET /internal/v1/people?email=x` with no `x-internal-key` answers `404`; with the key (when set), `404` for an unknown email.
 - Locally, `pnpm check:supabase` is still green.

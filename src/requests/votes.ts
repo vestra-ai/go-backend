@@ -5,6 +5,7 @@ import { change } from '../db/write-change.js';
 import { conflict, invalid } from '../domain/errors.js';
 import { decisionOf } from '../domain/mappers.js';
 import type { DecisionRow } from '../domain/mappers.js';
+import { publishHome, publishHomeAll } from '../domain/actions.js';
 import { closeDecision, lockDecision } from '../domain/voting.js';
 import { assertCurrency, assertPeopleInTrip, tripOf } from './guards.js';
 
@@ -24,6 +25,7 @@ export const openVote = (ctx: Ctx) => async (p: any, raw: Record<string, unknown
     // The vote is not in the room yet: Go posts the message with the vote card next.
     const seq = await change(db, p.trip_id, 'decision.opened', { decision: decisionOf(row, []), by: { kind: 'go' } });
     await ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: ['decision'] });
+    await publishHomeAll(ctx, p.trip_id, db); // a new open item for everyone
     return { decision_id: row.decision_id, seq };
   });
 
@@ -55,5 +57,7 @@ export const setMandate = (ctx: Ctx) => async (p: any) =>
     await db.query('update decisions set mandate = $2 where decision_id = $1', [p.decision_id, JSON.stringify(mandate)]);
     const seq = await change(db, p.trip_id, 'mandate.set', { decision_id: p.decision_id, mandate });
     await ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: ['mandate'] });
+    // The payer has a mandate to answer; a payer it replaced no longer does.
+    await publishHome(ctx, p.trip_id, [p.payer_person_id, ...(decision.mandate?.payer_person_id ? [decision.mandate.payer_person_id] : [])]);
     return { seq };
   });

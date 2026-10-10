@@ -532,6 +532,7 @@ export interface components {
             reactions: components["schemas"]["Reaction"][];
             card?: components["schemas"]["Card"] | null;
             quick_replies?: components["schemas"]["QuickReply"][] | null;
+            visible_to_person_ids?: string[] | null;
             withheld: boolean;
             deleted: boolean;
             edited_at?: string | null;
@@ -551,6 +552,7 @@ export interface components {
             reply_to?: string | null;
             mentions?: string[] | null;
             quick_replies?: components["schemas"]["QuickReply"][] | null;
+            visible_to_person_ids?: string[] | null;
         };
         PostMessageResult: {
             message_id: string;
@@ -1325,16 +1327,29 @@ export interface components {
             expense_id: string;
             seq: number;
         };
-        RequestSpendApproval: {
+        RequestGroupSpendApproval: {
             request_id: string;
             trip_id: string;
-            decision_id: string;
             amount_minor: number;
             currency: string;
             merchant: string;
             purpose: string;
             refundable_until?: string | null;
+            decision_id: string;
         };
+        RequestTicketSpendApproval: {
+            request_id: string;
+            trip_id: string;
+            amount_minor: number;
+            currency: string;
+            merchant: string;
+            purpose: string;
+            refundable_until?: string | null;
+            /** @constant */
+            kind: "ticket";
+            for_person_id: string;
+        };
+        RequestSpendApproval: components["schemas"]["RequestTicketSpendApproval"] | components["schemas"]["RequestGroupSpendApproval"];
         CancelSpendApproval: {
             request_id: string;
             trip_id: string;
@@ -1343,7 +1358,7 @@ export interface components {
             reason: "payment_failed" | "payer_declined" | "price_changed" | "expired" | "other";
         };
         /** @enum {string} */
-        SpendDenialReason: "decision_not_found" | "decision_not_closed" | "no_mandate" | "payer_has_not_confirmed" | "payer_declined" | "over_cap" | "currency_mismatch" | "not_refundable" | "approval_outstanding";
+        SpendDenialReason: "decision_not_found" | "decision_not_closed" | "no_mandate" | "payer_has_not_confirmed" | "payer_declined" | "over_cap" | "currency_mismatch" | "not_refundable" | "approval_outstanding" | "not_in_trip" | "already_booked";
         SpendApproved: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -1550,7 +1565,7 @@ export interface components {
                 } | null;
             };
         };
-        /** @description What the Server signs. exp is at most 600 seconds after iat. */
+        /** @description What the Server signs. exp is at most 600 seconds after iat. A group approval carries decision_id; 1.2's ticket approval carries for_person_id (and kind "ticket") instead, and its payer is that person. */
         SpendApprovalClaims: {
             /** @constant */
             iss: "server";
@@ -1558,7 +1573,9 @@ export interface components {
             aud: "go-vault";
             jti: string;
             trip_id: string;
-            decision_id: string;
+            decision_id?: string | null;
+            for_person_id?: string | null;
+            kind?: "ticket" | null;
             payer_person_id: string;
             amount_minor: number;
             currency: string;

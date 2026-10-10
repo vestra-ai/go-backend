@@ -131,7 +131,7 @@ describe('adding a booking', () => {
     // The person's booking for the vote is confirmed, so the vote is already booked: a second payment would charge twice.
     const ask = (request_id: string) => h.go.call('request_spend_approval', { request_id, trip_id: 't_goa', decision_id, amount_minor: 5420000, currency: 'INR', merchant: 'ixigo: Villa Sol', purpose: 'Villa Sol' });
     const denied = await ask('rq_s1');
-    expect([r.status, denied.result.status, denied.result.reason]).toEqual([201, 'denied', 'approval_outstanding']);
+    expect([r.status, denied.result.status, denied.result.reason]).toEqual([201, 'denied', 'already_booked']);
     expect(denied.result.detail).toMatch(/^this vote is already booked/);
     expect(await rows(h.pool, 'select kind, booking_id from record_lines where decision_id = $1', [decision_id])).toEqual([{ kind: 'booked', booking_id: r.body.booking_id }]); // the decided line became the booked line
     // Once that booking is cancelled, the vote can be booked again: Go's approval goes through.

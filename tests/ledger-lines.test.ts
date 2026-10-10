@@ -31,7 +31,7 @@ describe('money lines in the room', () => {
       { seq: r.body.seq + 1, kind: 'system', text: 'Priya added Airport cab · ₹1,700 · split 4 ways', ledger: { kind: 'expense_added', expense_id: cab } },
       { seq: other.body.seq + 1, kind: 'system', text: 'Priya added Lunch · ₹400 · paid by Kabir · split 2 ways', ledger: { kind: 'expense_added', expense_id: other.body.expense_id } },
     ]);
-    expect(h.live.events.slice(mark, mark + 2).map((e) => e.event)).toEqual([{ kind: 'trip', seq: r.body.seq, kinds: ['settlement', 'expense'] }, { kind: 'message', message_id: expect.any(String), updated_seq: r.body.seq + 1 }]); // change numbers reach the app in order
+    expect(h.live.events.slice(mark).filter((e) => e.event.kind !== 'home').slice(0, 2).map((e) => e.event)).toEqual([{ kind: 'trip', seq: r.body.seq, kinds: ['settlement', 'expense'] }, { kind: 'message', message_id: expect.any(String), updated_seq: r.body.seq + 1 }]); // change numbers reach the app in order
   });
 
   it('fixing a split and removing an expense each post their line; a new note alone posts none', async () => {

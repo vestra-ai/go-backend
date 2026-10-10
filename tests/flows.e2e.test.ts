@@ -408,7 +408,7 @@ describe('F4. From a vote to a booking (guides: "From a vote to a booking", "Mon
 
   it('branch: a booked vote gets no second approval (it would charge twice) until its booking is cancelled', async () => {
     const again = await spend('rq_spend_booked');
-    expect(again).toMatchObject({ status: 'denied', reason: 'approval_outstanding', detail: expect.stringMatching(/^this vote is already booked/) });
+    expect(again).toMatchObject({ status: 'denied', reason: 'already_booked', detail: expect.stringMatching(/^this vote is already booked/) });
     expect(check('SpendApprovalResult', again)).toMatchObject({ ok: true });
     // The stay falls through: Go cancels the booking, and the vote can be booked again (the branches below need that).
     const [b] = await rows(h.pool, "select booking_id from bookings where trip_id = $1 and decision_id = $2 and status = 'confirmed'", [trip, villa]);

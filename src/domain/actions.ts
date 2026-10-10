@@ -6,7 +6,7 @@ import type { Ctx } from '../context.js';
 import { check } from '../contract/index.js';
 import { newId } from '../db/ids.js';
 import { once } from '../db/once.js';
-import { withTx } from '../db/pool.js';
+import { openTx, withTx } from '../db/pool.js';
 import type { ChangeKind } from '../live/live.js';
 import { change, emit, nextSeq } from '../db/write-change.js';
 import type { Db } from '../db/pool.js';
@@ -226,6 +226,15 @@ export async function publishHome(ctx: Ctx, tripId: string, personIds: string[])
   for (const person_id of new Set(personIds)) await ctx.live.publish(tripId, { kind: 'home', person_id });
 }
 
+/**
+ * `home_changed` for everyone in the trip now: something on all their home screens may have moved (a vote opened or
+ * closed, money that changes what they owe, the trip's name). Read on the transaction's own connection when there is one.
+ */
+export async function publishHomeAll(ctx: Ctx, tripId: string, db: Db = openTx()?.db ?? ctx.pool): Promise<void> {
+  const { rows } = await db.query('select person_id from trip_people where trip_id = $1 and left_at is null', [tripId]);
+  await publishHome(ctx, tripId, rows.map((r) => r.person_id as string));
+}
+
 // ---------------------------------------------------------------- messages
 
 /** True when the text @mentions Go or starts by addressing it, or the message replies to Go or asks Go about a message. */
@@ -413,6 +422,7 @@ export async function castVote(ctx: Ctx, tripId: string, personId: string, decis
     const votes = await votesOf(db, decisionId);
     const seq = await change(db, tripId, 'decision.voted', votedEvent(d, votes, personId, flexible ? { flexible: true } : { option_index: optionIndex! }));
     await ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['decision'] });
+    await publishHome(ctx, tripId, [personId]); // the vote leaves their home's open items (closing it below tells everyone)
     const closed = votes.length >= d.of_count ? await closeDecision(ctx, db, tripId, decisionId, 'everyone_voted') : null;
     return closed ? { ...closed.decision, my_vote: myVoteOf(votes, personId) } : decisionForPerson(d, votes, personId);
   });
@@ -429,6 +439,7 @@ export async function retractVote(ctx: Ctx, tripId: string, personId: string, de
     const votes = await votesOf(db, decisionId);
     const seq = await change(db, tripId, 'decision.voted', votedEvent(d, votes, personId, { retracted: true }));
     await ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['decision'] });
+    await publishHome(ctx, tripId, [personId]); // the vote is back among their open items
     return decisionForPerson(d, votes, personId);
   });
 }
@@ -458,6 +469,7 @@ export async function cancelDecision(ctx: Ctx, tripId: string, personId: string,
     const row = (await db.query<DecisionRow>(`update decisions set status = 'cancelled' where decision_id = $1 returning *`, [decisionId])).rows[0]!;
     const seq = await change(db, tripId, 'decision.cancelled', { decision_id: decisionId, by: { kind: 'person', person_id: personId } });
     await ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['decision'] });
+    await publishHomeAll(ctx, tripId, db); // the vote leaves the open items of everyone who had not voted
     return decisionForPerson(row, await votesOf(db, decisionId), personId);
   });
 }
@@ -474,6 +486,7 @@ export async function answerMandate(ctx: Ctx, tripId: string, personId: string, 
     await db.query('update decisions set mandate = $2 where decision_id = $1', [decisionId, JSON.stringify(next)]);
     const seq = await change(db, tripId, answer === 'confirm' ? 'mandate.confirmed' : 'mandate.declined', { decision_id: decisionId, person_id: personId });
     await ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['mandate'] });
+    await publishHome(ctx, tripId, [personId]); // answered: it leaves the payer's open items
     return next as Mandate;
   });
 }
@@ -514,6 +527,7 @@ export async function undoRecordLine(ctx: Ctx, tripId: string, personId: string,
     const line = (await db.query<RecordLineRow>(`update record_lines set status = 'undone', updated_at = now() where line_id = $1 returning *`, [lineId])).rows[0]!;
     const seq = await change(db, tripId, 'record.changed', { line: recordLineOf(line), change: 'undone', by: { kind: 'person', person_id: personId } });
     await ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['record'] });
+    await publishHome(ctx, tripId, line.person_ids); // an open line naming them leaves their open items
     return recordLineOf(line);
   });
 }
@@ -527,6 +541,7 @@ export async function redoRecordLine(ctx: Ctx, tripId: string, personId: string,
     const line = (await db.query<RecordLineRow>(`update record_lines set status = 'active', updated_at = now() where line_id = $1 returning *`, [lineId])).rows[0]!;
     const seq = await change(db, tripId, 'record.changed', { line: recordLineOf(line), change: 'updated', by: { kind: 'person', person_id: personId } });
     await ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['record'] });
+    await publishHome(ctx, tripId, line.person_ids); // and comes back
     return recordLineOf(line);
   });
 }
