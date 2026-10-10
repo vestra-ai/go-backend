@@ -26,7 +26,7 @@ const goCall = async (method: string, params: Record<string, unknown>) => {
 describe('the first run', () => {
   it('a new person\'s home is empty: me, no trips, no invites, no past trips, seq_hint 0; never cached', async () => {
     const r = await home(asha);
-    expect([r.status, r.headers['cache-control'], r.body]).toEqual([200, 'private, no-store', { me: { person_id: asha.id, name: 'Asha', photo_url: 'https://lh3.googleusercontent.com/a/test-photo' }, trips: [], invites: [], past_trips: [], seq_hint: 0 }]);
+    expect([r.status, r.headers['cache-control'], r.body]).toEqual([200, 'private, no-store', { me: { person_id: asha.id, name: 'Asha', photo_url: 'https://lh3.googleusercontent.com/a/test-photo' }, trips: [], invites: [], past_trips: [], owes: [], seq_hint: 0 }]);
     expect((await t.api(null, 'GET', v1('/home'))).status).toBe(401);
   });
 

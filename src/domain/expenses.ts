@@ -10,6 +10,7 @@ import type { LiveEvent } from '../live/live.js';
 import { Forbidden, requireMember } from './actions.js';
 import { invalid, notFound } from './errors.js';
 import { expenseView, loadExpenses, type ExpenseStoredRow, type ExpenseView } from './ledger.js';
+import { postExpenseAdded, postExpenseRemoved, postSplitChanged } from './ledger-lines.js';
 import { readOnly } from './money-view.js';
 
 /**
@@ -89,6 +90,12 @@ async function mayChange(db: Db, tripId: string, row: ExpenseStoredRow, personId
   if (!allowed) throw new Forbidden(`only the person responsible for this expense can ${what} it`);
 }
 
+/** The same people, whatever the order and however often an id is repeated. */
+const sameIds = (a: string[], b: string[]) => {
+  const [x, y] = [new Set(a), new Set(b)];
+  return x.size === y.size && [...x].every((id) => y.has(id));
+};
+
 // ---------------------------------------------------------------- what people do
 
 export interface NewExpense {
@@ -111,6 +118,7 @@ export async function createExpense(ctx: Ctx, tripId: string, personId: string, 
     const expense = await insertExpense(db, tripId, fields);
     const seq = await change(db, tripId, 'expense.changed', { expense, change: 'added', by: { kind: 'person', person_id: personId } });
     after(() => moneyChanged(ctx, tripId, seq));
+    await postExpenseAdded({ ctx, db, after, tripId }, expense, { kind: 'person', person_id: personId }); // the room's line: the next change number, no event
     return { ...expense, seq };
   });
 }
@@ -124,6 +132,7 @@ export async function removeExpense(ctx: Ctx, tripId: string, personId: string, 
     const removed = (await db.query<ExpenseStoredRow>('update expenses set removed_at = now() where expense_id = $1 returning *', [expenseId])).rows[0]!;
     const seq = await change(db, tripId, 'expense.changed', { expense: expenseView(removed), change: 'removed', by: { kind: 'person', person_id: personId } });
     after(() => moneyChanged(ctx, tripId, seq));
+    await postExpenseRemoved({ ctx, db, after, tripId }, expenseView(removed), personId);
     return { seq };
   });
 }
@@ -145,6 +154,8 @@ export async function updateExpenseSplit(ctx: Ctx, tripId: string, personId: str
     const expense = expenseView(updated);
     const seq = await expenseUpdated(ctx, db, tripId, { expense, change: 'updated', by: { kind: 'person', person_id: personId }, by_person_id: personId });
     after(() => moneyChanged(ctx, tripId, seq));
+    // The room's line, only when the split itself moved (a new note alone is not a money movement).
+    if (!sameIds(row.split_person_ids, ids)) await postSplitChanged({ ctx, db, after, tripId }, expense, personId);
     return { ...expense, seq };
   });
 }

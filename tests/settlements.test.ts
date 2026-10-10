@@ -31,7 +31,7 @@ describe('recording a payment', () => {
     expect(r.status).toBe(201);
     expect(r.body.settlement).toEqual({ settlement_id: expect.stringMatching(/^st_/), from_person_id: 'p_priya', to_person_id: 'p_rahul', amount_minor: 15000, currency: 'INR', method: 'upi', note: 'part of dinner', created_at: expect.any(String) });
     expect([owed(r.body.transfers, 'p_priya', 'p_rahul'), owed(r.body.transfers, 'p_arjun', 'p_rahul'), typeof r.body.seq]).toEqual([5000, 20000, 'number']);
-    expect(h.live.events.slice(mark).map((e) => e.event)).toEqual([{ kind: 'trip', seq: r.body.seq, kinds: ['settlement', 'expense'] }]);
+    expect(h.live.events.slice(mark).map((e) => e.event)).toEqual([{ kind: 'trip', seq: r.body.seq, kinds: ['settlement', 'expense'] }, { kind: 'message', message_id: expect.any(String), updated_seq: r.body.seq + 1 }]); // the money notice, then the room's line: change numbers in order
     expect(owed(await goTransfers(), 'p_priya', 'p_rahul')).toBe(5000); // the same maths for Go
     // One event, written with the payment (the outbox row carries the payment's own change number), valid against the contract.
     expect((await rows(h.pool, `select body->>'type' as type from outbox where trip_id = $1 and seq = $2`, ['t_goa', r.body.seq])).map((x) => x.type)).toEqual(['settlement.recorded']);
@@ -40,7 +40,7 @@ describe('recording a payment', () => {
     expect(e.data).toEqual({ settlement_id: first, from_person_id: 'p_priya', to_person_id: 'p_rahul', amount_minor: 15000, currency: 'INR', method: 'upi', note: 'part of dinner', status: 'confirmed', recorded_at: r.body.settlement.created_at, confirmed_at: r.body.settlement.created_at });
     expect([recorded().length, check('Event', e).ok, e.seq]).toEqual([1, true, r.body.seq]);
     const money = await t.api(t.as('p_priya'), 'GET', `${trip}/money`);
-    expect([money.headers['cache-control'], money.body.me.i_owe, money.body.seq]).toEqual(['private, no-store', [{ from_person_id: 'p_priya', to_person_id: 'p_rahul', amount_minor: 5000, currency: 'INR' }], r.body.seq]);
+    expect([money.headers['cache-control'], money.body.me.i_owe, money.body.seq]).toEqual(['private, no-store', [{ from_person_id: 'p_priya', to_person_id: 'p_rahul', amount_minor: 5000, currency: 'INR' }], r.body.seq + 1]); // the line took the next change number
   });
 
   it('a retry with the same Idempotency-Key returns the first answer and records nothing more: one settlement, one event', async () => {

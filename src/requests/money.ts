@@ -4,6 +4,7 @@ import { once } from '../db/once.js';
 import { change, emit, nextSeq } from '../db/write-change.js';
 import { conflict, invalid, notFound } from '../domain/errors.js';
 import { insertExpense, moneyChanged } from '../domain/expenses.js';
+import { postExpenseAdded } from '../domain/ledger-lines.js';
 import { bookingOf, recordLineOf } from '../domain/mappers.js';
 import type { BookingRow, RecordLineRow } from '../domain/mappers.js';
 import { approvalProblem, issueApproval, spendCheck } from '../domain/spend.js';
@@ -97,6 +98,7 @@ export const addExpense = (ctx: Ctx) => async (p: any) =>
     const expense = await insertExpense(db, p.trip_id, { ...p, booking_id: p.booking_id ?? null });
     const seq = await change(db, p.trip_id, 'expense.changed', { expense, change: 'added', by: { kind: 'go' } });
     after(() => moneyChanged(ctx, p.trip_id, seq));
+    await postExpenseAdded({ ctx, db, after, tripId: p.trip_id }, expense, { kind: 'go' }); // the room's line, for Go's expenses too
     return { expense_id: expense.expense_id, seq };
   });
 

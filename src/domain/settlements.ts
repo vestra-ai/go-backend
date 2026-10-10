@@ -9,6 +9,7 @@ import { requireMember } from './actions.js';
 import { invalid } from './errors.js';
 import { moneyChanged } from './expenses.js';
 import { settlementOf, type Settlement, type SettlementRow } from './ledger.js';
+import { postPayback } from './ledger-lines.js';
 import { compact, iso } from './mappers.js';
 import { tripMoney, type Transfer } from './money-view.js';
 
@@ -44,8 +45,9 @@ export async function recordSettlement(ctx: Ctx, tripId: string, personId: strin
       settlement_id: row.settlement_id, from_person_id: row.from_person_id, to_person_id: row.to_person_id, amount_minor: row.amount_minor,
       currency: row.currency, method: row.method, note: row.note ?? undefined, status: 'confirmed', recorded_at: recordedAt, confirmed_at: recordedAt,
     }));
-    const { money } = await tripMoney(db, tripId);
     after(() => moneyChanged(ctx, tripId, seq));
+    await postPayback({ ctx, db, after, tripId }, settlementOf(row)); // the room's line: the next change number, no event
+    const { money } = await tripMoney(db, tripId);
     return { settlement: settlementOf(row), transfers: money.transfers, seq };
   });
 }

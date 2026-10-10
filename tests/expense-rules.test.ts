@@ -94,7 +94,7 @@ describe('with a Go that speaks contract 1.0', () => {
     const paid = await o.api(o.as('p_arjun'), 'POST', `${trip}/settlements`, { to_person_id: 'p_priya', amount_minor: 10000, currency: 'INR', method: 'upi' });
     await old.flush();
     const sent = old.go.events.filter((x) => x.trip_id === 't_goa').map((x) => [x.type, x.seq, (x.data as any).change]);
-    expect([fixed.status, fixed.body.seq, paid.status]).toEqual([200, e.seq + 1, 201]);
+    expect([fixed.status, fixed.body.seq, paid.status]).toEqual([200, e.seq + 2, 201]); // +1 was the room's line for the new expense
     expect(sent).toEqual([['expense.changed', e.seq, 'added'], ['settlement.recorded', paid.body.seq, undefined]]); // nothing for the fixed split
     expect(old.go.refused).toEqual([]);
   });

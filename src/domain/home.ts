@@ -46,11 +46,16 @@ export interface PastTripSummary {
   all_settled: boolean;
 }
 
+/** One debt of mine: whom, how much, in which trip. `to` is the stored person, even when they have left the trip. */
+export interface Owed { trip_id: string; trip_title: string; to: PersonLite; amount_minor: number; currency: string }
+
 export interface Home {
   me: PersonLite;
   trips: TripSummary[];
   invites: InviteSummary[];
   past_trips: PastTripSummary[];
+  /** What I owe right now: every transfer where I am the one who pays, across my trips (active first, then the ones that are over). */
+  owes: Owed[];
   /** The highest change number among my trips: a hint for the live layer, nothing the app must act on. */
   seq_hint: number;
 }
@@ -108,10 +113,14 @@ export async function homeFor(ctx: Ctx, personId: string): Promise<Home> {
 
   const active: TripSummary[] = [];
   const past: PastTripSummary[] = [];
+  const owedIn = { active: [] as Owed[], past: [] as Owed[] };
   for (const t of trips) {
     const people = await activePeople(db, t.trip_id);
+    const money = moneyOf(await loadExpenses(db, t.trip_id), people.map((p) => p.person_id), t.currency, t.plan_minor, await loadSettlements(db, t.trip_id));
+    for (const x of money.transfers.filter((x) => x.from_person_id === personId)) {
+      (t.status === 'over' ? owedIn.past : owedIn.active).push({ trip_id: t.trip_id, trip_title: t.title, to: { person_id: x.to_person_id, name: '' }, amount_minor: x.amount_minor, currency: x.currency });
+    }
     if (t.status === 'over') {
-      const money = moneyOf(await loadExpenses(db, t.trip_id), people.map((p) => p.person_id), t.currency, t.plan_minor, await loadSettlements(db, t.trip_id));
       past.push(compact({ trip_id: t.trip_id, title: t.title, photo_url: t.destination?.photo_url ?? undefined, dates: datesOf(t), people_count: people.length, all_settled: money.transfers.length === 0 }));
       continue;
     }
@@ -155,11 +164,18 @@ export async function homeFor(ctx: Ctx, personId: string): Promise<Home> {
     });
   }
 
+  // The people I owe, as they are stored: someone who left a trip is still owed, and still has a name and a face.
+  const owes = [...owedIn.active, ...owedIn.past];
+  const payees = owes.length ? (await db.query('select person_id, name, photo_url from people where person_id = any($1)', [[...new Set(owes.map((o) => o.to.person_id))]])).rows : [];
+  const payeeOf = new Map(payees.map((p) => [p.person_id as string, personLite(p)]));
+  for (const o of owes) o.to = payeeOf.get(o.to.person_id) ?? { person_id: o.to.person_id, name: 'Former member' };
+
   return {
     me: personLite(me),
     trips: active,
     invites,
     past_trips: past,
+    owes,
     seq_hint: trips.reduce((max, t) => Math.max(max, t.seq), 0),
   };
 }

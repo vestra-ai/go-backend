@@ -58,7 +58,7 @@ it('the whole feature in one walk from the web app\'s origin: every change takes
     'expense.changed:added',
   ]);
   expect([snap.bookings[0].status, snap.title, snap.status, snap.people.find((p: any) => p.person_id === 'p_rahul').name, snap.people.find((p: any) => p.person_id === 'p_priya').has_upi]).toEqual(['cancelled', 'Goa, again', 'booked', 'Rahul K', true]);
-  expect([events.every((e) => check('Event', e).ok), check('TripSnapshot', snap).ok, snap.seq === events.at(-1).seq]).toEqual([true, true, true]);
+  expect([events.every((e) => check('Event', e).ok), check('TripSnapshot', snap).ok, snap.seq === Math.max(events.at(-1).seq, pills.at(-1)!)]).toEqual([true, true, true]); // the last change is the room's line for the expense
   // Go reads only the lowest band (with one answer, the band is that answer: by design), and no event carries an amount or a person for it.
   expect([/rahul@upi|priya@okbank|\+91p_|@mail\.test/.test(seen), /1234567|2345678/.test(JSON.stringify(events)), snap.budget]).toEqual([false, false, { lowest: { min_minor: 1234567, max_minor: 2345678, currency: 'INR' }, answered: 1, of: 5 }]);
   expect([money.body.me.i_owe, money.body.me.spent_minor, link.body.upi_uri]).toEqual([[{ from_person_id: 'p_priya', to_person_id: 'p_rahul', amount_minor: 20000, currency: 'INR' }], 20000, 'upi://pay?pa=rahul%40upi&pn=Rahul%20K&am=200.00&cu=INR&tn=Goa%2C%20again%20%C2%B7%20settle%20up']);

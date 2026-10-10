@@ -1,5 +1,6 @@
 // Rows from our database as the contract's objects, the way Go may see them.
 import { isContractUri } from '../contract/index.js';
+import type { Ledger } from './ledger-lines.js';
 import type { Actor, Booking, Decision, Expense, Mandate, Message, Person, Reaction, RecordLine } from './types.js';
 
 export const iso = (d: Date | string | null | undefined): string | undefined =>
@@ -17,6 +18,8 @@ export interface MessageRow {
   edited_at: Date | null; sent_at: Date;
   /** Go's chips under its message (GO-CHANGES 1.3), as sent; null when none. */
   quick_replies: unknown[] | null;
+  /** A money line's app-only member (rev 4 §5.3): which movement and which row. Never sent to Go. */
+  ledger?: Ledger | null;
 }
 export interface ReactionRow { message_id: string; person_id: string | null; emoji: string }
 
@@ -183,6 +186,7 @@ export function messageForApp(row: MessageRow, reactions: ReactionRow[]): Messag
     reactions: reactions.map(reactionOf),
     card: (row.card as Message['card']) ?? undefined,
     quick_replies: row.quick_replies ?? undefined, // 1.1 overlay: not in the generated 1.0 types yet
+    ledger: row.deleted ? undefined : row.ledger ?? undefined, // app only: `messageForGo` has no such member
     withheld: false, // `withheld` is only for Go
     deleted: row.deleted,
     edited_at: iso(row.edited_at),

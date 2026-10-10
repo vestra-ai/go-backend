@@ -117,7 +117,7 @@ export async function catchUp(ctx: Ctx, go: GoClient, tripId: string, personId: 
   const since = new Date(member.last_seen_at ?? member.joined_at);
   const away = (Date.now() - since.getTime()) / 3_600_000;
   const unread = (await ctx.pool.query(
-    `select count(*)::int as n from messages where trip_id = $1 and sent_at > $2 and deleted = false and (author_person_id is distinct from $3)`,
+    `select count(*)::int as n from messages where trip_id = $1 and sent_at > $2 and deleted = false and author_kind <> 'system' and (author_person_id is distinct from $3)`, // the room's own pills (joined, booked, money lines) are a record, not unread
     [tripId, since, personId],
   )).rows[0].n as number;
   if (!force && away < AWAY_HOURS && unread < UNREAD_MESSAGES) return null;
