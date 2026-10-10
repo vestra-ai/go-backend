@@ -130,8 +130,7 @@ async function tripForInvite(db: Db, code: string): Promise<string> {
 
 /**
  * Someone joins with the invite link and answers the join questions. Go gets `person.joined` with those answers.
- * Already in the trip: nothing changes (`already: true`). A mark left on the link ("later" or
- * "declined") goes, and the joiner's home screen is told to re-read.
+ * Already in the trip: nothing changes (`already: true`). The joiner's home screen is told to re-read.
  */
 export async function joinTrip(ctx: Ctx, code: string, personId: string, answers: JoinAnswers) {
   return withTx(ctx.pool, async (db, after) => {
@@ -163,7 +162,6 @@ export async function joinTrip(ctx: Ctx, code: string, personId: string, answers
         where trip_id = $1 and status = 'open' and not exists (select 1 from votes v where v.decision_id = decisions.decision_id and v.person_id = $2)`,
       [tripId, personId],
     );
-    await db.query('delete from invite_marks where person_id = $1 and code = $2', [personId, code]);
     const people = await activePeople(db, tripId);
     const person = people.find((p) => p.person_id === personId)!;
     const seq = await change(db, tripId, 'person.joined', { person: personForGo(person) });

@@ -1,5 +1,5 @@
 // §4.2 Home: one read for the whole home screen. My trips with the status line the Server works out (`stage`,
-// `attention`), the invites I kept for later, my trips that are over, and the ideas carousel for the first run.
+// `attention`), my trips that are over, what I owe, and the ideas carousel for the first run.
 import type { Features } from '../config.js';
 import type { Ctx } from '../context.js';
 import type { Db } from '../db/pool.js';
@@ -30,15 +30,6 @@ export interface TripSummary {
   last_activity_at: string;
 }
 
-export interface InviteSummary {
-  code: string;
-  trip: { trip_id: string; title: string; photo_url?: string; dates?: { start: string; end: string } };
-  inviter: PersonLite;
-  people_preview: PersonLite[];
-  joined_count: number;
-  received_at: string;
-}
-
 export interface PastTripSummary {
   trip_id: string;
   title: string;
@@ -54,7 +45,6 @@ export interface Owed { trip_id: string; trip_title: string; to: PersonLite; amo
 export interface Home {
   me: PersonLite;
   trips: TripSummary[];
-  invites: InviteSummary[];
   past_trips: PastTripSummary[];
   /** What I owe right now: every transfer where I am the one who pays, across my trips (active first, then the ones that are over). */
   owes: Owed[];
@@ -98,8 +88,7 @@ async function taskFor(db: Db, tripId: string, personId: string, needs: NeedsYou
 
 /**
  * Everything the home screen shows, for one person. `trips` are the trips I am in that are not over, latest activity first
- * (the time of the trip's last change, or its creation). `invites` are "later" marks on links that still work, for trips I am
- * not in. `past_trips` are over; `all_settled` when nobody owes anybody.
+ * (the time of the trip's last change, or its creation). `past_trips` are over; `all_settled` when nobody owes anybody.
  */
 export async function homeFor(ctx: Ctx, personId: string): Promise<Home> {
   const db = ctx.pool;
@@ -145,28 +134,6 @@ export async function homeFor(ctx: Ctx, personId: string): Promise<Home> {
     }));
   }
 
-  const marks = (await db.query(
-    `select m.code, m.at, t.trip_id, t.title, t.destination, t.dates_start, t.dates_end
-       from invite_marks m join invites i using (code) join trips t using (trip_id)
-      where m.person_id = $1 and m.state = 'later' and i.revoked_at is null and t.status <> 'over'
-        and not exists (select 1 from trip_people tp where tp.trip_id = t.trip_id and tp.person_id = $1 and tp.left_at is null)
-      order by m.at desc`,
-    [personId],
-  )).rows;
-  const invites: InviteSummary[] = [];
-  for (const m of marks) {
-    const people = await activePeople(db, m.trip_id);
-    const organizer = people.find((p) => p.role === 'organizer') ?? people[0];
-    invites.push({
-      code: m.code,
-      trip: compact({ trip_id: m.trip_id, title: m.title, photo_url: m.destination?.photo_url ?? undefined, dates: datesOf(m) }),
-      inviter: organizer ? personLite(organizer) : { person_id: '', name: 'Former member' },
-      people_preview: peoplePreview(people),
-      joined_count: people.length,
-      received_at: new Date(m.at).toISOString(),
-    });
-  }
-
   // The people I owe, as they are stored: someone who left a trip is still owed, and still has a name and a face.
   const owes = [...owedIn.active, ...owedIn.past];
   const payees = owes.length ? (await db.query('select person_id, name, photo_url from people where person_id = any($1)', [[...new Set(owes.map((o) => o.to.person_id))]])).rows : [];
@@ -176,7 +143,6 @@ export async function homeFor(ctx: Ctx, personId: string): Promise<Home> {
   return {
     me: personLite(me),
     trips: active,
-    invites,
     past_trips: past,
     owes,
     seq_hint: trips.reduce((max, t) => Math.max(max, t.seq), 0),

@@ -29,7 +29,7 @@ describe('the account profile', () => {
     expect([first.status, typeof first.body.seq, again.status, again.body.seq, personUpdates('p_rahul').length]).toEqual([200, 'number', 200, null, 2]); // the repeat sent nothing
     expect((await t.api(rahul(), 'GET', '/app/v1/me')).body).toEqual({
       person_id: 'p_rahul', name: 'Rahul K', photo_url: null, has_upi: true, upi_id_masked: 'rah••••@upi', email: 'p_rahul@mail.test', auth_provider: 'google', from_city: null,
-      counts: { active_trips: 2, past_trips: 0, pending_invites: 0 }, created_at: expect.any(String), // t_goa and t_b; he left t_c
+      counts: { active_trips: 2, past_trips: 0 }, created_at: expect.any(String), // t_goa and t_b; he left t_c
     });
     expect((await t.api(null, 'GET', '/app/v1/me')).status).toBe(401);
     expect((await t.api(null, 'PATCH', '/app/v1/me', { name: 'x' })).status).toBe(401);

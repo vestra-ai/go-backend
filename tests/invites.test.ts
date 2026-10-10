@@ -1,5 +1,5 @@
-// §4.3 Invites: the public preview and its personal state, accepting (with the landing), "Not now", "Decline", the
-// organizer's rotation, and the per-address limit on the preview.
+// §4.3 Invites: the public preview and its personal state, accepting (with the landing), the removed "Not now" and
+// "Decline" routes, the organizer's rotation, and the per-address limit on the preview.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { appApi } from './helpers/app-api.js';
 import { rows, startHarness, v1, type Harness } from './helpers/harness.js';
@@ -28,23 +28,17 @@ describe('the preview', () => {
     expect((await preview('inv_t_goa', null, { authorization: 'Bearer garbage' })).body.state).toBe('pending'); // a bad token is just anonymous here
   });
 
-  it('signed in: already_member for someone in the trip, declined after a decline, pending again after "later"; a stranger\'s marks never show to others', async () => {
+  it('signed in: already_member for someone in the trip, pending for anyone else; "Not now" and "Decline" are gone (404) and nobody is ever "declined"', async () => {
     expect((await preview('inv_t_goa', t.as('p_priya'))).body.state).toBe('already_member');
     sam = await h.signIn('Sam');
-    expect((await preview('inv_t_goa', sam)).body.state).toBe('pending');
-    expect((await t.api(sam, 'POST', v1('/invites/inv_t_goa/decline'))).status).toBe(204);
-    expect((await preview('inv_t_goa', sam)).body.state).toBe('declined');
-    expect((await preview('inv_t_goa')).body.state).toBe('pending');
-    expect((await t.api(sam, 'POST', v1('/invites/inv_t_goa/later'))).status).toBe(204);
-    expect((await preview('inv_t_goa', sam)).body.state).toBe('pending');
-    expect((await rows(h.pool, 'select state from invite_marks where person_id = $1', [sam.id]))).toEqual([{ state: 'later' }]);
-    expect((await t.api(sam, 'POST', v1('/invites/nope/later'))).status).toBe(404);
-    expect((await t.api(null, 'POST', v1('/invites/inv_t_goa/later'))).status).toBe(401);
+    const gone = [await t.api(sam, 'POST', v1('/invites/inv_t_goa/later')), await t.api(sam, 'POST', v1('/invites/inv_t_goa/decline'))];
+    expect(gone.map((r) => [r.status, r.body.error.code])).toEqual([[404, 'not_found'], [404, 'not_found']]);
+    expect([(await preview('inv_t_goa', sam)).body.state, (await preview('inv_t_goa')).body.state]).toEqual(['pending', 'pending']);
   });
 });
 
 describe('accepting', () => {
-  it('joins with the join answers (vibe as a know entry), sends person.joined and no budget event, lands on the trip home when the room is quiet, says so again on a repeat, and the mark goes', async () => {
+  it('joins with the join answers (vibe as a know entry), sends person.joined and no budget event, lands on the trip home when the room is quiet, says so again on a repeat', async () => {
     const before = h.live.events.length;
     const r = await t.api(sam, 'POST', v1('/invites/inv_t_goa/accept'), { join_answers: { from_city: 'Pune', vibe: 'beach' } });
     await h.flush();
@@ -55,7 +49,6 @@ describe('accepting', () => {
     // The "Sam joined" pill, the trip notice, then a home notice for every member (their card shows one more face) and for Sam.
     const kinds = h.live.events.slice(before).map((e) => e.event.kind);
     expect([kinds.filter((k) => k !== 'home'), kinds.filter((k) => k === 'home').length]).toEqual([['message', 'trip'], 6]);
-    expect(await rows(h.pool, 'select 1 from invite_marks where person_id = $1', [sam.id])).toEqual([]);
     const again = await t.api(sam, 'POST', v1('/invites/inv_t_goa/accept'), {});
     expect([again.body, t.events('person.joined').filter((e) => e.data.person.person_id === sam.id).length]).toEqual([{ trip_id: 't_goa', seq: r.body.seq + 1, landing: 'trip_home' }, 1]); // the trip's seq is now the "Sam joined" pill
     expect((await preview('inv_t_goa', sam)).body.joined_count).toBe(6);
@@ -75,7 +68,7 @@ describe('accepting', () => {
 });
 
 describe('rotation', () => {
-  it('only the organizer rotates; the old link answers revoked and cannot be accepted or kept; the trip, Go and the Share sheet show the new one', async () => {
+  it('only the organizer rotates; the old link answers revoked and cannot be accepted; the trip, Go and the Share sheet show the new one', async () => {
     expect((await t.api(t.as('p_priya'), 'POST', v1('/trips/t_goa/invite/rotate'))).status).toBe(403);
     const r = await t.api(t.as('p_rahul'), 'POST', v1('/trips/t_goa/invite/rotate'));
     const code: string = r.body.code;
@@ -83,7 +76,6 @@ describe('rotation', () => {
     expect((await preview('inv_t_goa')).body).toMatchObject({ state: 'revoked', trip: { trip_id: 't_goa' } });
     const late = await h.signIn('Late');
     expect((await t.api(late, 'POST', v1('/invites/inv_t_goa/accept'), {})).status).toBe(409);
-    expect((await t.api(late, 'POST', v1('/invites/inv_t_goa/later'))).status).toBe(409);
     expect((await preview(code, late)).body.state).toBe('pending');
     expect((await t.api(late, 'POST', v1(`/invites/${code}/accept`), {})).status).toBe(200);
     expect((await t.api(t.as('p_rahul'), 'GET', v1('/trips/t_goa/invite'))).body).toEqual({ invite_url: `https://go.example/j/${code}`, code });

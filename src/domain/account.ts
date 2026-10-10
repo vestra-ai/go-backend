@@ -29,6 +29,5 @@ export async function deleteAccount(ctx: Ctx, go: GoClient, personId: string): P
        deleted_at = now() where person_id = $1`,
     [personId, FORMER_MEMBER],
   );
-  await ctx.pool.query('delete from invite_marks where person_id = $1', [personId]);
   await ctx.pool.query('delete from live_tickets where person_id = $1', [personId]);
 }

@@ -1,4 +1,5 @@
-// §4.3 Invites: the public preview behind a link, accepting, "Not now" and "Decline" marks, and the organizer's rotation.
+// §4.3 Invites: the public preview behind a link, accepting, and the organizer's rotation. A link joins directly:
+// there is no "Not now" and no "Decline".
 // A link is a row of `invites`; the trip's `invite_code` mirrors the one that works, so Go's read of `invite_url` is
 // unchanged. A rotated link stays in the table and answers `state: "revoked"`.
 import type { Ctx } from '../context.js';
@@ -10,8 +11,7 @@ import { compact, type PersonRow } from './mappers.js';
 import { activePeople, inviteUrl } from './snapshot.js';
 import type { Place } from './types.js';
 
-export type InviteState = 'pending' | 'already_member' | 'declined' | 'expired' | 'revoked';
-export type InviteMark = 'later' | 'declined';
+export type InviteState = 'pending' | 'already_member' | 'expired' | 'revoked';
 
 /** The contract's PersonLite: a name and a face, nothing else. */
 export interface PersonLite { person_id: string; name: string; photo_url?: string }
@@ -48,8 +48,8 @@ const loadInvite = async (db: Db, code: string): Promise<InviteRow> => {
 
 /**
  * The preview behind a link (GET /invites/:code): the trip's name, picture and dates, who invited (the organizer) and who is in.
- * Read-only, and the same for everyone except `state`, which is personal when a viewer is signed in: `already_member` or
- * `declined` instead of `pending`. A rotated link is `revoked`, a trip that is over `expired`. Never a contact detail.
+ * Read-only, and the same for everyone except `state`, which is personal when a viewer is signed in: `already_member`
+ * instead of `pending`. A rotated link is `revoked`, a trip that is over `expired`. Never a contact detail.
  */
 export async function invitePreview(ctx: Ctx, code: string, viewerId?: string): Promise<InvitePreview> {
   const invite = await loadInvite(ctx.pool, code);
@@ -59,10 +59,6 @@ export async function invitePreview(ctx: Ctx, code: string, viewerId?: string): 
   if (invite.revoked_at) state = 'revoked';
   else if (invite.status === 'over') state = 'expired';
   else if (viewerId && people.some((p) => p.person_id === viewerId)) state = 'already_member';
-  else if (viewerId) {
-    const mark = (await ctx.pool.query('select state from invite_marks where person_id = $1 and code = $2', [viewerId, code])).rows[0];
-    if (mark?.state === 'declined') state = 'declined';
-  }
   return {
     code,
     state,
@@ -90,24 +86,6 @@ export async function acceptInvite(ctx: Ctx, code: string, personId: string, ans
   const joined = await joinTrip(ctx, code, personId, answers);
   const talking = await ctx.pool.query(`select 1 from messages where trip_id = $1 and deleted = false and author_kind in ('go', 'person') limit 1`, [joined.trip_id]);
   return { trip_id: joined.trip_id, seq: joined.seq, landing: talking.rowCount ? 'chat' : 'trip_home' };
-}
-
-/**
- * "Not now" keeps the invite on my home screen (`later`); "Decline" takes it off and tells nobody (`declined`). One mark per
- * person and link, the last one wins; both are safe to repeat. The link must still work (404 unknown, 409 rotated or over).
- */
-export async function markInvite(ctx: Ctx, code: string, personId: string, state: InviteMark): Promise<void> {
-  return withTx(ctx.pool, async (db, after) => {
-    const invite = await loadInvite(db, code);
-    if (invite.revoked_at) throw conflict('this invite link was replaced by a new one: ask for the new link');
-    if (invite.status === 'over') throw conflict('this trip is over');
-    await db.query(
-      `insert into invite_marks (person_id, code, state) values ($1, $2, $3)
-       on conflict (person_id, code) do update set state = excluded.state, at = now()`,
-      [personId, code, state],
-    );
-    after(() => ctx.live.publish(invite.trip_id, { kind: 'home', person_id: personId }));
-  });
 }
 
 /** The link and code for the Share sheet (GET /trips/:trip/invite): the trip's current, working link. */

@@ -21,7 +21,6 @@ describe('deleting an account', () => {
     await t.api(kabir, 'PUT', v1('/trips/t_goa/me/join-answers'), { from_city: 'Pune' });
     await t.api(kabir, 'PUT', v1('/me/upi'), { upi_id: 'kabir@okbank' });
     const m = await t.api(kabir, 'POST', v1('/trips/t_goa/messages'), { client_message_id: 'k1', text: 'I booked the cab' });
-    await t.api(kabir, 'POST', v1('/invites/inv_t_other/later'));
     const vote = (await h.go.call('open_vote', { request_id: 'rq_v1', trip_id: 't_goa', question: 'Where?', kind: 'choice', anonymous: false, options: [{ label: 'A' }, { label: 'B' }] })).result;
     await t.api(kabir, 'PUT', v1(`/trips/t_goa/decisions/${vote.decision_id}/vote`), { option_index: 0 });
     await h.flush();
@@ -40,7 +39,6 @@ describe('deleting an account', () => {
     expect((await rows(h.pool, `select name, photo_url, email, phone, upi_id, from_city_default, deleted_at is not null as deleted, auth_user_id is not null as linked from people where person_id = 'p_kabir'`))[0])
       .toEqual({ name: 'Former member', photo_url: null, email: null, phone: null, upi_id: null, from_city_default: null, deleted: true, linked: true });
     expect((await rows(h.pool, `select left_at is not null as left, from_city from trip_people where person_id = 'p_kabir'`))).toEqual([{ left: true, from_city: null }]);
-    expect(await rows(h.pool, `select 1 from invite_marks where person_id = 'p_kabir'`)).toEqual([]);
     // What stays: the message (its author now reads "Former member"), the vote he cast.
     expect((await rows(h.pool, 'select text, author_person_id from messages where message_id = $1', [m.body.message_id]))[0]).toEqual({ text: 'I booked the cab', author_person_id: 'p_kabir' });
     expect((await rows(h.pool, 'select count(*)::int as n from votes where person_id = $1', ['p_kabir']))[0].n).toBe(1);

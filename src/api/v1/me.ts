@@ -20,7 +20,7 @@ export const VAULT_LINKS_PER_MINUTE = 6;
 const ME_EXAMPLE = {
   person_id: 'p_aarav', name: 'Aarav Shah', email: 'aarav@gmail.com', photo_url: 'https://lh3.googleusercontent.com/a/photo', auth_provider: 'google',
   from_city: 'Bengaluru', has_upi: true, upi_id_masked: 'aar••••@okhdfc',
-  counts: { active_trips: 1, past_trips: 2, pending_invites: 1 }, created_at: '2026-10-01T09:00:00.000Z',
+  counts: { active_trips: 1, past_trips: 2 }, created_at: '2026-10-01T09:00:00.000Z',
 };
 const refused = (status: number, code: string, msg: string, field: string | null = null, retry: number | null = null) => ({ name: code, status, body: { error: { code, message: msg, field, retry_after_seconds: retry, request_id: 'a1b2c3d4e5f6' } } });
 

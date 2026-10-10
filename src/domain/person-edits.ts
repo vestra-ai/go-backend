@@ -21,8 +21,8 @@ interface PersonRecord {
 }
 const PERSON_COLUMNS = 'person_id, name, photo_url, upi_id, email, auth_provider, from_city_default, created_at';
 
-/** The app's `Me.counts`: trips I am in now that are not over, trips that are over, and invites I kept for later and can still accept. */
-export interface MeCounts { active_trips: number; past_trips: number; pending_invites: number }
+/** The app's `Me.counts`: trips I am in now that are not over, and trips that are over. */
+export interface MeCounts { active_trips: number; past_trips: number }
 
 /** The app's `Me` (contract §2). The UPI id is masked; the full id and the email go nowhere else. */
 export interface Me {
@@ -44,15 +44,11 @@ const own = (r: PersonRecord, counts: MeCounts): Me => ({
   counts, created_at: r.created_at.toISOString(),
 });
 
-/** A pending invite is a "later" mark on a link that still works, for a trip the person is not in now. */
 export async function meCounts(db: pg.Pool | pg.PoolClient, personId: string): Promise<MeCounts> {
   const { rows } = await db.query(
     `select
        (select count(*)::int from trip_people tp join trips t using (trip_id) where tp.person_id = $1 and tp.left_at is null and t.status <> 'over') as active_trips,
-       (select count(*)::int from trip_people tp join trips t using (trip_id) where tp.person_id = $1 and tp.left_at is null and t.status = 'over') as past_trips,
-       (select count(*)::int from invite_marks m join invites i using (code) join trips t using (trip_id)
-         where m.person_id = $1 and m.state = 'later' and i.revoked_at is null and t.status <> 'over'
-           and not exists (select 1 from trip_people tp where tp.trip_id = t.trip_id and tp.person_id = $1 and tp.left_at is null)) as pending_invites`,
+       (select count(*)::int from trip_people tp join trips t using (trip_id) where tp.person_id = $1 and tp.left_at is null and t.status = 'over') as past_trips`,
     [personId],
   );
   return rows[0] as MeCounts;

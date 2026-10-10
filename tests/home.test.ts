@@ -1,5 +1,5 @@
 // §4.2 Home: the one read behind the home screen, both its states, the lines the server works out (stage, attention),
-// invites kept for later, trips that are over, the home_changed notices, and the ideas carousel.
+// trips that are over, the home_changed notices, and the ideas carousel.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { appApi } from './helpers/app-api.js';
 import { startHarness, v1, type Harness } from './helpers/harness.js';
@@ -24,9 +24,9 @@ const goCall = async (method: string, params: Record<string, unknown>) => {
 };
 
 describe('the first run', () => {
-  it('a new person\'s home is empty: me, no trips, no invites, no past trips, seq_hint 0; never cached', async () => {
+  it('a new person\'s home is empty: me, no trips, no past trips, nothing owed, seq_hint 0; never cached', async () => {
     const r = await home(asha);
-    expect([r.status, r.headers['cache-control'], r.body]).toEqual([200, 'private, no-store', { me: { person_id: asha.id, name: 'Asha', photo_url: 'https://lh3.googleusercontent.com/a/test-photo' }, trips: [], invites: [], past_trips: [], owes: [], seq_hint: 0 }]);
+    expect([r.status, r.headers['cache-control'], r.body]).toEqual([200, 'private, no-store', { me: { person_id: asha.id, name: 'Asha', photo_url: 'https://lh3.googleusercontent.com/a/test-photo' }, trips: [], past_trips: [], owes: [], seq_hint: 0 }]);
     expect((await t.api(null, 'GET', v1('/home'))).status).toBe(401);
   });
 
@@ -78,23 +78,17 @@ describe('a returning person', () => {
     expect((await home(asha)).body.trips[0].attention).toEqual({ kind: 'needs_you', count: 1 });
   });
 
-  it('an invite kept for later shows on the home screen with the inviter and the faces, counts as pending, leaves on decline, and the trip appears once accepted', async () => {
+  it('an invite joins directly: the link is accepted with no answers, the trip appears on home, and home and Me carry nothing about pending invites', async () => {
     const code = (await t.api(asha, 'GET', v1(`/trips/${deciding}/invite`))).body.code;
     const before = homeChanged(ben.id);
-    expect((await t.api(ben, 'POST', v1(`/invites/${code}/later`))).status).toBe(204);
-    let r = await home(ben);
-    expect(r.body.invites).toEqual([{ code, trip: { trip_id: deciding, title: 'Goa 🌴', photo_url: 'https://images.example/goa.jpg', dates: { start: '2026-11-06', end: '2026-11-09' } }, inviter: { person_id: asha.id, name: 'Asha', photo_url: expect.any(String) }, people_preview: [{ person_id: asha.id, name: 'Asha', photo_url: expect.any(String) }], joined_count: 1, received_at: expect.any(String) }]);
-    expect([r.body.trips, (await t.api(ben, 'GET', v1('/me'))).body.counts]).toEqual([[], { active_trips: 0, past_trips: 0, pending_invites: 1 }]);
-    expect((await t.api(ben, 'POST', v1(`/invites/${code}/decline`))).status).toBe(204);
-    expect((await home(ben)).body.invites).toEqual([]);
-    await t.api(ben, 'POST', v1(`/invites/${code}/later`)); // changed his mind
-    expect((await home(ben)).body.invites).toHaveLength(1);
-    const joined = await t.api(ben, 'POST', v1(`/invites/${code}/accept`), {});
-    r = await home(ben);
-    expect([joined.body.landing, r.body.invites, r.body.trips.map((x: any) => x.trip_id), r.body.trips[0].people_preview.map((p: any) => p.person_id), r.body.trips[0].attention]).toEqual([
-      'trip_home', [], [deciding], [asha.id, ben.id], { kind: 'needs_you', count: 1 }, // the dinner vote waits for him too
+    const first = await home(ben);
+    const joined = await t.api(ben, 'POST', v1(`/invites/${code}/accept`)); // no body at all
+    const r = await home(ben);
+    expect(['invites' in first.body, first.body.trips, 'pending_invites' in (await t.api(ben, 'GET', v1('/me'))).body.counts]).toEqual([false, [], false]);
+    expect([joined.status, joined.body.landing, r.body.trips.map((x: any) => x.trip_id), r.body.trips[0].people_preview.map((p: any) => p.person_id), r.body.trips[0].attention]).toEqual([
+      200, 'trip_home', [deciding], [asha.id, ben.id], { kind: 'needs_you', count: 1 }, // the dinner vote waits for him too
     ]);
-    expect(homeChanged(ben.id) - before).toBe(4); // later, decline, later, accept
+    expect(homeChanged(ben.id) - before).toBe(1); // the accept
     // The organizer's home shows the new face too, and a member's trip card never shows another member's from_city.
     const ashas = (await home(asha)).body.trips.find((x: any) => x.trip_id === deciding);
     expect([ashas.people_count, JSON.stringify(ashas).includes('from_city')]).toEqual([2, false]);
@@ -110,7 +104,7 @@ describe('a returning person', () => {
     expect([r.body.trips.map((x: any) => x.trip_id).includes(over), r.body.past_trips]).toEqual([false, [{ trip_id: over, title: 'Coorg', people_count: 2, all_settled: true }]]);
     await t.api(ben, 'POST', v1(`/trips/${over}/expenses`), { paid_by_person_id: ben.id, amount_minor: 100000, note: 'Dinner', category: 'food', split_person_ids: [asha.id, ben.id] });
     r = await home(asha);
-    expect([r.body.past_trips[0].all_settled, (await t.api(asha, 'GET', v1('/me'))).body.counts]).toEqual([false, { active_trips: 2, past_trips: 1, pending_invites: 0 }]);
+    expect([r.body.past_trips[0].all_settled, (await t.api(asha, 'GET', v1('/me'))).body.counts]).toEqual([false, { active_trips: 2, past_trips: 1 }]);
   });
 
   it('a trip the person left is not on their home', async () => {
