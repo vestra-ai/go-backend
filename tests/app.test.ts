@@ -277,12 +277,12 @@ describe('leaving a trip', () => {
 });
 
 describe('expenses', () => {
-  it('a person adds an expense: Go hears it, and the people in the split are asked to approve their share', async () => {
+  it('a person adds an expense: Go hears it, and it counts at once', async () => {
     const r = await api(kabir, 'POST', `/app/v1/trips/${trip}/expenses`, { paid_by_person_id: kabir.id, amount_minor: 340000, note: 'Airport cab', category: 'getting_around', split_person_ids: [rahul.id, priya.id, kabir.id] });
     expect(r.status).toBe(201);
-    expect(r.body).toMatchObject({ expense_id: expect.any(String), status: 'pending', confirmations: [{ person_id: rahul.id, state: 'pending' }, { person_id: priya.id, state: 'pending' }] });
+    expect([typeof r.body.expense_id, 'status' in r.body, 'confirmations' in r.body]).toEqual(['string', false, false]);
     await h.flush();
-    expect(events('expense.changed').at(-1)!.data).toMatchObject({ change: 'added', by: { kind: 'person', person_id: kabir.id }, expense: { amount_minor: 340000, added_by_person_id: kabir.id, status: 'pending' } });
+    expect(events('expense.changed').at(-1)!.data).toMatchObject({ change: 'added', by: { kind: 'person', person_id: kabir.id }, expense: { amount_minor: 340000, added_by_person_id: kabir.id } });
     const snap = (await h.go.call('read_trip', { trip_id: trip })).result;
     expect(snap.money.transfers).toEqual(expect.arrayContaining([
       { from_person_id: rahul.id, to_person_id: kabir.id, amount_minor: 113334, currency: 'INR' },

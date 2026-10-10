@@ -1,7 +1,7 @@
 // §4.9 GET /trips/:trip/money: the contract's Money (what Go reads too) plus the caller's own corner, from one
 // repeatable-read transaction so `seq` matches every number. `me.budget` is the caller's private answer (the group
-// only ever sees the lowest band); `me.spent_minor` and `me.by_category` are the caller's shares of the expenses that
-// count, by each expense's equal split; `owed_to_me` and `i_owe` are the caller's lines of the fewest-payments list.
+// only ever sees the lowest band); `me.spent_minor` and `me.by_category` are the caller's shares of the expenses,
+// by each expense's equal split; `owed_to_me` and `i_owe` are the caller's lines of the fewest-payments list.
 import type pg from 'pg';
 import type { Ctx } from '../context.js';
 import type { Db } from '../db/pool.js';
@@ -9,7 +9,7 @@ import { Forbidden } from './actions.js';
 import { notFound } from './errors.js';
 import { loadExpenses, loadSettlements, type ExpenseView, type SettlementRow } from './ledger.js';
 import type { PersonRow } from './mappers.js';
-import { byCategory, expenseCounts, moneyOf, sharesOf } from './money.js';
+import { byCategory, moneyOf, sharesOf } from './money.js';
 import { activePeople } from './snapshot.js';
 import type { Money } from './types.js';
 
@@ -73,7 +73,7 @@ export async function readMoneyView(ctx: Ctx, tripId: string, personId: string):
       ...m.money,
       me: {
         budget: membership.budget_min_minor === null ? null : { min_minor: membership.budget_min_minor, max_minor: membership.budget_max_minor, currency: m.trip.currency },
-        spent_minor: m.expenses.filter(expenseCounts).reduce((sum, e) => sum + myShare(e), 0),
+        spent_minor: m.expenses.reduce((sum, e) => sum + myShare(e), 0),
         by_category: byCategory(m.expenses, myShare),
         owed_to_me: m.money.transfers.filter((t) => t.to_person_id === personId),
         i_owe: m.money.transfers.filter((t) => t.from_person_id === personId),

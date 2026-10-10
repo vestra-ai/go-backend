@@ -83,12 +83,10 @@ describe('the checklist card', () => {
     expect([tap.status, tap.body.result, h.go.requests.at(-1)?.method, h.go.requests.at(-1)?.params.action_id]).toEqual([200, 'done', 'card_tap', 'add_documents']);
   });
 
-  it('the checklist task beats an expense to approve; the expense shows once the row is done', async () => {
-    const e = (await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_goa/expenses', { paid_by_person_id: 'p_priya', amount_minor: 170000, note: 'Airport cab', category: 'getting_around', split_person_ids: ['p_priya', 'p_arjun'] })).body;
+  it('the checklist task comes first; once the row is done the usual rule is back and no expense asks for approval', async () => {
+    await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_goa/expenses', { paid_by_person_id: 'p_priya', amount_minor: 170000, note: 'Airport cab', category: 'getting_around', split_person_ids: ['p_priya', 'p_arjun'] });
     expect(await attention('p_arjun')).toEqual({ kind: 'task', label: 'Indonesia e-VOA needed' });
     await h.go.call('replace_card', { trip_id: 't_goa', card: { ...card, rows: card.rows.map((r: any) => ({ ...r, status: 'done', label: 'Sent' })) } });
-    expect(await attention('p_arjun')).toEqual({ kind: 'task', label: '1 expense to approve' });
-    await t.api(t.as('p_arjun'), 'POST', `/app/v1/trips/t_goa/expenses/${e.expense_id}/approve`);
     expect(await attention('p_arjun')).toEqual({ kind: 'needs_you', count: 1 }); // what he owes Priya: the usual rule again
   });
 });

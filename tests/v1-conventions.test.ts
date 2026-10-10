@@ -101,7 +101,7 @@ describe('GET /config and /health', () => {
     const config = await t.api(null, 'GET', v1('/config'));
     expect(config.body).toEqual({
       contract: '1.0.0', min_client_version: '1.0.0', currency_default: 'INR',
-      features: { checkin: true, visa: false, calls: false, vote_retract: false, vote_flexible: false, claim: false, expense_approval: true },
+      features: { checkin: true, visa: false, calls: false, vote_retract: false, vote_flexible: false, claim: false },
     });
     expect((await t.api(null, 'GET', v1('/health'))).body).toEqual({ ok: true, go: true });
     expect((await t.api(null, 'GET', '/health')).body).toEqual({ ok: true, go: true });

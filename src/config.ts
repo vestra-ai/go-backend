@@ -28,7 +28,7 @@ export interface Config {
   supabaseStorageBucket: string;
   /**
    * The contract version Go's side speaks (GO_CONTRACT, default 1.0). On 1.0 the Server keeps the few events Go 1.0
-   * refuses to itself (an expense approved, disputed or re-split: Go reads the trip instead); on 1.1 it sends them.
+   * refuses to itself (a re-split expense: Go reads the trip instead); on 1.1 it sends them.
    * Flip it to 1.1 the day Keshav's team ships docs/GO-CHANGES.md.
    */
   goContract: GoContract;
@@ -53,10 +53,9 @@ export interface Features {
   vote_retract: boolean;
   vote_flexible: boolean;
   claim: boolean;
-  expense_approval: boolean;
 }
 
-export const FEATURE_DEFAULTS: Features = { checkin: false, visa: false, calls: false, vote_retract: false, vote_flexible: false, claim: false, expense_approval: true };
+export const FEATURE_DEFAULTS: Features = { checkin: false, visa: false, calls: false, vote_retract: false, vote_flexible: false, claim: false };
 
 /** The flags the environment sets explicitly: FEATURE_CHECKIN=1, FEATURE_VISA=0, ... Anything else is left to its default. */
 export function featureOverrides(env: NodeJS.ProcessEnv = process.env): Partial<Features> {

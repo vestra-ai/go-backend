@@ -61,7 +61,7 @@ export async function buildSnapshot(db: Db, tripId: string, publicBaseUrl: strin
   // One at a time: a transaction's connection runs one query at a time.
   const decisions = await loadDecisions(db, tripId);
   const bookings = await db.query<BookingRow>('select * from bookings where trip_id = $1 order by created_at, booking_id', [tripId]);
-  const expenses = await loadExpenses(db, tripId); // with status and confirmations (1.1): Go sees the same fields as the app
+  const expenses = await loadExpenses(db, tripId);
   const settlements = await loadSettlements(db, tripId); // never in the snapshot itself; they only move `money.transfers`
   const record = await db.query<RecordLineRow>('select * from record_lines where trip_id = $1 order by created_at, line_id', [tripId]);
   const budget = await budgetSummary(db, tripId, t.currency);

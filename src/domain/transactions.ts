@@ -8,12 +8,11 @@ import { invalid } from './errors.js';
 import { loadExpenses, loadSettlements, type ExpenseView, type SettlementRow } from './ledger.js';
 import { compact } from './mappers.js';
 import { readOnly } from './money-view.js';
-import type { ExpenseStatus } from './money.js';
 
-export const FILTERS = ['all', 'booking', 'payback', 'mine', 'pending', 'disputed'] as const;
+export const FILTERS = ['all', 'booking', 'payback', 'mine'] as const;
 export type Filter = (typeof FILTERS)[number];
 
-/** App contract §2 Transaction, plus `expense_status` on an expense row and `settlement_status` on a payback row (ours: the badge beside the row). */
+/** App contract §2 Transaction. */
 export interface Transaction {
   transaction_id: string;
   kind: 'booking' | 'payback';
@@ -31,8 +30,6 @@ export interface Transaction {
   expense_id?: string;
   booking_id?: string;
   settlement_id?: string;
-  expense_status?: ExpenseStatus;
-  settlement_status?: SettlementRow['status'];
 }
 
 export interface TransactionsPage {
@@ -69,8 +66,6 @@ const matches = (filter: Filter) => (t: Transaction): boolean => {
     case 'booking': return t.kind === 'booking';
     case 'payback': return t.kind === 'payback';
     case 'mine': return t.mine;
-    case 'pending': return t.expense_status === 'pending' || t.settlement_status === 'pending_confirmation';
-    case 'disputed': return t.expense_status === 'disputed' || t.settlement_status === 'disputed';
   }
 };
 
@@ -89,7 +84,6 @@ export function expenseTransaction(e: ExpenseView, booking: { vendor: string; ap
     mine: e.paid_by_person_id === me || e.split_person_ids.includes(me),
     expense_id: e.expense_id,
     booking_id: e.booking_id ?? undefined,
-    expense_status: e.status,
   }) as Transaction;
 }
 
@@ -107,7 +101,6 @@ export function settlementTransaction(s: SettlementRow, me: string): Transaction
     note: s.note ?? undefined,
     mine: s.from_person_id === me || s.to_person_id === me,
     settlement_id: s.settlement_id,
-    settlement_status: s.status,
   }) as Transaction;
 }
 

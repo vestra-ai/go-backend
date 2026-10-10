@@ -19,9 +19,7 @@ beforeAll(async () => {
   ids.cab = (await t.api(t.as('p_kabir'), 'POST', `${trip}/expenses`, { amount_minor: 30000, note: 'Airport cab', category: 'getting_around', split_person_ids: ['p_kabir', 'p_arjun', 'p_meher'] })).body.expense_id;
   ids.s1 = (await t.api(t.as('p_priya'), 'POST', `${trip}/settlements`, { to_person_id: 'p_rahul', amount_minor: 50000, currency: 'INR', method: 'upi' })).body.settlement.settlement_id;
   ids.s2 = (await t.api(t.as('p_arjun'), 'POST', `${trip}/settlements`, { to_person_id: 'p_rahul', amount_minor: 100000, currency: 'INR', method: 'cash', note: 'all of it' })).body.settlement.settlement_id;
-  await t.api(t.as('p_rahul'), 'POST', `${trip}/settlements/${ids.s2}/confirm`);
   ids.bus = (await t.api(t.as('p_meher'), 'POST', `${trip}/expenses`, { amount_minor: 1000, note: 'Bus', category: 'getting_around', split_person_ids: ['p_meher', 'p_priya'] })).body.expense_id;
-  await t.api(t.as('p_priya'), 'POST', `${trip}/expenses/${ids.bus}/dispute`, { reason: 'walked' });
   // Spread the rows over the last hours so the order is known: villa, cab, s1, s2, then the bus just now.
   for (const [table, column, id, hours] of [['expenses', 'expense_id', ids.villa, 4], ['expenses', 'expense_id', ids.cab, 3], ['settlements', 'settlement_id', ids.s1, 2], ['settlements', 'settlement_id', ids.s2, 1]] as const) {
     await h.pool.query(`update ${table} set created_at = now() - make_interval(hours => $2) where ${column} = $1`, [id, hours]);
@@ -34,21 +32,22 @@ const idsOf = (r: { body: any }) => r.body.items.map((x: any) => x.transaction_i
 const refusal = (r: { status: number; body: any }) => [r.status, r.body?.error?.code, r.body?.error?.field];
 
 describe('the rows', () => {
-  it('lists every expense and settlement newest first, each as the contract\'s Transaction with our status badge, and says which are mine', async () => {
+  it('lists every expense and settlement newest first, each as the contract\'s Transaction with no standing, and says which are mine', async () => {
     const r = await list('p_priya');
     expect([r.status, r.body.total_count, r.body.next_cursor, idsOf(r)]).toEqual([200, 5, null, [ids.bus, ids.s2, ids.s1, ids.cab, ids.villa]]);
     const [bus, s2, s1, cab, villa] = r.body.items;
-    expect(bus).toEqual({ transaction_id: ids.bus, kind: 'booking', occurred_at: expect.any(String), payer_person_id: 'p_meher', verb: 'paid', to: { kind: 'merchant', name: 'Bus' }, amount_minor: 1000, currency: 'INR', note: 'Bus', mine: true, expense_id: ids.bus, expense_status: 'disputed' });
-    expect(s2).toEqual({ transaction_id: ids.s2, kind: 'payback', occurred_at: expect.any(String), payer_person_id: 'p_arjun', verb: 'paid', to: { kind: 'person', person_id: 'p_rahul' }, amount_minor: 100000, currency: 'INR', method: 'cash', note: 'all of it', mine: false, settlement_id: ids.s2, settlement_status: 'confirmed' });
-    expect(s1).toMatchObject({ kind: 'payback', payer_person_id: 'p_priya', method: 'upi', mine: true, settlement_status: 'pending_confirmation' });
+    expect(bus).toEqual({ transaction_id: ids.bus, kind: 'booking', occurred_at: expect.any(String), payer_person_id: 'p_meher', verb: 'paid', to: { kind: 'merchant', name: 'Bus' }, amount_minor: 1000, currency: 'INR', note: 'Bus', mine: true, expense_id: ids.bus });
+    expect(s2).toEqual({ transaction_id: ids.s2, kind: 'payback', occurred_at: expect.any(String), payer_person_id: 'p_arjun', verb: 'paid', to: { kind: 'person', person_id: 'p_rahul' }, amount_minor: 100000, currency: 'INR', method: 'cash', note: 'all of it', mine: false, settlement_id: ids.s2 });
+    expect(s1).toMatchObject({ kind: 'payback', payer_person_id: 'p_priya', method: 'upi', mine: true });
+    expect(['settlement_status' in s1, 'expense_status' in cab]).toEqual([false, false]);
     expect(s1.note).toBeUndefined();
-    expect(cab).toMatchObject({ kind: 'booking', payer_person_id: 'p_kabir', verb: 'paid', to: { kind: 'merchant', name: 'Airport cab' }, mine: false, expense_status: 'pending' });
+    expect(cab).toMatchObject({ kind: 'booking', payer_person_id: 'p_kabir', verb: 'paid', to: { kind: 'merchant', name: 'Airport cab' }, mine: false });
     expect(cab.method).toBeUndefined();
-    expect(villa).toEqual({ transaction_id: ids.villa, kind: 'booking', occurred_at: expect.any(String), payer_person_id: 'p_rahul', verb: 'booked_with', to: { kind: 'merchant', name: 'ixigo' }, amount_minor: 500000, currency: 'INR', method: 'card', note: 'Villa Sol', mine: true, expense_id: ids.villa, booking_id: ids.booking, expense_status: 'approved' });
+    expect(villa).toEqual({ transaction_id: ids.villa, kind: 'booking', occurred_at: expect.any(String), payer_person_id: 'p_rahul', verb: 'booked_with', to: { kind: 'merchant', name: 'ixigo' }, amount_minor: 500000, currency: 'INR', method: 'card', note: 'Villa Sol', mine: true, expense_id: ids.villa, booking_id: ids.booking });
     expect((await list('p_kabir')).body.items.map((x: any) => x.mine)).toEqual([false, false, false, true, true]);
   });
 
-  it('filters by kind, by mine, by pending and by disputed, and total_count ignores the filter', async () => {
+  it('filters by kind and by mine, total_count ignores the filter, and the old pending and disputed filters are refused', async () => {
     const got = async (filter: string) => {
       const r = await list('p_priya', `?filter=${filter}`);
       return [r.body.total_count, idsOf(r)];
@@ -57,8 +56,7 @@ describe('the rows', () => {
     expect(await got('booking')).toEqual([5, [ids.bus, ids.cab, ids.villa]]);
     expect(await got('payback')).toEqual([5, [ids.s2, ids.s1]]);
     expect(await got('mine')).toEqual([5, [ids.bus, ids.s1, ids.villa]]);
-    expect(await got('pending')).toEqual([5, [ids.s1, ids.cab]]);
-    expect(await got('disputed')).toEqual([5, [ids.bus]]);
+    expect([refusal(await list('p_priya', '?filter=pending')), refusal(await list('p_priya', '?filter=disputed'))]).toEqual([[422, 'invalid', 'filter'], [422, 'invalid', 'filter']]);
   });
 
   it('pages with an opaque cursor that never skips or repeats a row, within a filter too', async () => {

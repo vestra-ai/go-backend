@@ -409,13 +409,6 @@ const patchExpense = {
   properties: { split_person_ids: people, note: { type: 'string', minLength: 1, maxLength: 120 } },
 } as const;
 
-// "I didn't get this" / "this isn't right" (POST …/expenses/:id/dispute): the reason is optional, 200 characters (the contract's ExpenseConfirmation).
-const disputeExpense = {
-  type: 'object',
-  additionalProperties: false,
-  properties: { reason: { type: 'string', minLength: 1, maxLength: 200 } },
-} as const;
-
 // "Record a payment" (POST …/settlements). The method is the app contract's Settlement.method; the note the contract's 120.
 const recordSettlement = {
   type: 'object',
@@ -451,7 +444,7 @@ const patchCheckin = {
 } as const;
 
 /** Every route's body definition, by name. */
-export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, putUpi, deleteMe, patchTripMe, acceptInvite, putBudget, patchTrip, pauseGo, createTrip, readTrip, postMessage, editMessage, putReaction, cardAction, castVote, upload, liveTicket, carryOver, vaultLink, addExpense, patchExpense, disputeExpense, recordSettlement, payLink, patchCheckin } as const;
+export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, putUpi, deleteMe, patchTripMe, acceptInvite, putBudget, patchTrip, pauseGo, createTrip, readTrip, postMessage, editMessage, putReaction, cardAction, castVote, upload, liveTicket, carryOver, vaultLink, addExpense, patchExpense, recordSettlement, payLink, patchCheckin } as const;
 
 /** Nodes the walk in tests/bodies.test.ts does not enter: they are checked against the contract's own definitions elsewhere. */
 export const PASSTHROUGH: readonly string[] = ['patchTrip.itinerary[]', 'postMessage.attachments[]'];
@@ -577,10 +570,6 @@ export interface PatchExpenseBody {
   note?: string;
 }
 
-export interface DisputeExpenseBody {
-  reason?: string;
-}
-
 export interface RecordSettlementBody {
   to_person_id: string;
   amount_minor: number;
@@ -681,7 +670,6 @@ export const checkCarryOver = bodyChecker<CarryOverBody>(bodies.carryOver);
 export const checkVaultLink = bodyChecker<VaultLinkBody>(bodies.vaultLink);
 export const checkAddExpense = bodyChecker<AddExpenseBody>(bodies.addExpense);
 export const checkPatchExpense = bodyChecker<PatchExpenseBody>(bodies.patchExpense);
-export const checkDisputeExpense = bodyChecker<DisputeExpenseBody>(bodies.disputeExpense);
 export const checkRecordSettlement = bodyChecker<RecordSettlementBody>(bodies.recordSettlement);
 export const checkPayLink = bodyChecker<PayLinkBody>(bodies.payLink);
 export const checkPatchCheckin = bodyChecker<PatchCheckinBody>(bodies.patchCheckin);

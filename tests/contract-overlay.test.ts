@@ -46,7 +46,8 @@ describe('the 1.1 overlay', () => {
     expect(parseParams('card_tap', { tap_id: 't', trip_id: 't', card_id: 'c', action_id: 'pick', person_id: 'p', payload: { trip: 'round' } })).toMatchObject({ ok: true });
     expect(parseParams('vault_link', { kind: 'vault', person_id: 'p', start: 'add_documents', context: { trip_id: 't', purpose: 'visa' } })).toMatchObject({ ok: true });
     expect(parseParams('post_message', { request_id: 'r', trip_id: 't', text: 'Beach or mountains?', quick_replies: [{ label: '🏖️ Beach', text: 'Beach' }, { label: 'Not sure' }] })).toMatchObject({ ok: true });
-    expect(check('ExpenseChangedData', { change: 'disputed', by: { kind: 'person', person_id: 'p' }, expense: { expense_id: 'e', paid_by_person_id: 'p', amount_minor: 1, currency: 'INR', note: 'n', category: 'food', split_person_ids: ['p'], created_at: '2026-10-05T06:49:30Z', status: 'disputed', confirmations: [{ person_id: 'q', state: 'disputed', at: '2026-10-05T06:49:30Z', reason: 'not mine' }] } })).toMatchObject({ ok: true });
+    const changed = (change: string) => check('ExpenseChangedData', { change, by: { kind: 'person', person_id: 'p' }, by_person_id: 'p', expense: { expense_id: 'e', paid_by_person_id: 'p', amount_minor: 1, currency: 'INR', note: 'n', category: 'food', split_person_ids: ['p'], created_at: '2026-10-05T06:49:30Z' } }).ok;
+    expect([changed('updated'), changed('approved'), changed('disputed')]).toEqual([true, false, false]); // a fixed split is the one 1.1 change; approval is withdrawn
     expect(check('DecisionVotedData', { decision_id: 'd', person_id: 'p', voted: 1, of: 3, tally: [0, 0], flexible: true })).toMatchObject({ ok: true });
     expect(METHODS.get_checkin).toMatchObject({ direction: 'to_go', params: 'GetCheckin', result: 'CheckinState' });
     expect(parseParams('submit_checkin', { trip_id: 't', booking_id: 'b', person_id: 'p', digi_yatra: true, declaration: true, seat: '14A' })).toMatchObject({ ok: true });

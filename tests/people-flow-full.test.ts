@@ -34,7 +34,7 @@ it('the whole feature in one walk from the web app\'s origin: every change takes
   await call('p_arjun', 'PUT', `${trip}/me/join-answers`, { from_city: 'Delhi', know: ['Window seat'] });
   await call('p_kabir', 'PUT', `${trip}/me/budget`, { min_minor: 1234567, max_minor: 2345678 });
   await call('p_meher', 'PATCH', trip, { title: 'Goa, again', status: 'booked' });
-  // money: an expense (pending: the four others are asked to approve, and already count), whom Priya owes, and a pay link to Rahul
+  // money: an expense (it counts at once), whom Priya owes, and a pay link to Rahul
   await call('p_rahul', 'POST', `${trip}/expenses`, { paid_by_person_id: 'p_rahul', amount_minor: 100000, note: 'Dinner', category: 'food', split_person_ids: EVERYONE });
   const money = await call('p_priya', 'GET', `${trip}/money`);
   const link = await call('p_priya', 'POST', `${trip}/transfers/pay-link`, { to_person_id: 'p_rahul', amount_minor: 20000 });

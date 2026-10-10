@@ -189,12 +189,10 @@ describe('POST complete', () => {
     expect(refusal(await complete('p_arjun', kabirs))).toEqual([403, 'forbidden']);
   });
 
-  it('the task on the home card: web check-in beats an expense to approve; the expense shows once it is done', async () => {
-    const e = (await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_goa/expenses', { paid_by_person_id: 'p_priya', amount_minor: 170000, note: 'Airport cab', category: 'getting_around', split_person_ids: ['p_priya', 'p_arjun'] })).body;
+  it('the task on the home card: web check-in comes first; once it is done the usual rule is back and no expense asks for approval', async () => {
+    await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_goa/expenses', { paid_by_person_id: 'p_priya', amount_minor: 170000, note: 'Airport cab', category: 'getting_around', split_person_ids: ['p_priya', 'p_arjun'] });
     expect(await attention('p_arjun')).toEqual({ kind: 'task', label: 'Web check-in is open' });
     await complete('p_arjun');
-    expect(await attention('p_arjun')).toEqual({ kind: 'task', label: '1 expense to approve' });
-    await t.api(t.as('p_arjun'), 'POST', `/app/v1/trips/t_goa/expenses/${e.expense_id}/approve`);
     expect(await attention('p_arjun')).toEqual({ kind: 'needs_you', count: 1 }); // he still owes Priya his share: the usual rule again
   });
 });

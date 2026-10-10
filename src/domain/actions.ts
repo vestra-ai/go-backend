@@ -20,7 +20,7 @@ import { assertDate } from './limits.js';
 import { compact, decisionOf, expenseOf, messageForGo, personForGo, recordLineOf, tallyOf } from './mappers.js';
 import type { DecisionRow, ExpenseRow, MessageRow, RecordLineRow, VoteRow } from './mappers.js';
 import { loadSettlements } from './ledger.js';
-import { moneyOf, sharesOf } from './money.js';
+import { moneyOf } from './money.js';
 import { loadMessageForApp } from './room.js';
 import { activePeople, buildSnapshot } from './snapshot.js';
 import { joinedText, leftText, personName, postSystemMessage, tripCreatedText } from './system-messages.js';
@@ -568,9 +568,9 @@ export async function markSeen(ctx: Ctx, tripId: string, personId: string, upToS
 
 /** The app contract's NeedsYouItem (§2, §4.11), plus our `cancels_booking_id` on a vote about cancelling a booking. */
 export interface NeedsYouItem {
-  /** Stable per underlying thing: `vote:<decision>:<me>`, `mandate:<decision>`, `card:<card>`, `record_line:<line>`, `settle:<payee>`, `expense:<expense>:<me>`, `checkin:<booking>`. */
+  /** Stable per underlying thing: `vote:<decision>:<me>`, `mandate:<decision>`, `card:<card>`, `record_line:<line>`, `settle:<payee>`, `checkin:<booking>`. */
   item_id: string;
-  kind: 'vote' | 'mandate' | 'card' | 'record_line' | 'settle_up' | 'expense' | 'checkin';
+  kind: 'vote' | 'mandate' | 'card' | 'record_line' | 'settle_up' | 'checkin';
   title: string;
   subtitle?: string;
   cta_label?: string;
@@ -615,8 +615,7 @@ export async function needsYou(ctx: Ctx, tripId: string, personId: string): Prom
  * money line), on a given connection so a trip read and the home screen count it inside their own transactions.
  * `vote`: each open vote they have not voted in. `mandate`: the payer, while the mandate is unanswered. `card`: Go's cards
  * naming them in `for_person_ids` (until replace_card drops them). `record_line`: an open, active line naming them.
- * `settle_up`: each net transfer where they owe. `expense`: each pending confirmation of theirs (phase 3's table, read
- * only when it exists). `checkin`: each flight covering them whose cached check-in state is open (src/domain/checkin.ts),
+ * `settle_up`: each net transfer where they owe. `checkin`: each flight covering them whose cached check-in state is open (src/domain/checkin.ts),
  * only when `features.checkin` is on; the strip never asks Go.
  */
 export async function needsYouIn(db: Db, tripId: string, personId: string, features?: Partial<Features>): Promise<NeedsYouItem[]> {
@@ -656,7 +655,6 @@ export async function needsYouIn(db: Db, tripId: string, personId: string, featu
   const money = trip ? moneyOf(expenses, people.map((p) => p.person_id), trip.currency, trip.plan_minor, await loadSettlements(db, tripId)) : { transfers: [] as { from_person_id: string; to_person_id: string; amount_minor: number; currency: string }[] };
   const nameOf = new Map(people.map((p) => [p.person_id, p.name]));
   const lastExpenseAt = expenses.length ? new Date(expenses[expenses.length - 1]!.created_at).toISOString() : new Date(0).toISOString();
-  const approvals = await pendingApprovals(db, tripId, personId);
   const checkins = checkinOn(features) ? await checkinItems(db, tripId, personId) : [];
   const at = (d: Date | string) => new Date(d).toISOString();
 
@@ -706,29 +704,7 @@ export async function needsYouIn(db: Db, tripId: string, personId: string, featu
       since: lastExpenseAt,
       target: { transfer: { to_person_id: t.to_person_id, amount_minor: t.amount_minor, currency: t.currency } },
     })),
-    ...approvals.map((e): NeedsYouItem => ({
-      item_id: `expense:${e.expense_id}:${personId}`,
-      kind: 'expense',
-      title: `Approve ${formatMoney(sharesOf(e, people.map((p) => p.person_id)).get(personId) ?? 0, e.currency)} · ${e.note}`,
-      cta_label: 'Approve',
-      since: at(e.created_at),
-      target: { expense_id: e.expense_id },
-    })),
     ...checkins,
   ];
-}
-
-/**
- * Expenses waiting for this person's approval (APP-CONTRACT-CHANGES §4.9): one row per pending entry of theirs in
- * `expense_confirmations`, which the money phase adds (migration 007). Read only when that table exists, so this
- * code runs the same before and after it lands; a shape that differs from the plan's is logged, never a failed read.
- */
-async function pendingApprovals(db: Db, tripId: string, personId: string): Promise<Array<Pick<ExpenseRow, 'expense_id' | 'amount_minor' | 'currency' | 'note' | 'created_at' | 'split_person_ids' | 'paid_by_person_id'>>> {
-  // The expenses waiting for this person's approval (§4.9): the strip shows their own share, not the whole amount.
-  return (await db.query(
-    `select e.expense_id, e.amount_minor, e.currency, e.note, e.created_at, e.split_person_ids, e.paid_by_person_id from expense_confirmations c join expenses e using (expense_id)
-      where e.trip_id = $1 and e.removed_at is null and c.person_id = $2 and c.state = 'pending' order by e.created_at, e.expense_id`,
-    [tripId, personId],
-  )).rows;
 }
 

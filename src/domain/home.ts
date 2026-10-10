@@ -77,8 +77,8 @@ async function pendingChecklist(db: Db, tripId: string, personId: string): Promi
 /**
  * `attention.task` (APP-CONTRACT-CHANGES §4.2): one thing with a deadline or a form behind it, which beats the plain
  * "needs you" count. In this order: web check-in open for my flight ("Web check-in is open"; the flight closes), then a
- * checklist row of mine still to do ("Indonesia e-VOA needed"; a document deadline, only with features.visa), then
- * expenses waiting for my approval ("2 expenses to approve"). Anything else is the usual rule (attentionOf).
+ * checklist row of mine still to do ("Indonesia e-VOA needed"; a document deadline, only with features.visa). Anything
+ * else is the usual rule (attentionOf).
  */
 async function taskFor(db: Db, tripId: string, personId: string, needs: NeedsYouItem[], features?: Partial<Features>): Promise<Attention | null> {
   if (needs.some((i) => i.kind === 'checkin')) return { kind: 'task', label: 'Web check-in is open' };
@@ -86,8 +86,6 @@ async function taskFor(db: Db, tripId: string, personId: string, needs: NeedsYou
     const title = await pendingChecklist(db, tripId, personId);
     if (title) return { kind: 'task', label: `${title} needed` };
   }
-  const approvals = needs.filter((i) => i.kind === 'expense').length;
-  if (approvals > 0) return { kind: 'task', label: `${approvals} ${approvals === 1 ? 'expense' : 'expenses'} to approve` };
   return null;
 }
 

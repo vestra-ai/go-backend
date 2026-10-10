@@ -63,7 +63,7 @@ it('starts: migrates, opens the signed socket as its own instance, and serves th
   expect(config.headers.get('x-request-id')).toMatch(/^[0-9a-f]{12}$/);
   expect(await config.json()).toEqual({
     contract: '1.0.0', min_client_version: '1.0.0', currency_default: 'INR',
-    features: { checkin: false, visa: false, calls: false, vote_retract: false, vote_flexible: false, claim: false, expense_approval: true },
+    features: { checkin: false, visa: false, calls: false, vote_retract: false, vote_flexible: false, claim: false },
   });
 });
 

@@ -11,8 +11,8 @@ export const MIN_CLIENT_VERSION = '1.0.0';
 export const CURRENCY_DEFAULT = 'INR';
 
 export const routes: RouteMeta[] = [
-  { method: 'GET', path: '/app/v1/config', section: SECTIONS.config, title: 'Config', summary: 'What the app reads first: the contract version, the oldest app version answered, the default currency, the feature flags (checkin, visa, calls, vote_retract, vote_flexible, claim, expense_approval). No sign-in.', auth: 'none',
-    example: { responses: [{ name: 'Config', status: 200, body: { contract: CONTRACT_VERSION, min_client_version: MIN_CLIENT_VERSION, currency_default: CURRENCY_DEFAULT, features: { checkin: false, visa: false, calls: false, vote_retract: false, vote_flexible: false, claim: false, expense_approval: true } } }] } },
+  { method: 'GET', path: '/app/v1/config', section: SECTIONS.config, title: 'Config', summary: 'What the app reads first: the contract version, the oldest app version answered, the default currency, the feature flags (checkin, visa, calls, vote_retract, vote_flexible, claim). No sign-in.', auth: 'none',
+    example: { responses: [{ name: 'Config', status: 200, body: { contract: CONTRACT_VERSION, min_client_version: MIN_CLIENT_VERSION, currency_default: CURRENCY_DEFAULT, features: { checkin: false, visa: false, calls: false, vote_retract: false, vote_flexible: false, claim: false } } }] } },
   { method: 'GET', path: '/app/v1/health', section: SECTIONS.config, title: 'Health', summary: 'Whether the server is up and connected to Go (also at /health for the platform). No sign-in.', auth: 'none',
     example: { responses: [{ name: 'Up', status: 200, body: { ok: true, go: true } }, { name: 'Go not connected', status: 200, body: { ok: true, go: false } }] } },
 ];

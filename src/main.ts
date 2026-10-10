@@ -37,7 +37,7 @@ const ctx: Ctx = {
   features: config.features,
   goContract: config.goContract,
 };
-console.log(`go contract: ${config.goContract}${config.goContract === '1.0' ? ' (an expense approved, disputed or re-split is not sent as an event; Go reads it)' : ''}`);
+console.log(`go contract: ${config.goContract}${config.goContract === '1.0' ? ' (a re-split expense is not sent as an event; Go reads it)' : ''}`);
 
 // 1. The socket to Go, with a fresh signature on every connect. Any instance can answer any of Go's requests.
 // LOG_GO_TRAFFIC=1: one JSON line per frame on the socket in logs/go-traffic.jsonl, for testing against a real Go.

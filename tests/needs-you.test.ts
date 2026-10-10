@@ -86,21 +86,11 @@ describe('the shape', () => {
     expect(r.status).toBe(201);
     expect(await ofKind('p_priya', 'settle_up')).toEqual([{ item_id: 'settle:p_kabir', kind: 'settle_up', title: 'Settle up with Kabir', subtitle: '₹5,800 left of your share', cta_label: 'Record', since: ISO, target: { transfer: { to_person_id: 'p_kabir', amount_minor: 580000, currency: 'INR' } } }]);
     expect(await ofKind('p_kabir', 'settle_up')).toEqual([]); // the payee owes nobody
-    expect((await t.api(t.as('p_priya'), 'GET', '/app/v1/trips/t_goa')).body.needs_you_count).toBe(2); // the settle-up, and the deposit itself waits for her approval (§4.9)
+    expect((await t.api(t.as('p_priya'), 'GET', '/app/v1/trips/t_goa')).body.needs_you_count).toBe(1); // the settle-up only: nobody approves an expense
     // Priya pays Kabir's share of something else: the transfer shrinks, then goes.
     await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_goa/expenses', { paid_by_person_id: 'p_priya', amount_minor: 400000, note: 'Dinner', category: 'food', split_person_ids: ['p_kabir'] });
     expect((await ofKind('p_priya', 'settle_up'))[0]).toMatchObject({ item_id: 'settle:p_kabir', subtitle: '₹1,800 left of your share' });
     await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_goa/expenses', { paid_by_person_id: 'p_priya', amount_minor: 180000, note: 'Cab back', category: 'getting_around', split_person_ids: ['p_kabir'] });
     expect(await ofKind('p_priya', 'settle_up')).toEqual([]);
-  });
-
-  it('expense: a pending confirmation of mine (§4.9), "Approve <my share> · <note>", gone once I approve', async () => {
-    expect((await rows(h.pool, `select to_regclass('public.expense_confirmations') as t`))[0].t).toBe('expense_confirmations');
-    const e = (await t.api(t.as('p_kabir'), 'POST', '/app/v1/trips/t_goa/expenses', { paid_by_person_id: 'p_kabir', amount_minor: 170000, note: 'Airport cab', category: 'getting_around', split_person_ids: ['p_kabir', 'p_arjun'] })).body;
-    expect(await ofKind('p_arjun', 'expense')).toEqual([{ item_id: `expense:${e.expense_id}:p_arjun`, kind: 'expense', title: 'Approve ₹850 · Airport cab', cta_label: 'Approve', since: ISO, target: { expense_id: e.expense_id } }]); // his share of ₹1,700 split two ways
-    expect((await ofKind('p_meher', 'expense')).map((i) => i.target.expense_id)).not.toContain(e.expense_id); // not in the split
-    expect((await ofKind('p_kabir', 'expense')).map((i) => i.target.expense_id)).not.toContain(e.expense_id); // the payer is never asked about their own
-    await t.api(t.as('p_arjun'), 'POST', `/app/v1/trips/t_goa/expenses/${e.expense_id}/approve`);
-    expect(await ofKind('p_arjun', 'expense')).toEqual([]);
   });
 });
