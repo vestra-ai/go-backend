@@ -1,4 +1,4 @@
-// §4.12 Web check-in (APP-CONTRACT-CHANGES §4.12, GO-CHANGES 3), behind features.checkin: the state asked of Go and kept,
+// §4.12 Web check-in (app contract §4.12, GO-CHANGES 3), behind features.checkin: the state asked of Go and kept,
 // the answers (seat rules, the paid seat as a payment), the submit (done, working, failed, silent), the companion, the
 // strip's `checkin` item, the home card's task, and Go's "it's open" notice card.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

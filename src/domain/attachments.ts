@@ -1,7 +1,7 @@
 // Attachments on a message (app contract §4.5, §4.6). The app uploads a file first (POST /uploads) and then names its
 // `upload_id` in a message; the server turns that into the contract's PhotoAttachment or FileAttachment, with a link
 // into Storage. The stored link is signed when the message is written; every time the app reads the message the
-// links are signed again, valid one hour (ALIGNMENT-REVIEW 3.8: an <img> cannot send Authorization).
+// links are signed again, valid one hour (an <img> cannot send Authorization).
 import type pg from 'pg';
 import type { Ctx } from '../context.js';
 import { check } from '../contract/index.js';

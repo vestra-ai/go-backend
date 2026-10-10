@@ -9,9 +9,9 @@ the product name, not the programming language. The code is TypeScript.)
 Two contracts rule the code:
 - **Server ↔ Go:** https://vestrago.vercel.app/llms-full.txt (1.0.0), plus the additive 1.1 proposal in
   [`docs/GO-CHANGES.md`](docs/GO-CHANGES.md) (`contract/extensions-1.1.json`). If a rule is unclear, the rulebook wins.
-- **App ↔ Server:** [`docs/API.md`](docs/API.md), the app team's contract (rev 3) as this server runs it. **Frontend
-  team: start there.** Postman (**not maintained since contract rev 4, 10 Oct 2026: it still describes rev 3**): [`docs/go-server.postman_collection.json`](docs/go-server.postman_collection.json)
-  and the environment next to it (generated from the code with `pnpm postman:build`).
+- **App ↔ Server:** [`docs/API.md`](docs/API.md), the app team's contract (rev 4) as this server runs it. **Frontend
+  team: start there**, or with [`docs/CONTRACT-APP.md`](docs/CONTRACT-APP.md), the same contract on its own. For Go's
+  team: [`docs/CONTRACT-GO.md`](docs/CONTRACT-GO.md).
 
 ---
 
@@ -65,7 +65,7 @@ Two contracts rule the code:
 | `contract/` | Copies of the public rulebook files and test vectors, and `extensions-1.1.json` |
 | `tests/` | Automated tests (see below); `tests/helpers/mock-go.ts` is the mock Go, `fake-supabase-auth.ts` the fake Supabase Auth |
 | `scripts/` | Operator and dev tools (table below) |
-| `docs/` | `API.md` (the app contract), `DEPLOY.md`, `SUPABASE-SETUP.md`, `REVIEW.md`, the alignment documents, Postman |
+| `docs/` | `API.md` (the app contract), `CONTRACT-APP.md` and `CONTRACT-GO.md` (each contract on its own), `GO-CHANGES.md`, `DEPLOY.md`, `SUPABASE-SETUP.md`, `REAL-GO-TESTING.md` |
 | `.env.example` | The settings the server needs |
 
 ---
@@ -97,11 +97,9 @@ Settings (all in `.env.example`, each with a comment):
 
 ```bash
 pnpm dev:stack    # a temporary Postgres + a fake Go + a fake Supabase Auth on :54331 + the real server on :8080 (Ctrl-C stops all of it)
-pnpm postman      # in another terminal: runs the Postman collection's "Run in order" journey against it with newman
 ```
 
-Or import `docs/go-server.postman_collection.json` and its environment into Postman (set `token` to a minted token,
-`baseUrl` to `http://localhost:8080`), or use curl as in `docs/API.md` "Try it".
+Then use curl as in `docs/API.md` "Try it".
 
 - **Sign in like production:** `curl 'http://127.0.0.1:54331/mint?name=Priya&email=priya@gmail.com'` gives a
   Supabase-style access token; send it as `Authorization: Bearer …`. The person is created on the first call.
@@ -117,7 +115,7 @@ Or import `docs/go-server.postman_collection.json` and its environment into Post
 the default when `SUPABASE_URL` is not set). Then **`POST /app/v1/dev/sign-in`** with `{ "name": "Priya" }` (and
 optionally `photo_url`, `phone`, `email`, `upi_id`) answers `201 { "person_id", "token" }`; the token (90 days, signed
 with `APP_SESSION_SECRET`) is sent as `Authorization: Bearer …` like a Supabase one. The route does not exist in
-`AUTH_MODE=supabase`, is refused in production, and is kept out of `docs/API.md` and the Postman app folders on purpose.
+`AUTH_MODE=supabase`, is refused in production, and is kept out of `docs/API.md` on purpose.
 
 ## Operator and dev scripts
 
@@ -131,8 +129,6 @@ with `APP_SESSION_SECRET`) is sent as `Authorization: Bearer …` like a Supabas
 | `pnpm dev:login` | A "Sign in with Google" page on `:3000` that shows the real Supabase token and calls `GET /app/v1/me` (needs `APP_ORIGINS=http://localhost:3000`) |
 | `pnpm supabase:token` | A real Supabase access token for a test user (`SUPABASE_TEST_EMAIL`/`_PASSWORD` in `.env`; `--user 2` for the second); `--me <server>` also calls `GET /app/v1/me` |
 | `pnpm supabase:rehearse` | The server against the official local Supabase (Docker): real Auth, Postgres and Data API, only Go faked |
-| `pnpm postman:build` | Regenerates `docs/go-server.postman_collection.json` from the route metadata in `src/api/v1/*.ts`: one folder per section of `docs/API.md`, one request per route, plus the "Run in order" journey (never hand-edit the collection) |
-| `pnpm postman` / `pnpm postman:railway` | Runs the collection's "Run in order" journey with newman: against the dev stack, or against the deployed server with the Railway environment file |
 | `pnpm migrate` | Applies `migrations/*.sql` and loads the city dataset by hand (`pnpm start` does it too) |
 | `pnpm test` / `pnpm typecheck` | The tests (below) and the type check |
 
@@ -143,7 +139,7 @@ Deployment (Railway): [`docs/DEPLOY.md`](docs/DEPLOY.md). Supabase setup, the to
 ## Test it
 
 ```bash
-pnpm test         # 470 tests in 52 files; starts a real temporary Postgres by itself, no Docker needed (about 40 s)
+pnpm test         # 489 tests in 56 files; starts a real temporary Postgres by itself, no Docker needed (about 40 s)
 pnpm typecheck
 ```
 
@@ -153,9 +149,6 @@ the fake Supabase Auth and the in-memory storage, all offline. `tests/flows.e2e.
 of the docs end to end, `tests/fake-go.e2e.test.ts` runs the real server process against the fake Go, and
 `tests/live-ws.test.ts` drives the WebSocket (replay, resync, two devices, ticket reuse). The mock is only a test tool,
 it is not the real Go.
-
-The review of this server against every page of the docs, what was built in October 2026 and the known gaps is in
-[`docs/REVIEW.md`](docs/REVIEW.md).
 
 ---
 
@@ -172,7 +165,7 @@ The review of this server against every page of the docs, what was built in Octo
   rate limiters, invite preview and city search, are per instance on purpose.)
 - Each server copy needs its own `INSTANCE_NAME`, because Go accepts each connection signature only once.
 - **Every app route declares its metadata** (`routes[]` in `src/api/v1/*.ts`: method, path, section, title, summary,
-  example). The Postman collection and `docs/API.md` Appendix C come from it. A new route goes in the section file with
+  example). A test counts the routes (70); `docs/API.md` Appendix C is kept in step by hand. A new route goes in the section file with
   its metadata and a strict body definition in `src/api/bodies.ts` (`tests/bodies.test.ts` checks the rules).
 - Go-dependent features live behind a flag in `src/config.ts` (`FEATURE_DEFAULTS`). The mock Go implements the 1.1
   behaviour so the tests cover a feature with its flag on.
@@ -184,7 +177,6 @@ The review of this server against every page of the docs, what was built in Octo
 - **Supabase Storage** is tested against an in-process fake and the local Supabase rehearsal, not yet against the
   production bucket (`docs/DEPLOY.md` has the checks).
 - **Contract 1.1:** check-in, visa documents, calls, flexible votes, taking a vote back and `claim` are built behind
-  flags and wait for Go's side (`docs/GO-CHANGES.md`); the first real-Go pass on them is phase 6.4 of
-  `docs/ALIGNMENT-PLAN.md`.
+  flags and wait for Go's side (`docs/GO-CHANGES.md`); `docs/REAL-GO-TESTING.md` records no real-Go pass on them.
 - **The contract package:** the official `@go/contract` lives in a private repo we could not reach, so `src/contract/`
   is built from the public files. Same function names, so it can be swapped later.

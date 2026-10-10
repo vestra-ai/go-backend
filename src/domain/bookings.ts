@@ -1,5 +1,5 @@
 // §4.10 Bookings as the app reads them, and the ticket files behind them. Two rules live here. The covered-people rule
-// (app contract §1.7, APP-CONTRACT-CHANGES): `passengers[]` and `documents[]` are returned only to the people in
+// (app contract §1.7): `passengers[]` and `documents[]` are returned only to the people in
 // `for_person_ids`; everyone else gets the booking without those two keys. Go's own reads keep everything. And the
 // files: when Go's add_booking names documents, each `url` is fetched once, the file is kept in Storage under our own
 // path, and the app only ever gets a short signed link from GET …/documents/:document_id (never the stored link).

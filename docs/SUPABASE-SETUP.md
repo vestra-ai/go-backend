@@ -151,7 +151,7 @@ no shared secret set.
    1. Add `http://localhost:3000` to Supabase's Redirect URLs.
    2. Start the server with `APP_ORIGINS=http://localhost:3000`.
    3. Run `pnpm dev:login`, open http://localhost:3000, click "Sign in with Google", then "Call GET /app/v1/me".
-5. **Postman:** paste the access token from step 4 into the `token` variable. Everything works the same way.
+5. **Any HTTP client:** send the access token from step 4 as `Authorization: Bearer …`. Everything works the same way.
 
 ## Testing before Google is on: email test users
 

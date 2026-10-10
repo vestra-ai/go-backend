@@ -1,12 +1,12 @@
-// What every v1 route says about itself, next to its handler: the Postman collection (scripts/postman-build.ts) and
-// API.md's index are generated from these, so the code, the collection and the document cannot drift.
+// What every v1 route says about itself, next to its handler. docs/API.md (the contract document) describes the same
+// routes; its Appendix C is kept in step with this list by hand.
 import type { FastifyInstance } from 'fastify';
 import type { Ctx } from '../../context.js';
 import type { V1Deps } from './shared.js';
 
 export type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
-/** An example request and its example answers, for the collection and the document. Filled in per section (phase 6). */
+/** An example request and its example answers, for the document. */
 export interface RouteExample {
   body?: unknown;
   query?: Record<string, string>;
@@ -17,13 +17,13 @@ export interface RouteMeta {
   method: Method;
   /** The full path, with Fastify's `:param` names: `/app/v1/trips/:trip/messages`. */
   path: string;
-  /** The app contract's section the route belongs to (one Postman folder each). */
+  /** The app contract's section the route belongs to (one section of docs/API.md each). */
   section: string;
   title: string;
   summary: string;
   /** `none`: no sign-in (the default is a bearer token). */
   auth?: 'none' | 'bearer';
-  /** Local only (AUTH_MODE=dev): kept out of the app's folders and of API.md. */
+  /** Local only (AUTH_MODE=dev): kept out of API.md. */
   dev?: boolean;
   example?: RouteExample;
 }

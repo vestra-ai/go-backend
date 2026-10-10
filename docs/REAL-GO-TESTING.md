@@ -158,7 +158,7 @@ runs: max 1162 ms). The contract limit is 2 s and our timeout is 2.5 s. A slower
 
 ## 5. The /app/v1 server against Go 1.0 (8 Oct 2026)
 
-After the app-contract rebuild (phases 0–6 of `ALIGNMENT-PLAN.md`), one pass with `pnpm dev:real --env <a copy of
+After the app-contract rebuild, one pass with `pnpm dev:real --env <a copy of
 .env without the production DATABASE_URL>` (local Postgres, dev sign-in, `LOG_GO_TRAFFIC=1`), trip
 `t_eaf1d4696ae72925` ("TEST v1 real-Go"), driving every flow that sends Go a new shape:
 

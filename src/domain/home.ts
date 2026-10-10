@@ -75,7 +75,7 @@ async function pendingChecklist(db: Db, tripId: string, personId: string): Promi
 }
 
 /**
- * `attention.task` (APP-CONTRACT-CHANGES §4.2): one thing with a deadline or a form behind it, which beats the plain
+ * `attention.task` (app contract §4.2): one thing with a deadline or a form behind it, which beats the plain
  * "needs you" count. In this order: web check-in open for my flight ("Web check-in is open"; the flight closes), then a
  * checklist row of mine still to do ("Indonesia e-VOA needed"; a document deadline, only with features.visa). Anything
  * else is the usual rule (attentionOf).

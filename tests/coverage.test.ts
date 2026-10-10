@@ -1,4 +1,4 @@
-// Contract rules the review found working but untested (docs/REVIEW.md): each is now proved here.
+// Contract rules an earlier review found working but untested: each is now proved here.
 import { createServer } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { RECONNECT_BACKOFF_SECONDS } from '../src/contract/index.js';

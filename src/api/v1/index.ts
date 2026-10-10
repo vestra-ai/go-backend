@@ -1,5 +1,5 @@
-// Every section of the app's API, in the contract's order. The shell (src/api/app.ts) registers each one; the Postman
-// generator (scripts/postman-build.ts) reads their route metadata.
+// Every section of the app's API, in the contract's order. The shell (src/api/app.ts) registers each one.
+// tests/rev4-whole.test.ts counts the routes (70); docs/API.md Appendix C is kept in step by hand.
 import type { Section } from './meta.js';
 import * as bookings from './bookings.js';
 import * as cards from './cards.js';

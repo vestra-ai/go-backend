@@ -1,4 +1,4 @@
-// GET /trips/:trip/cards?kind=&state= and POST …/cards/:card_id/share (app contract §4.11, APP-CONTRACT-CHANGES §4.11,
+// GET /trips/:trip/cards?kind=&state= and POST …/cards/:card_id/share (app contract §4.11,
 // GO-CHANGES 2.3): the latest version of each card by kind and state, and a call recording copied into the room.
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -78,7 +78,7 @@ describe('GET /cards', () => {
   });
 });
 
-describe('POST /cards/:card_id/actions: claim (GO-CHANGES 1.10, APP-CONTRACT-CHANGES §11.13)', () => {
+describe('POST /cards/:card_id/actions: claim (GO-CHANGES 1.10)', () => {
   it('two people tapping "I\'ll book it" at once each reach Go as their own card_tap with distinct tap_ids, and each gets Go\'s answer back unchanged: done for the first Go sees, refused for the other', async () => {
     await post({ ...fakeCard('notice', 'c_claim', 'p_rahul'), title: 'One person books for all', body: 'Villa Sol won. Who books it?', actions: [{ action_id: 'claim', label: "I'll book it", style: 'primary' }] });
     const was = h.go.answers.card_tap!;

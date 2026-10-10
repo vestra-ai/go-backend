@@ -16,7 +16,7 @@ import type { ChangeKind, LiveEvent } from './live.js';
 export const LIVE_PATH = '/app/v1/live';
 export const HEARTBEAT_SECONDS = 25;
 export const MISSED_PONGS_TO_CLOSE = 2;
-/** Our replay rule (APP-CONTRACT-CHANGES §3): up to this many changed messages, then one trip_changed; more means resync. */
+/** Our replay rule (app contract §3): up to this many changed messages, then one trip_changed; more means resync. */
 export const REPLAY_MAX_MESSAGES = 200;
 /** A frame never goes over 1 MB (app contract §3.4); a replay that would is a resync instead. */
 export const REPLAY_MAX_BYTES = 900 * 1024;
@@ -194,7 +194,7 @@ export class LiveHub {
   }
 
   /**
-   * Subscribes the socket to a trip and replays what it missed since `sinceSeq` (our simplification, APP-CONTRACT-CHANGES §3):
+   * Subscribes the socket to a trip and replays what it missed since `sinceSeq` (app contract §3):
    * the messages changed after it as `message` frames, oldest change first, then one `trip_changed` with the trip's current
    * seq when that moved; more than REPLAY_MAX_MESSAGES changed messages (or more than a frame's worth) is a `resync`.
    * The subscription is in place before the replay is read, so a change that lands meanwhile is seen (twice at worst).

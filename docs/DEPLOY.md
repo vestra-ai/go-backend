@@ -68,8 +68,7 @@ Left out on purpose:
 2. Put their logins in your local `.env` as `SUPABASE_TEST_EMAIL` and `SUPABASE_TEST_PASSWORD` (and
    `SUPABASE_TEST_EMAIL_2` and `SUPABASE_TEST_PASSWORD_2`, and so on).
 3. Get a token: `pnpm supabase:token --me https://<server address>` prints a real Supabase access token, valid for
-   about an hour, and calls `GET /app/v1/me` with it. Use it as `Authorization: Bearer …` in curl or Postman (the
-   `token` variable).
+   about an hour, and calls `GET /app/v1/me` with it. Use it as `Authorization: Bearer …`.
 
 These are real Supabase tokens, the same kind Google sign-in gives, so this tests the production path. There's no
 bypass in the code and nothing to remove later.

@@ -11,3 +11,6 @@ supabase/.branches
 
 # Agent worktrees made by the Claude desktop app
 .claude/worktrees/
+
+# Local build evidence and scratch from agent sessions
+output/

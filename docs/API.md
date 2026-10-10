@@ -2,9 +2,7 @@
 
 **For:** the App team (Saket) and anyone building against the Server. **Date:** 10 Oct 2026.
 
-This is the one contract the app builds against. It is the App team's **v1 draft rev 2** with the Server team's
-answer ([`APP-CONTRACT-CHANGES.md`](APP-CONTRACT-CHANGES.md)) folded in, in rev 2's section numbers, and it describes
-**exactly what the deployed Server does today**. Where rev 2 and this page differ, this page is right, because it is
+This is the one contract the app builds against. It describes **exactly what the deployed Server does today**, and is
 written from the code (`src/api/v1/*.ts`, `src/api/bodies.ts`, `src/domain/*`). Appendix C lists the same routes as the
 code's route metadata, which a test counts (70).
 
@@ -68,9 +66,6 @@ curl -s localhost:8080/app/v1/me -H "authorization: Bearer $TOKEN"
 curl -s localhost:8080/app/v1/trips -X POST -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
      -H "idempotency-key: $(uuidgen)" -d '{"title":"Goa 🌴","dates":{"start":"2026-11-06","end":"2026-11-09"}}'
 ```
-
-**Postman.** The collection in `docs/` is **not maintained for rev 4**: it still describes rev 3, including routes that
-no longer exist. This page is the contract.
 
 **Against the deployed Server** (`https://server-production-2202go.up.railway.app/app/v1`), until Google sign-in is
 on: `pnpm supabase:token --me https://server-production-2202go.up.railway.app` prints a real Supabase access token for a
@@ -792,13 +787,17 @@ matching, never for display. A 400 ms debounce and cancelling the previous reque
 
 ## 5. Screen by screen
 
-Rev 2's §5 stands as the app team wrote it, with two changes: **§5.11 Pay sheet is removed** (a payment is always the
-vault page behind a card action, §4.7) and **§5.10 has no Approve / Dispute badge and no Nudge**: an expense simply
-counts, and money movements show as lines in the room (§4.6, §4.9). The trip board (the top-right panel) is gone from
-the app; "needs you" stays on the dashboard (§4.11), and the private budget, invite "Not now" / "Decline" and notification
-screens of rev 2 no longer exist (§4.3, §4.4, §8). Everywhere §5 says `POST /auth/*`, read "Supabase sign-in" (§1.2); everywhere it says
-`cover_url`/`hero_url`/`illustration_url`, read `photo_url` plus a client-side illustration (§2). `GET …/catch-up` takes
-no `since` (§4.6).
+How the app's screens map to this page, where it is not obvious:
+
+- **Paying** is always the vault page behind a card action (§4.7). There is no pay sheet in the app.
+- **Expenses** have no Approve / Dispute badge and no Nudge: an expense simply counts, and money movements show as lines
+  in the room (§4.6, §4.9).
+- **The trip board** (the top-right panel) is gone from the app; "needs you" stays on the dashboard (§4.11).
+- **No private budget screen, no invite "Not now" / "Decline", no notification settings** (§4.3, §4.4, §8).
+- **Sign-in** is Supabase sign-in; there are no `/auth/*` routes (§1.2).
+- **Images:** the Server has one image per trip, `photo_url` (plus `photos` when sent, §9); any illustration is the
+  client's.
+- **Catch-up** takes no `since` (§4.6).
 
 ---
 
@@ -905,10 +904,10 @@ What takes their place, all inside the app:
 
 ## 9. Additions from Go, and the feature flags
 
-Everything in rev 2 §9 was proposed to Go's team in [`GO-CHANGES.md`](GO-CHANGES.md) (contract 1.1), with `Place.timezone`
-added and, in rev 4, the items of its section 6. The Server already **passes the 1.1 fields through** wherever Go sends them (the
-contract check is extended by `contract/extensions-1.1.json`, additively), and has built the Go-dependent features
-behind the flags in `GET /config.features`. A flag flips to on the day Go ships that item.
+Some features depend on Go. They were proposed to Go's team in [`GO-CHANGES.md`](GO-CHANGES.md) (contract 1.1; the rev 4
+items are its section 6). The Server already **passes the 1.1 fields through** wherever Go sends them (the contract check
+is extended by `contract/extensions-1.1.json`, additively), and has built the Go-dependent features behind the flags in
+`GET /config.features`. A flag flips to on the day Go ships that item.
 
 | Flag | Default | On the Server, with the flag **off** | What the app hides |
 |---|---|---|---|
@@ -919,13 +918,12 @@ behind the flags in `GET /config.features`. A flag flips to on the day Go ships 
 | `vote_flexible` | false | `PUT …/vote { flexible: true }` answers `409` | "I'm flexible" (send it as a message meanwhile) |
 | `claim` | false | nothing: a `claim` tap is an ordinary `card_tap`, passed through | "I'll book it" (Go picks the payer and posts the mandate card directly) |
 
-**Pass-throughs with no flag** (the app degrades as rev 2's last column says until Go sends them): 9.1 option `details`;
-9.2 `return_journey`, `price_oneway_minor`, `price_round_minor`, `option_kind: "cab"`, `card_tap.payload`; 9.3
-`quick_replies`; 9.4 `go://` links; 9.7 `location` attachments and `duration_s`; 9.9 `Booking.details`, `passengers`,
-`documents`, `return_journey` (the Server stores Go's documents and applies the covered-people rule); 9.10
-`ItineraryItem.person_ids`, `audience`, `Day.image_url` (the Server filters `private` items and builds `scope=me`); 9.11
-`settlement.recorded` (sent when a payback is recorded); 9.8 the `checklist` card; 9.5 `recording_url`, `duration_s`, `listen`;
-`Place.timezone`; `expense.changed` `updated`.
+**Passed through with no flag** (each appears only once Go sends it): option `details`; `return_journey`,
+`price_oneway_minor`, `price_round_minor`, `option_kind: "cab"`, `card_tap.payload`; `quick_replies`; `go://` links;
+`location` attachments and `duration_s`; `Booking.details`, `passengers`, `documents`, `return_journey` (the Server
+stores Go's documents and applies the covered-people rule); `ItineraryItem.person_ids`, `audience`, `Day.image_url` (the
+Server filters `private` items and builds `scope=me`); `settlement.recorded` (sent when a payback is recorded); the
+`checklist` card; `recording_url`, `duration_s`, `listen`; `Place.timezone`; `expense.changed` `updated`.
 
 **New in rev 4, with no flag** (each does nothing until Go sends it; shapes in [`GO-CHANGES.md`](GO-CHANGES.md) §6):
 
@@ -1003,7 +1001,7 @@ Every `429` carries `retry_after_seconds` in the body and a `Retry-After` header
 
 ## Appendix C: endpoint index
 
-Generated from the route metadata in `src/api/v1/*.ts` (70 routes; dev-only routes excluded). Paths are under `/app/v1`.
+The routes in the route metadata of `src/api/v1/*.ts` (70, counted by a test; dev-only routes excluded), kept in step by hand. Paths are under `/app/v1`.
 
 | § | Method | Path | Sign-in |
 |---|---|---|---|

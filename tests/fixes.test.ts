@@ -1,4 +1,4 @@
-// One test per bug found in the full review against the docs (docs/REVIEW.md, "Bugs found and fixed").
+// One test per bug found in an earlier full review against the docs.
 // Each would have failed before its fix.
 import { randomBytes } from 'node:crypto';
 import pg from 'pg';

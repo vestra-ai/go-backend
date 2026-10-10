@@ -1,4 +1,4 @@
-// §4.12 Web check-in (app contract §4.12, APP-CONTRACT-CHANGES §4.12, GO-CHANGES 3), behind features.checkin. Go performs
+// §4.12 Web check-in (app contract §4.12, GO-CHANGES 3), behind features.checkin. Go performs
 // the check-in on the airline site; the server keeps a copy of what Go found for each covered person on a flight (the
 // `checkins` table, migration 009) so the sheets, the "needs you" strip and the home card read it without asking Go
 // every time, and still have it when Go is away. The person's own answers (DigiYatra, declaration, seat, mobile) are

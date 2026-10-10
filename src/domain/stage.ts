@@ -1,4 +1,4 @@
-// `stage` (app contract §4.4, rule fixed in APP-CONTRACT-CHANGES.md): where a trip is, from the trip's own fields,
+// `stage` (app contract §4.4): where a trip is, from the trip's own fields,
 // never from record lines. The app picks the zero state or the populated Trip home from it, and the home card's line.
 export type Stage = 'new' | 'deciding' | 'planned';
 

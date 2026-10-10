@@ -1,6 +1,6 @@
 // §4.11 Go's cards outside the room: the Trip home's "Go's calls" reads them by kind and state without scanning the
 // whole chat, and "Share in group chat" on an ended call puts the recording in the room without the bytes passing
-// through the phone (APP-CONTRACT-CHANGES §4.11; behind features.calls).
+// through the phone (app contract §4.11; behind features.calls).
 import type { Ctx } from '../context.js';
 import { newId } from '../db/ids.js';
 import { once } from '../db/once.js';

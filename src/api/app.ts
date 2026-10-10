@@ -33,7 +33,7 @@ async function isDeleted(pool: Ctx['pool'], personId: string): Promise<boolean> 
 }
 
 /**
- * The app's API, under /app/v1 (app contract rev 3). This is the shell: the request id, CORS, the body parser, the one
+ * The app's API, under /app/v1 (app contract rev 4). This is the shell: the request id, CORS, the body parser, the one
  * error shape, sign-in and the Idempotency-Key store; the routes live one file per contract section in src/api/v1.
  * The app talks only to this, never to Go.
  */

@@ -1,4 +1,4 @@
-// Visa (APP-CONTRACT-CHANGES §4.2, GO-CHANGES 2.2), behind features.visa: the vault link that opens Go's documents form
+// Visa (app contract §4.2, GO-CHANGES 2.2), behind features.visa: the vault link that opens Go's documents form
 // (start add_documents + context, passport data never through the server), the `checklist` card passed through as it is,
 // and the home card's task for a row of mine still to do.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

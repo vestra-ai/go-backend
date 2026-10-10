@@ -1,7 +1,7 @@
 // Where files live (app contract §4.5): photos, voice notes and ticket PDFs the app uploads, and the booking
-// documents and call recordings the server copies from Go's links (phase 4). The app never sends bytes through the
+// documents and call recordings the server copies from Go's links. The app never sends bytes through the
 // server: it PUTs them to a signed upload URL, and every link the app reads is a signed download URL minted at read
-// time (ALIGNMENT-REVIEW 3.8).
+// time.
 import type { FastifyInstance } from 'fastify';
 
 export interface SignedUpload {

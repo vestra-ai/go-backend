@@ -18,7 +18,7 @@ export const routes: RouteMeta[] = [
   },
   {
     method: 'GET', path: '/app/v1/live', section: SECTIONS.live, title: 'Live socket (WebSocket)',
-    summary: 'wss://…/app/v1/live?ticket=<ticket>. Frames: hello, message, card, typing, trip_changed { seq, kinds? }, home_changed, resync, ping / pong; app sends subscribe { trips: [{ trip_id, since_seq }] }, unsubscribe, typing, pong. A bad ticket closes with 4401. Not for Postman: use wscat.',
+    summary: 'wss://…/app/v1/live?ticket=<ticket>. Frames: hello, message, card, typing, trip_changed { seq, kinds? }, home_changed, resync, ping / pong; app sends subscribe { trips: [{ trip_id, since_seq }] }, unsubscribe, typing, pong. A bad ticket closes with 4401. Try it with wscat.',
     example: { query: { ticket: 'tk_3f9a…' } },
   },
 ];

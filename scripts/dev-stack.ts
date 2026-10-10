@@ -1,4 +1,4 @@
-// A whole local stack for trying the server by hand or with Postman, with nothing to install or configure:
+// A whole local stack for trying the server by hand, with nothing to install or configure:
 //   - a temporary Postgres (embedded, deleted on exit),
 //   - a fake Go that behaves as the guide's "Work without the other side" describes (tests/helpers/mock-go.ts),
 //   - the real server (src/main.ts) on :8080, connected to that fake Go over the real signed socket,
@@ -114,12 +114,11 @@ await new Promise<void>((r) => sim.listen(SIM_PORT, r));
 
 console.log(`
   Go Server dev stack is up.
-    App API      http://localhost:${PORT}/app/v1  (the real server; Postman's {{baseUrl}})
-    Act as Go    http://localhost:${SIM_PORT}/sim    (POST /sim/<method>, GET /sim/state; Postman's {{goUrl}})
+    App API      http://localhost:${PORT}/app/v1  (the real server)
+    Act as Go    http://localhost:${SIM_PORT}/sim    (POST /sim/<method>, GET /sim/state)
     Postgres     postgres://postgres:postgres@localhost:${PG_PORT}/go  (temporary)
     Features     ${featuresOn.length ? featuresOn.join(', ') : 'none on (add --features checkin,visa,calls)'}
   The fake Go answers every message that names it (@Go): typing, ✅, then a reply with a card.
-  Postman: import docs/go-server.postman_collection.json with docs/go-server.postman_environment.json and run "Run in order" (or: pnpm postman).
 ${authUrl
   ? `  Sign-in      Supabase-style tokens from a fake Supabase Auth: GET ${authUrl}/mint?name=Priya&email=priya@gmail.com
                (send the access_token as Authorization: Bearer …; POST /app/v1/dev/sign-in is off, as in production)
