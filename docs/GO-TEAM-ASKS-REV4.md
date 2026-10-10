@@ -1,6 +1,6 @@
 # For Go's team: what changes on the Server, and what we ask of Go
 
-**From:** the Server team. **Date:** 10 Oct 2026. **Status:** built on the Server's feature branch (not deployed yet). Everything in A and in B1 to B7 is in place and does
+**From:** the Server team. **Date:** 10 Oct 2026. **Status:** built on the Server (contract rev 4). Everything in A and in B1 to B7 is in place and does
 nothing until Go sends it; **B8 (check-in payments) is not built** and waits for your answer.
 Field and event names below are proposals; tell us what you would rather call them and we will follow.
 
@@ -81,8 +81,8 @@ so Go cannot clear it; a person clears it in the app. The Server answers as for 
 `trip.updated changed: ["budget"]` by Go when the value differs. The same value again changes nothing and sends no event.
 
 ### B2. Accept `expense.changed` with `change: "updated"`
-A person can fix an expense's split. On 8 Oct the real Go refused anything but `added | removed`
-(`422 Invalid option … at data.change`), so today we send no event for a fixed split and Go only sees it on its
+A person can fix an expense's split. Go 1.0 accepts only `added | removed` there (on 8 Oct the real Go refused `approved` with
+`422 Invalid option … at data.change`), so today we send no event for a fixed split and Go only sees it on its
 next `read_trip`. Please accept `"updated"` (the event carries the whole `Expense`). This is `GO-CHANGES.md` B4,
 now without `approved` and `disputed`.
 

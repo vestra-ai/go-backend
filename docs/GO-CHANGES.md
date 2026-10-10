@@ -241,8 +241,8 @@ the moment it is added until it is removed. `add_expense.approval_id` keeps its 
 belongs to) and changes nothing else.
 
 **What remains of this item:** `expense.changed` with `change: "updated"` when a person fixes an expense's split
-(data: the whole `Expense`, plus `by_person_id`). The real Go refused it on 8 Oct 2026 (`422 Invalid option … at
-data.change`), so on contract 1.0 the Server sends no event for a fixed split and Go sees it on its next `read_trip`.
+(data: the whole `Expense`, plus `by_person_id`). Go 1.0 knows only `added` and `removed` there (on 8 Oct 2026 the real Go refused `approved` with `422 Invalid option …
+at data.change`; `updated` itself has not been sent to it), so on contract 1.0 the Server sends no event for a fixed split and Go sees it on its next `read_trip`.
 
 ---
 
