@@ -50,38 +50,36 @@ it('migrations 002 onwards apply on top of a database at 001 with data in it, an
   const applied = await migrate(pool);
   const sql = applied.filter((f) => f.endsWith('.sql'));
   expect(sql.slice(0, 4)).toEqual(['002_people_actions.sql', '003_supabase.sql', '004_v1_conventions.sql', '005_v1_people.sql']);
-  expect([sql, applied.at(-1)]).toEqual([expect.arrayContaining(['006_v1_room.sql', '007_v1_money.sql', '008_v1_bookings.sql', '009_v1_checkin.sql']), expect.stringMatching(/^data\/cities-in\.json#[0-9a-f]{12}$/)]);
+  expect([sql, applied.at(-1)]).toEqual([expect.arrayContaining(['006_v1_room.sql', '007_v1_money.sql', '008_v1_bookings.sql', '009_v1_checkin.sql', '010_rev4_ledger.sql', '011_rev4_budget.sql', '012_rev4_cleanup.sql']), expect.stringMatching(/^data\/cities-in\.json#[0-9a-f]{12}$/)]);
   expect(sql).toEqual([...sql].sort());
   const tables = (await pool.query(`select table_name from information_schema.tables where table_schema = 'public'`)).rows.map((r) => r.table_name);
-  expect(tables).toEqual(expect.arrayContaining(['push_subscriptions', 'nudges', 'idempotency_keys', 'invite_marks', 'live_tickets', 'invites', 'places_cities', 'ideas', 'uploads', 'settlements', 'expense_confirmations', 'booking_documents', 'checkins']));
+  expect(tables).toEqual(expect.arrayContaining(['idempotency_keys', 'live_tickets', 'invites', 'places_cities', 'ideas', 'uploads', 'settlements', 'booking_documents', 'checkins']));
   expect(tables).not.toContain('push_devices');
+  // 012 (rev 4) dropped what approval, push, Nudge and invite marks stored: tests/migration-rev4.test.ts.
+  for (const dropped of ['push_subscriptions', 'nudges', 'invite_marks', 'expense_confirmations']) expect(tables).not.toContain(dropped);
   // 009: a check-in row needs a booking and a person, one of three statuses, and is closed to Supabase's roles like the rest.
   await expect(pool.query(`insert into checkins (booking_id, person_id, status, state) values ('b_nope', 'p_a', 'open', '{}')`)).rejects.toMatchObject({ code: '23503' });
   await expect(pool.query(`insert into checkins (booking_id, person_id, status, state) values ('b_1', 'p_a', 'working', '{}')`)).rejects.toMatchObject({ code: '23514' });
   await pool.query(`insert into checkins (booking_id, person_id, status, state) values ('b_1', 'p_a', 'open', '{"status":"open"}')`);
   expect((await pool.query(`select relname from pg_class where relname = 'checkins' and relrowsecurity`)).rows).toHaveLength(1);
-  // 008: the 1.1 booking columns are empty on the old row; a document needs a booking; a device may say its locale and time zone.
+  // 008: the 1.1 booking columns are empty on the old row; a document needs a booking.
   expect((await pool.query(`select details, return_journey, passengers from bookings where booking_id = 'b_1'`)).rows[0]).toEqual({ details: null, return_journey: null, passengers: null });
   await expect(pool.query(`insert into booking_documents (document_id, booking_id, name, mime, size_bytes, visibility, path) values ('doc_x', 'b_nope', 'x.pdf', 'application/pdf', 1, 'covered', 'p')`)).rejects.toMatchObject({ code: '23503' });
   await expect(pool.query(`insert into booking_documents (document_id, booking_id, name, mime, size_bytes, visibility, path) values ('doc_x', 'b_1', 'x.pdf', 'application/pdf', 1, 'everyone', 'p')`)).rejects.toMatchObject({ code: '23514' });
   await pool.query(`insert into booking_documents (document_id, booking_id, name, mime, size_bytes, visibility, path) values ('doc_x', 'b_1', 'x.pdf', 'application/pdf', 1, 'group', 'p')`);
-  expect((await pool.query(`select column_name from information_schema.columns where table_name = 'push_subscriptions' and column_name in ('locale', 'tz')`)).rows).toHaveLength(2);
   expect((await pool.query(`select booking_id from bookings`)).rows).toEqual([{ booking_id: 'b_1' }]);
-  // 007: an expense from before approval existed is approved; the new money tables are closed to Supabase's roles like the rest.
-  expect((await pool.query(`select status from expenses where expense_id = 'e_old'`)).rows[0]).toEqual({ status: 'approved' });
-  expect((await pool.query(`select relname from pg_class where relname in ('settlements', 'expense_confirmations') and relrowsecurity`)).rows).toHaveLength(2);
+  // 007: the old expense is still there (it was never disputed); the settlements table is closed to Supabase's roles like the rest.
+  expect((await pool.query(`select removed_at from expenses where expense_id = 'e_old'`)).rows[0]).toEqual({ removed_at: null });
+  expect((await pool.query(`select relname from pg_class where relname = 'settlements' and relrowsecurity`)).rows).toHaveLength(1);
   // 005: the existing trip's code became its working invite; the cities file and the ideas are in.
   expect((await pool.query(`select code, trip_id, created_by, revoked_at from invites`)).rows).toEqual([{ code: 'inv_1', trip_id: 't_1', created_by: 'p_a', revoked_at: null }]);
   expect((await pool.query(`select count(*)::int as n from places_cities where country = 'IN'`)).rows[0].n).toBeGreaterThan(100);
   expect((await pool.query(`select name, ascii_name, region from places_cities where id = 'in-bengaluru-ka'`)).rows[0]).toEqual({ name: 'Bengaluru', ascii_name: 'bengaluru', region: 'Karnataka' });
   expect((await pool.query(`select count(*)::int as n from ideas where from_city is null`)).rows[0].n).toBeGreaterThanOrEqual(6);
-  // 004: the Me columns with their defaults, the read marker, and a device id for each existing push registration.
-  expect((await pool.query(`select auth_provider, from_city_default, notifications_enabled, deleted_at from people where person_id = 'p_a'`)).rows[0]).toEqual({ auth_provider: null, from_city_default: null, notifications_enabled: true, deleted_at: null });
+  // 004: the Me columns with their defaults, and the read marker.
+  expect((await pool.query(`select auth_provider, from_city_default, deleted_at from people where person_id = 'p_a'`)).rows[0]).toEqual({ auth_provider: null, from_city_default: null, deleted_at: null });
   await pool.query(`insert into trip_people (trip_id, person_id) values ('t_1', 'p_a')`);
   expect((await pool.query(`select last_read_seq from trip_people`)).rows[0]).toEqual({ last_read_seq: 0 });
-  await pool.query(`insert into push_subscriptions (endpoint, person_id, p256dh, auth) values ('https://fcm.googleapis.com/a', 'p_a', 'k', 'a'), ('https://fcm.googleapis.com/b', 'p_a', 'k', 'a')`);
-  const devices = (await pool.query(`select device_id from push_subscriptions`)).rows.map((r) => r.device_id as string);
-  expect([devices.every((d) => /^dev_[0-9a-f]{32}$/.test(d)), new Set(devices).size]).toEqual([true, 2]);
   // The old votes and their vote survive, with the new column empty (so they are outside the one-open-vote rule).
   expect((await pool.query(`select decision_id, status, cancels_booking_id from decisions order by decision_id`)).rows).toEqual([
     { decision_id: 'd_old_closed', status: 'closed', cancels_booking_id: null },
