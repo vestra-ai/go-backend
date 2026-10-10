@@ -9,6 +9,11 @@ Audience: Go's team (Keshav), with the Server team (Nishanth, Rahul) and the App
 
 ---
 
+> **Rev 4 update, 10 Oct 2026.** The App and Server teams simplified the product: no private budgets, no expense
+> approval or disputes, no payback confirmation, no push notifications; and richer stays (labelled photos, room types,
+> room arrangements). Section 6 lists what that adds and withdraws. Where an earlier section is marked *rev 4*, the
+> rev 4 text wins. The covering note for Go's team is [`GO-TEAM-ASKS-REV4.md`](GO-TEAM-ASKS-REV4.md).
+
 ## 0. Where we stand
 
 Implemented and live on the Server (Railway, `https://server-production-2202go.up.railway.app`, Supabase Postgres):
@@ -33,6 +38,9 @@ Open behaviour issues from that test are listed in part 4; they need no contract
 
 **Why.** The Place details and Stay details sheets show a hero photo, "why Go picked it", a rough cost per person,
 things to do, amenities, a cancellation line, rating and review count. `Option` and `DecisionOption` carry none of it.
+
+*Rev 4:* `gallery_urls` is withdrawn in favour of `photos` (6.2). The Server still accepts it; when both arrive the app
+shows `photos`.
 
 **Shape.** On both `Option` (options card) and `DecisionOption` (`open_vote`), optional:
 
@@ -89,7 +97,7 @@ booking. Today an `open` result means a web page in the browser sheet.
 
 | Route | Opens |
 |---|---|
-| `go://trips/<trip_id>/sheet/budget` | the budget sheet |
+| `go://trips/<trip_id>/sheet/budget` | the group budget editor (*rev 4*: there is no private budget sheet any more; the name is kept) |
 | `go://trips/<trip_id>/sheet/route` · `…/sheet/cab` | the route / cab sheets (on an options card) |
 | `go://trips/<trip_id>/bookings/<booking_id>` | my booking (just-for-me) |
 | `go://trips/<trip_id>/itinerary` · `…/bookings` · `…/expenses` | a Trip tab |
@@ -173,8 +181,8 @@ assumes the device zone.
 
 ### 2.1 `settlement.recorded` (Record a payment)
 
-**Why.** People settle up outside Go (UPI, cash). The payee confirms in the app. The contract has expenses and
-computed `transfers` but no way to tell Go a transfer shrank, so Go would keep nudging.
+**Why.** People settle up outside Go (UPI, cash) and record it in the app. The contract has expenses and computed
+`transfers` but no way to tell Go a transfer shrank.
 
 **Shape.** New Server → Go event `settlement.recorded`:
 
@@ -184,9 +192,9 @@ computed `transfers` but no way to tell Go a transfer shrank, so Go would keep n
   "note"?: "villa + groceries", "status": "confirmed", "recorded_at": "…", "confirmed_at": "…" }
 ```
 
-**Server.** Sent **only when the payee confirms** (Go never sees pending or disputed ones). `read_trip.money.transfers`
-already accounts for confirmed settlements, so Go also catches up on its own. **Until it lands:** Go learns from
-`read_trip` only.
+**Server.** *Rev 4:* sent **when the payment is recorded**, in the same transaction. Nobody confirms or disputes a
+payment any more, so `status` is always `"confirmed"` and `confirmed_at` equals `recorded_at`; a recorded payment
+counts in `read_trip.money.transfers` at once and cannot be undone. The real Go accepted this event on 8 Oct 2026.
 
 ### 2.2 `checklist` card and documents through the vault (visa, who lands when, packing)
 
@@ -225,22 +233,16 @@ sees only "Sent"**. The visa status card and the "who lands when" card are table
 Covered in 1.7: Go includes a fetchable `url` per document in `add_booking`; the server copies the file once. If you
 would rather push, we can give you a presigned PUT in the `add_booking` answer; say which you prefer.
 
-### 2.5 Expense approval (the people in a split agree to it)
+### 2.5 Expense approval: withdrawn (*rev 4*)
 
-**Why.** The Expenses screens ask the people in a split to approve an expense that was added by hand or by Go, with
-the approval shown beside each row and on the trip home. Vault payments are exempt (the group voted and the payer said
-"Yes, book it").
+The product no longer has expense approval or disputes. `Expense` carries no `status` and no `confirmations`, in events
+and in `read_trip`; `expense.changed` is never sent with `approved` or `disputed`; every expense counts in `money` from
+the moment it is added until it is removed. `add_expense.approval_id` keeps its meaning (the vault payment the expense
+belongs to) and changes nothing else.
 
-**Shape.** `Expense` gains `status: "pending" | "approved" | "disputed"` and
-`confirmations: [{ person_id, state: "pending" | "approved" | "disputed", at, reason? }]`, one entry per person in
-`split_person_ids` other than the payer. `expense.changed` gains the `change` values `"approved"` and `"disputed"`
-(data: the `Expense`, plus `by_person_id`).
-
-**Go.** `add_expense` without an `approval_id` creates a **pending** expense (the Server fills `confirmations`); with
-an `approval_id` (a vault payment) it is `approved` at once. A `disputed` expense is left out of `money.transfers` until
-the payer fixes the split or removes it, so Go should not nag about it; the room text can say who disputed and why.
-**Until it lands:** the Server still applies the rule; Go simply sees the new fields in `read_trip` and the extra
-`change` values (an unknown `change` should not crash Go).
+**What remains of this item:** `expense.changed` with `change: "updated"` when a person fixes an expense's split
+(data: the whole `Expense`, plus `by_person_id`). The real Go refused it on 8 Oct 2026 (`422 Invalid option … at
+data.change`), so on contract 1.0 the Server sends no event for a fixed split and Go sees it on its next `read_trip`.
 
 ---
 
@@ -255,7 +257,8 @@ map (free / paid / taken / next to a friend) and a boarding pass. Go performs th
   contract §4.12.
 - `submit_checkin { trip_id, booking_id, person_id, digi_yatra, declaration, seat, mobile? }` →
   `{ status: "done" | "working" | "failed", boarding_pass? }`.
-- A paid seat uses the existing spend-approval and vault flow (payer's Face ID), never an in-app payment.
+- *Rev 4:* a paid seat or paid extra baggage is paid through Go's `pay` card and the vault (the traveller's Face ID), never
+  an in-app payment. The shapes and the approval this needs are proposed in 6.5 and are not built until agreed.
 - An event or a `notice` card with a `go://…/checkin/<booking_id>` link when check-in opens.
 
 **Server.** Three app routes behind `features.checkin`. **Until it lands:** the card and the preview link are hidden
@@ -274,7 +277,7 @@ and people use the airline's site.
    the message a new `updated_seq` on `replace_card`, still with **no event**. Your own `read_messages after_seq` may
    therefore return a message whose only change is the card you replaced. Please confirm that is harmless.
 3. **Quick start answers.** A person's vibe arrives as a `know` entry such as `"Vibe: beach"`; the trip-level `vibe`
-   stays yours (`update_trip`). A spend band arrives through the budget summary only.
+   stays yours (`update_trip`). *Rev 4:* there is no spend band; the group's one budget is in 6.1.
 4. **Destination photo.** The app's home and trip hero use `destination.photo_url` from `update_trip`; please set it
    whenever you set a destination.
 5. **Private details.** Seats, PNRs and ticket files are shown only to the people a booking covers. Please keep them
@@ -304,3 +307,115 @@ and people use the airline's site.
 The Server builds support for **all three groups now**, each behind a feature flag the app reads from `GET /config`,
 so a flag flips to on the day your side ships. Reply with a yes/no per item, or a different shape. The chat screens
 are built around group A items 1.1–1.3 and 1.10, so those unblock the most.
+
+---
+
+## 6. Rev 4 (10 Oct 2026): additions and withdrawals
+
+Names are proposals. Everything in 6.1 to 6.4 is additive, validated by the Server when present, stored and returned to
+the app as sent, and inert until Go sends it. 6.5 is designed but **not built** until Go's team agrees its half.
+
+### 6.1 One group budget
+
+A trip has one optional budget per person, the same for everyone. People can set or clear it in the app.
+
+- `update_trip` gains `budget_per_person_minor` (whole number ≥ 1, trip currency). Missing or `null` means unchanged, as
+  for every `update_trip` field, so Go cannot clear it. The Server answers as for any `update_trip` and sends
+  `trip.updated changed: ["budget"]` by Go when the value differs. The same value again changes nothing and sends no
+  event.
+- `TripSnapshot.budget` (`BudgetSummary`) gains optional `per_person_minor`. Not set: `{ "answered": 0, "of": N }`. Set to
+  X: `{ "lowest": { "min_minor": X, "max_minor": X, "currency" }, "answered": N, "of": N, "per_person_minor": X }`. The
+  rest is the 1.0 shape, so a 1.0 Go reads it as "everyone answered the same band".
+- `trip.updated changed: ["budget"]` now comes by the person who set it. It is no longer sent by `system` on a join or a
+  leave, and `JoinAnswers` has no `spend_band`.
+
+### 6.2 Labelled photos
+
+`Place`, `Option` and `DecisionOption` gain `photos`: up to 12 of `{ "url", "label"? }` (`label` ≤ 40, for example
+"Deluxe room", "Pool"). `photo_url` / `image_url` stay as the single cover. Replaces `details.gallery_urls` (1.1).
+
+### 6.3 A price range and room types on a stay
+
+`Option` and `DecisionOption` gain `price_min_minor` and `price_max_minor` (**per person for the whole stay**) and
+`room_types`: up to 10 of `{ "room_type_id", "label" ≤ 60, "sleeps" ≥ 1, "price_minor" ≥ 0, "photos"? }`, where
+`price_minor` is **per room for the whole stay**. All in the option's currency. `sleeps` is 1 to 30.
+
+### 6.4 The `rooms` card
+
+A new Go card kind, posted after a stay is picked, showing the possible room sets and who shares with whom:
+
+```json
+{ "card_id", "kind": "rooms", "fallback_text", "for_person_ids"?, "title", "option_id"?,
+  "arrangements": [ { "arrangement_id", "label"?,
+      "rooms": [ { "room_type_id", "label", "person_ids": ["p_…"], "price_minor" } ],
+      "total_minor", "per_person": [ { "person_id", "amount_minor" } ] } ],
+  "actions"?: [ CardAction ] }
+```
+
+1 to 10 arrangements, 1 to 15 rooms each, `price_minor` per room. Limits the Server checks: 1 to 30 `person_ids` in a
+room; up to 30 `per_person` rows; up to 3 `actions`; ids up to 64 characters; `title` and an arrangement's `label` up
+to 80, a room's `label` up to 60 (none may be empty). Its buttons are Go's: a tap arrives as the usual
+`card_tap`, with the existing `option_id` carrying the `arrangement_id`. `replace_card` updates it like any card.
+
+### 6.5 Paying for a seat or extra baggage at check-in (needs agreement; not built)
+
+- `CheckinState` gains `extras`: up to 10 of `{ "id", "kind": "baggage" | "other", "label", "price_minor", "currency" }`.
+- `submit_checkin` gains `extra_ids`. The Server would send the chosen seat and extras, priced or not, when the person
+  completes check-in; Go answers `working`, posts its usual `pay` card for anything priced, and finishes after payment.
+  Today a paid seat reaches Go by no request at all.
+- **The approval is the open question.** `request_spend_approval` is granted only for a closed vote whose payer confirmed
+  the mandate. We propose a personal form naming the flight booking and the traveller in place of `decision_id`, granted
+  only when that person is in the trip, the booking covers them, their check-in is submitted and waiting, the currency
+  matches and the amount is at most the total of what they chose; the payer is always that traveller. On the Server two
+  places assume a vote today: the signed approval's contents carry a vote id, and the check that a booking may use an
+  approval compares against a vote.
+- Questions: what should the signed approval carry in place of `decision_id`; how does `add_booking` or the vault refer
+  to it afterwards; and to what state does the check-in return when the payment is abandoned or fails (we suggest `open`
+  or `failed` with a message)?
+
+### 6.6 One expense per room
+
+No shape change. When people take differently priced rooms, please call `add_expense` once per room with
+`split_person_ids` = the people in that room. The Server knows equal splits only, and this makes everyone owe the right
+amount.
+
+### 6.7 Flight options per person
+
+No shape change. Flight choice is personal: please post flight `options` cards per person, searched from that person's
+`from_city`, with `for_person_ids` and each action's `only_for_person_ids` naming them. (`from_city` and
+`earliest_leave` are now shown to the whole group in the app; Go already receives both.)
+
+### 6.8 Events in both directions: please confirm
+
+Events name what changed, not the new value (`trip.updated` and `person.updated` carry `changed: [...]`); we assume Go
+calls `read_trip` for the new value.
+
+| What happens in the app | Event to Go |
+|---|---|
+| dates, title, status or itinerary changed | `trip.updated` |
+| group budget set or cleared | `trip.updated` `changed: ["budget"]` |
+| starting city, leaving time, notes, name, photo, UPI flag, pause | `person.updated` |
+| expense added or removed | `expense.changed` |
+| expense split fixed | `expense.changed` `updated` (1.1 only; see 2.5) |
+| payback recorded | `settlement.recorded` |
+| booking added, changed, or cancelled by the group's vote | `booking.changed` |
+| vote opened, cast, closed, called off; mandate answered | `decision.*`, `mandate.*` |
+| someone joined or left | `person.joined`, `person.left` |
+
+In the other direction Go changes a trip with its existing requests, and the app hears each through its live
+connection. Cancelling a booking is unchanged: a passed group vote marks a hand-added booking cancelled and Go hears
+`booking.changed cancelled`; a booking paid through the vault still cannot be cancelled by a vote. The profile's default
+city is not a Go field and is not sent.
+
+### 6.9 Other notes
+
+- **Money lines in the room.** The Server posts a system message for every money movement, including the expenses Go
+  adds ("Go added Villa Sol · ₹54,200 · paid by Rahul · split 4 ways"). They appear in `read_messages` with
+  `author: { "kind": "system" }` and text only; no event is sent for them. Please treat system messages as a record and
+  do not reply to them. Go need not announce the expenses it adds.
+- **No push notifications.** `mentions` and `for_person_ids` still drive the app's "needs you" list, but nobody's phone
+  buzzes; do not rely on a push to bring someone back.
+- **Unknown optional fields.** `budget.per_person_minor`, and `photos` inside a destination or place a person entered,
+  reach a 1.0 Go in `read_trip`, `trip.created` and `booking.changed`. The real Go accepted extra fields on 8 Oct 2026;
+  please confirm that holds.
+

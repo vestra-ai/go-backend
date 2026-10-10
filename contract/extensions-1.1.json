@@ -121,6 +121,82 @@
       },
       "required": ["card_id", "fallback_text", "kind", "title", "rows"]
     },
+    "Photo": {
+      "type": "object",
+      "description": "1.1 (GO-CHANGES 6.2): one photo of a place or a stay, with what it shows (\"Deluxe room\", \"Pool\").",
+      "properties": {
+        "url": { "type": "string", "format": "uri" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 40 }
+      },
+      "required": ["url"]
+    },
+    "RoomType": {
+      "type": "object",
+      "description": "1.1 (GO-CHANGES 6.3): a kind of room at a stay. `price_minor` is per room for the whole stay, in the option's currency.",
+      "properties": {
+        "room_type_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "sleeps": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "price_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "photos": { "type": "array", "maxItems": 12, "items": { "$ref": "#/components/schemas/Photo" } }
+      },
+      "required": ["room_type_id", "label", "sleeps", "price_minor"]
+    },
+    "RoomsCard": {
+      "type": "object",
+      "description": "1.1 (GO-CHANGES 6.4): the room sets for a stay: who shares with whom, by room type. Its buttons are Go's; a tap's option_id carries the arrangement_id.",
+      "properties": {
+        "card_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "fallback_text": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "for_person_ids": { "type": "array", "maxItems": 30, "items": { "type": "string", "minLength": 1, "maxLength": 64 } },
+        "kind": { "type": "string", "const": "rooms" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "option_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "arrangements": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "properties": {
+              "arrangement_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+              "label": { "type": "string", "minLength": 1, "maxLength": 80 },
+              "rooms": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 15,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "room_type_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+                    "label": { "type": "string", "minLength": 1, "maxLength": 60 },
+                    "person_ids": { "type": "array", "minItems": 1, "maxItems": 30, "items": { "type": "string", "minLength": 1, "maxLength": 64 } },
+                    "price_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+                  },
+                  "required": ["room_type_id", "label", "person_ids", "price_minor"]
+                }
+              },
+              "total_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+              "per_person": {
+                "type": "array",
+                "maxItems": 30,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "person_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+                    "amount_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+                  },
+                  "required": ["person_id", "amount_minor"]
+                }
+              }
+            },
+            "required": ["arrangement_id", "rooms", "total_minor", "per_person"]
+          }
+        },
+        "actions": { "type": "array", "maxItems": 3, "items": { "$ref": "#/components/schemas/CardAction" } }
+      },
+      "required": ["card_id", "fallback_text", "kind", "title", "arrangements"]
+    },
     "SettlementRecordedData": {
       "type": "object",
       "description": "1.1 (GO-CHANGES 2.1): a payment outside Go, sent when it is recorded. Nobody confirms a payment any more: `status` is always `confirmed` and `confirmed_at` equals `recorded_at`.",
@@ -181,7 +257,7 @@
     },
     "SubmitCheckin": {
       "type": "object",
-      "description": "1.1 (GO-CHANGES 3): Server → Go, the person's check-in answers. A paid seat goes through the spend approval and the vault, never here.",
+      "description": "1.1 (GO-CHANGES 3): Server → Go, the person's check-in answers. A paid seat is paid through Go's pay card and the vault; how the seat and paid extras reach Go and how that payment is approved is proposed in GO-CHANGES 6.5 and not built yet.",
       "properties": {
         "trip_id": { "type": "string", "minLength": 1, "maxLength": 64 },
         "booking_id": { "type": "string", "minLength": 1, "maxLength": 64 },
@@ -208,10 +284,22 @@
         "details": { "$ref": "#/components/schemas/OptionDetails" },
         "return_journey": { "$ref": "#/components/schemas/Journey" },
         "price_oneway_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
-        "price_round_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+        "price_round_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "photos": { "type": "array", "maxItems": 12, "items": { "$ref": "#/components/schemas/Photo" } },
+        "price_min_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "price_max_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "room_types": { "type": "array", "maxItems": 10, "items": { "$ref": "#/components/schemas/RoomType" } }
       }
     },
-    "DecisionOption": { "properties": { "details": { "$ref": "#/components/schemas/OptionDetails" } } },
+    "DecisionOption": {
+      "properties": {
+        "details": { "$ref": "#/components/schemas/OptionDetails" },
+        "photos": { "type": "array", "maxItems": 12, "items": { "$ref": "#/components/schemas/Photo" } },
+        "price_min_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "price_max_minor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "room_types": { "type": "array", "maxItems": 10, "items": { "$ref": "#/components/schemas/RoomType" } }
+      }
+    },
     "Message": { "properties": { "quick_replies": { "type": "array", "maxItems": 6, "items": { "$ref": "#/components/schemas/QuickReply" } } } },
     "PostMessage": { "properties": { "quick_replies": { "type": "array", "maxItems": 6, "items": { "$ref": "#/components/schemas/QuickReply" } } } },
     "CardTap": { "properties": { "payload": { "type": "object", "properties": { "trip": { "type": "string", "enum": ["oneway", "round"] } } } } },
@@ -240,14 +328,16 @@
       }
     },
     "Day": { "properties": { "image_url": { "type": "string", "format": "uri" } } },
-    "Place": { "properties": { "timezone": { "type": "string", "maxLength": 64 } } },
+    "Place": { "properties": { "timezone": { "type": "string", "maxLength": 64 }, "photos": { "type": "array", "maxItems": 12, "items": { "$ref": "#/components/schemas/Photo" } } } },
+    "UpdateTrip": { "properties": { "budget_per_person_minor": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 } } },
+    "BudgetSummary": { "properties": { "per_person_minor": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 } } },
     "CallCard": {
       "properties": {
         "recording_url": { "type": "string", "format": "uri" },
         "duration_s": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
       }
     },
-    "Card": { "oneOf": [{ "$ref": "#/components/schemas/ChecklistCard" }] },
+    "Card": { "oneOf": [{ "$ref": "#/components/schemas/ChecklistCard" }, { "$ref": "#/components/schemas/RoomsCard" }] },
     "ExpenseChangedData": {
       "properties": {
         "change": { "enum": ["updated"] },

@@ -57,6 +57,9 @@ interface TripRow {
   currency: string; plan_minor: number | null; budget_per_person_minor: number | null; seq: number; last_activity_at: Date;
 }
 
+/** The cover photo of a destination: its `photo_url`, else the first of its labelled `photos` (rev 4, GO-CHANGES 6.2). */
+const coverOf = (d: (Place & { photos?: Array<{ url?: string }> }) | null): string | undefined => d?.photo_url ?? d?.photos?.[0]?.url ?? undefined;
+
 const datesOf = (t: { dates_start: string | null; dates_end: string | null }) => (t.dates_start && t.dates_end ? { start: t.dates_start, end: t.dates_end } : undefined);
 
 /** The latest `checklist` card in the trip with a row for this person still to do (status todo or started): its title. */
@@ -112,7 +115,7 @@ export async function homeFor(ctx: Ctx, personId: string): Promise<Home> {
       (t.status === 'over' ? owedIn.past : owedIn.active).push({ trip_id: t.trip_id, trip_title: t.title, to: { person_id: x.to_person_id, name: '' }, amount_minor: x.amount_minor, currency: x.currency });
     }
     if (t.status === 'over') {
-      past.push(compact({ trip_id: t.trip_id, title: t.title, photo_url: t.destination?.photo_url ?? undefined, dates: datesOf(t), people_count: people.length, all_settled: money.transfers.length === 0 }));
+      past.push(compact({ trip_id: t.trip_id, title: t.title, photo_url: coverOf(t.destination), dates: datesOf(t), people_count: people.length, all_settled: money.transfers.length === 0 }));
       continue;
     }
     const bookings = (await db.query<Pick<BookingRow, 'kind' | 'status'>>('select kind, status from bookings where trip_id = $1', [t.trip_id])).rows;
@@ -125,7 +128,7 @@ export async function homeFor(ctx: Ctx, personId: string): Promise<Home> {
       stage,
       destination: t.destination ?? undefined,
       dates: datesOf(t),
-      photo_url: t.destination?.photo_url ?? undefined,
+      photo_url: coverOf(t.destination),
       budget_per_person_minor: t.budget_per_person_minor ?? undefined,
       people_preview: peoplePreview(people),
       people_count: people.length,

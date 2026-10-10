@@ -39,6 +39,12 @@ const openVote = {
 
 const dateTime = { type: 'string', format: 'date-time' } as const;
 const uri = { type: 'string', format: 'uri' } as const;
+// Labelled photos of a place (rev 4, GO-CHANGES 6.2): up to 12, each a link and what it shows ("Deluxe room", "Pool").
+const photos = {
+  type: 'array',
+  maxItems: 12,
+  items: { type: 'object', additionalProperties: false, required: ['url'], properties: { url: uri, label: { type: 'string', minLength: 1, maxLength: 40 } } },
+} as const;
 const stop = {
   type: 'object',
   additionalProperties: false,
@@ -114,6 +120,7 @@ const addBooking = {
         lat: { type: 'number', minimum: -90, maximum: 90 },
         lng: { type: 'number', minimum: -180, maximum: 180 },
         photo_url: uri,
+        photos,
       },
     },
     image_url: uri,
@@ -217,6 +224,7 @@ const createTrip = {
         lat: { type: 'number', minimum: -90, maximum: 90 },
         lng: { type: 'number', minimum: -180, maximum: 180 },
         photo_url: uri,
+        photos,
       },
     },
     vibe: { type: 'array', maxItems: 10, items: { type: 'string', minLength: 1, maxLength: 40 } },

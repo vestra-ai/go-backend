@@ -54,8 +54,8 @@ export async function askGo<T = Record<string, unknown>>(go: GoClient, method: s
   return answer as T;
 }
 
-/** The cards whose buttons are Go's to answer (the 1.1 `checklist` among them); vote, mandate and expense cards are the Server's. */
-const GO_CARD_KINDS = new Set(['options', 'working', 'call', 'pay', 'notice', 'checklist']);
+/** The cards whose buttons are Go's to answer (the 1.1 `checklist` and `rooms` among them); vote, mandate and expense cards are the Server's. */
+const GO_CARD_KINDS = new Set(['options', 'working', 'call', 'pay', 'notice', 'checklist', 'rooms']);
 
 /**
  * The tap id sent to Go for the app's own press id. Go acts on each tap_id once and answers a repeat with its
