@@ -141,7 +141,7 @@ const cancelVote = {
 
 // The account profile (PATCH /me). The photo is a `profile_photo` upload of the person's (app contract §4.1: `photo_upload_id`,
 // resolved to a stored link) or a plain https link; never both (checked in the domain). `from_city` is the default
-// "travelling from" the app offers in new trips; `notifications_enabled` is the pushes switch. The UPI id has its own routes
+// "travelling from" the app offers in new trips. The UPI id has its own routes
 // (PUT/DELETE /me/upi).
 const patchMe = {
   type: 'object',
@@ -151,7 +151,6 @@ const patchMe = {
     photo_upload_id: id,
     photo_url: { type: ['string', 'null'], format: 'uri', pattern: '^https://' },
     from_city: { type: ['string', 'null'], minLength: 1, maxLength: 60 },
-    notifications_enabled: { type: 'boolean' },
   },
 } as const;
 
@@ -276,43 +275,6 @@ const pauseGo = {
   additionalProperties: false,
   required: ['go_paused'],
   properties: { go_paused: { type: 'boolean' } },
-} as const;
-
-// A reminder to the person who owes the caller (POST /trips/:trip/transfers/nudge).
-const nudge = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['from_person_id'],
-  properties: { from_person_id: id },
-} as const;
-
-// A device for pushes (POST /me/devices): v1 accepts Web Push only (the product is the PWA). `web_push` is a browser's push address
-// and its two keys. The address must be an https address on a known push service (checked in the route); 2048 characters is a
-// technical bound (the address is an index key and a database index entry cannot be much larger; real addresses are a few hundred).
-// The keys are 256 characters at most (owner decision 6): real ones are far shorter.
-const addDevice = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['platform', 'web_push'],
-  properties: {
-    platform: { type: 'string', enum: ['web_push'] },
-    web_push: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['endpoint', 'keys'],
-      properties: {
-        endpoint: { type: 'string', format: 'uri', maxLength: 2048 },
-        keys: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['p256dh', 'auth'],
-          properties: { p256dh: { type: 'string', minLength: 1, maxLength: 256 }, auth: { type: 'string', minLength: 1, maxLength: 256 } },
-        },
-      },
-    },
-    locale: { type: 'string', maxLength: 35 },
-    tz: { type: 'string', maxLength: 64 },
-  },
 } as const;
 
 // A message from a person (app contract §4.6). `client_message_id` is the message's own repeat key. Each attachment is
@@ -489,7 +451,7 @@ const patchCheckin = {
 } as const;
 
 /** Every route's body definition, by name. */
-export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, putUpi, deleteMe, patchTripMe, acceptInvite, putBudget, patchTrip, pauseGo, nudge, addDevice, createTrip, readTrip, postMessage, editMessage, putReaction, cardAction, castVote, upload, liveTicket, carryOver, vaultLink, addExpense, patchExpense, disputeExpense, recordSettlement, payLink, patchCheckin } as const;
+export const bodies = { openVote, addBooking, updateBooking, cancelVote, patchMe, putUpi, deleteMe, patchTripMe, acceptInvite, putBudget, patchTrip, pauseGo, createTrip, readTrip, postMessage, editMessage, putReaction, cardAction, castVote, upload, liveTicket, carryOver, vaultLink, addExpense, patchExpense, disputeExpense, recordSettlement, payLink, patchCheckin } as const;
 
 /** Nodes the walk in tests/bodies.test.ts does not enter: they are checked against the contract's own definitions elsewhere. */
 export const PASSTHROUGH: readonly string[] = ['patchTrip.itinerary[]', 'postMessage.attachments[]'];
@@ -542,7 +504,6 @@ export interface PatchMeBody {
   photo_upload_id?: string;
   photo_url?: string | null;
   from_city?: string | null;
-  notifications_enabled?: boolean;
 }
 
 export interface PutUpiBody {
@@ -602,10 +563,6 @@ export interface PauseGoBody {
   go_paused: boolean;
 }
 
-export interface NudgeBody {
-  from_person_id: string;
-}
-
 export interface AddExpenseBody {
   paid_by_person_id?: string;
   amount_minor: number;
@@ -642,13 +599,6 @@ export interface PatchCheckinBody {
   declaration?: boolean;
   seat?: string;
   mobile?: string;
-}
-
-export interface AddDeviceBody {
-  platform: 'web_push';
-  web_push: { endpoint: string; keys: { p256dh: string; auth: string } };
-  locale?: string;
-  tz?: string;
 }
 
 export type CancelVoteBody = Record<string, never>;
@@ -720,8 +670,6 @@ export const checkCreateTrip = bodyChecker<CreateTripBody>(bodies.createTrip);
 export const checkReadTrip = bodyChecker<ReadTripBody>(bodies.readTrip);
 export const checkPatchTrip = bodyChecker<PatchTripBody>(bodies.patchTrip);
 export const checkPauseGo = bodyChecker<PauseGoBody>(bodies.pauseGo);
-export const checkNudge = bodyChecker<NudgeBody>(bodies.nudge);
-export const checkAddDevice = bodyChecker<AddDeviceBody>(bodies.addDevice);
 export const checkPostMessage = bodyChecker<PostMessageBody>(bodies.postMessage);
 export const checkEditMessage = bodyChecker<EditMessageBody>(bodies.editMessage);
 export const checkPutReaction = bodyChecker<PutReactionBody>(bodies.putReaction);

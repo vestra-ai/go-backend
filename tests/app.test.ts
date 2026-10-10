@@ -2,7 +2,7 @@ import { WebSocket } from 'ws';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { check } from '../src/contract/index.js';
 import { tapIdFor } from '../src/domain/ask-go.js';
-import { closeDueVotes, pushClosingSoon } from '../src/jobs/votes.js';
+import { closeDueVotes } from '../src/jobs/votes.js';
 import { rows, startHarness, type Harness } from './helpers/harness.js';
 
 let h: Harness;
@@ -278,19 +278,11 @@ describe('leaving a trip', () => {
 
 describe('expenses', () => {
   it('a person adds an expense: Go hears it, and the people in the split are asked to approve their share', async () => {
-    h.push.sent.length = 0;
     const r = await api(kabir, 'POST', `/app/v1/trips/${trip}/expenses`, { paid_by_person_id: kabir.id, amount_minor: 340000, note: 'Airport cab', category: 'getting_around', split_person_ids: [rahul.id, priya.id, kabir.id] });
     expect(r.status).toBe(201);
     expect(r.body).toMatchObject({ expense_id: expect.any(String), status: 'pending', confirmations: [{ person_id: rahul.id, state: 'pending' }, { person_id: priya.id, state: 'pending' }] });
     await h.flush();
     expect(events('expense.changed').at(-1)!.data).toMatchObject({ change: 'added', by: { kind: 'person', person_id: kabir.id }, expense: { amount_minor: 340000, added_by_person_id: kabir.id, status: 'pending' } });
-    const asked = h.push.sent.flatMap((s) => s.to);
-    expect(asked.sort()).toEqual([priya.id, rahul.id].sort());
-    // Each is asked for their own share: the extra paisa of ₹3,400 / 3 goes to the first person who joined, so the shares add up.
-    const body = (id: string) => h.push.sent.find((s) => s.to[0] === id)!.n.body;
-    expect(h.push.sent.every((s) => s.n.type === 'expense')).toBe(true);
-    expect(body(rahul.id)).toBe('Kabir added Airport cab · your share ₹1,133.34. Approve?');
-    expect(body(priya.id)).toBe('Kabir added Airport cab · your share ₹1,133.33. Approve?');
     const snap = (await h.go.call('read_trip', { trip_id: trip })).result;
     expect(snap.money.transfers).toEqual(expect.arrayContaining([
       { from_person_id: rahul.id, to_person_id: kabir.id, amount_minor: 113334, currency: 'INR' },
@@ -400,14 +392,9 @@ describe('the You screen', () => {
 });
 
 describe('background jobs', () => {
-  it('closes a vote whose time ran out (reason: time), once, and pushes people who have not voted when it is about to close', async () => {
+  it('closes a vote whose time ran out (reason: time), once', async () => {
     const soon = await goCall('open_vote', { question: 'Brunch where?', kind: 'choice', anonymous: false, options: [{ label: 'A' }, { label: 'B' }], closes_at: new Date(Date.now() + 30 * 60_000).toISOString() }, trip);
     await api(rahul, 'PUT', `/app/v1/trips/${trip}/decisions/${soon.decision_id}/vote`, { option_index: 0 });
-    h.push.sent.length = 0;
-    expect(await pushClosingSoon(h.ctx)).toBe(1);
-    expect(await pushClosingSoon(h.ctx)).toBe(0); // once per vote
-    expect(h.push.sent[0]!.to.sort()).toEqual([kabir.id, priya.id].sort());
-    expect(h.push.sent[0]!.n.body).toMatch(/^Brunch where\? closes in \d+ minutes$/);
     await h.pool.query("update decisions set closes_at = now() - interval '1 second' where decision_id = $1", [soon.decision_id]);
     const [first, second] = await Promise.all([closeDueVotes(h.ctx), closeDueVotes(h.ctx)]); // two instances at once
     expect(first + second).toBe(1);

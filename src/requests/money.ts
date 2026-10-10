@@ -3,7 +3,7 @@ import { newId } from '../db/ids.js';
 import { once } from '../db/once.js';
 import { change, emit, nextSeq } from '../db/write-change.js';
 import { conflict, invalid, notFound } from '../domain/errors.js';
-import { approvalOn, insertExpense, moneyChanged, tellSplit } from '../domain/expenses.js';
+import { approvalOn, insertExpense, moneyChanged } from '../domain/expenses.js';
 import { bookingOf, recordLineOf } from '../domain/mappers.js';
 import type { BookingRow, RecordLineRow } from '../domain/mappers.js';
 import { approvalProblem, issueApproval, spendCheck } from '../domain/spend.js';
@@ -86,7 +86,7 @@ export const updateBooking = (ctx: Ctx) => async (p: any) =>
 /**
  * Go adds an expense. It starts pending, with one confirmation entry per split member other than the payer (GO-CHANGES 2.5),
  * unless it carries an `approval_id` (a vault payment: the group voted and the payer said "Yes, book it") or approval is
- * off, in which case it starts approved. The approvers hear "approve?"; otherwise whoever now owes the payer hears it.
+ * off, in which case it starts approved.
  */
 export const addExpense = (ctx: Ctx) => async (p: any) =>
   once(ctx.pool, p.trip_id, p.request_id, async (db, after) => {
@@ -101,7 +101,6 @@ export const addExpense = (ctx: Ctx) => async (p: any) =>
     const expense = await insertExpense(db, p.trip_id, { ...p, booking_id: p.booking_id ?? null }, !!p.approval_id || !approvalOn(ctx));
     const seq = await change(db, p.trip_id, 'expense.changed', { expense, change: 'added', by: { kind: 'go' } });
     after(() => moneyChanged(ctx, p.trip_id, seq));
-    after(() => tellSplit(ctx, p.trip_id, expense));
     return { expense_id: expense.expense_id, seq };
   });
 

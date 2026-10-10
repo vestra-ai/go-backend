@@ -19,8 +19,6 @@ export interface AppDeps {
   auth?: Authenticator;
   /** The exact origins of the web app that may call this server from a browser. None by default. */
   origins?: string[];
-  /** The server's VAPID public key, given to browsers so they can subscribe. Without it `GET /app/v1/config` says web_push is off. */
-  pushPublicKey?: string;
   /** Feature flags the environment set; the rest take their defaults. */
   features?: Partial<Features>;
   /** The live socket hub's settings (tests shorten the heartbeat), and a way to get hold of the hub. */
@@ -39,7 +37,7 @@ async function isDeleted(pool: Ctx['pool'], personId: string): Promise<boolean> 
  * error shape, sign-in and the Idempotency-Key store; the routes live one file per contract section in src/api/v1.
  * The app talks only to this, never to Go.
  */
-export function buildApp({ ctx, go, sessionSecret, auth: authenticator = new DevAuth(sessionSecret), origins = [], pushPublicKey, features = {}, live, onLiveHub }: AppDeps): FastifyInstance {
+export function buildApp({ ctx, go, sessionSecret, auth: authenticator = new DevAuth(sessionSecret), origins = [], features = {}, live, onLiveHub }: AppDeps): FastifyInstance {
   const app = Fastify({
     logger: false,
     genReqId: () => newRequestId(),
@@ -108,7 +106,7 @@ export function buildApp({ ctx, go, sessionSecret, auth: authenticator = new Dev
   });
   registerIdempotency(app, ctx.pool);
 
-  const deps: V1Deps = { go, authenticator, sessionSecret, origins, pushPublicKey, features: resolveFeatures(features, !!pushPublicKey), live, onLiveHub };
+  const deps: V1Deps = { go, authenticator, sessionSecret, origins, features: resolveFeatures(features), live, onLiveHub };
   for (const section of sections) section.register(app, ctx, deps);
   // The in-process storage fake serves its own upload and download endpoints; Supabase Storage needs none.
   ctx.storage.attach?.(app);

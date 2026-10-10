@@ -18,8 +18,6 @@ export interface V1Deps {
   sessionSecret: string;
   /** The exact origins of the web app that may call this server from a browser. */
   origins: string[];
-  /** The server's VAPID public key, or none: then `features.web_push` is off and `vapid_public_key` is null. */
-  pushPublicKey?: string;
   features: Features;
   /** The live socket hub's settings (a shorter heartbeat in tests). */
   live?: LiveHubOptions;

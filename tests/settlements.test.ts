@@ -25,15 +25,13 @@ const record = (who: string, body: Record<string, unknown>) => t.api(t.as(who), 
 
 describe('recording a payment', () => {
   let first: string;
-  it('answers 201 with the settlement (pending), the transfers with the amount already taken off, and a change number; the payee is pushed and the room told; Go hears nothing yet', async () => {
-    h.push.sent.length = 0;
+  it('answers 201 with the settlement (pending), the transfers with the amount already taken off, and a change number; the room is told; Go hears nothing yet', async () => {
     const mark = h.live.events.length;
     const r = await record('p_priya', { amount_minor: 15000, note: 'part of dinner' });
     first = r.body.settlement?.settlement_id;
     expect(r.status).toBe(201);
     expect(r.body.settlement).toEqual({ settlement_id: expect.stringMatching(/^st_/), from_person_id: 'p_priya', to_person_id: 'p_rahul', amount_minor: 15000, currency: 'INR', method: 'upi', note: 'part of dinner', status: 'pending_confirmation', created_at: expect.any(String) });
     expect([owed(r.body.transfers, 'p_priya', 'p_rahul'), owed(r.body.transfers, 'p_arjun', 'p_rahul'), typeof r.body.seq]).toEqual([5000, 20000, 'number']);
-    expect(h.push.sent).toEqual([{ to: ['p_rahul'], n: { type: 'settlement', trip_id: 't_goa', title: 'Goa 🌴', body: 'Priya says they paid you ₹150. Got it?', deep_link: '/trips/t_goa/expenses', tag: `t_goa:settlement:${first}` } }]);
     expect(h.live.events.slice(mark).map((e) => e.event)).toEqual([{ kind: 'trip', seq: r.body.seq, kinds: ['settlement', 'expense'] }]);
     // The same maths for Go: provisional counting, and no event for this change number.
     expect(owed(await goTransfers(), 'p_priya', 'p_rahul')).toBe(5000);

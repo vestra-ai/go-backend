@@ -7,7 +7,6 @@ import { noteCheckinSignal } from '../domain/checkin.js';
 import { conflict, invalid, notFound } from '../domain/errors.js';
 import { messageForGo } from '../domain/mappers.js';
 import type { MessageRow } from '../domain/mappers.js';
-import { sendPush } from '../push/send.js';
 import { assertMessagesInTrip, assertPeopleInTrip, tripOf } from './guards.js';
 
 /** A card id from Go's card, for the record cards that are drawn from our own rows. */
@@ -57,15 +56,8 @@ export const postMessage = (ctx: Ctx) => async (p: any, raw: Record<string, unkn
     after(async () => {
       await ctx.live.publish(trip.trip_id, { kind: 'message', message_id: row.message_id, updated_seq: seq });
       await ctx.live.publish(trip.trip_id, { kind: 'typing', who: { kind: 'go' }, on: false });
-      // A notice card linking go://…/checkin/<booking> is Go saying "check-in is open" (§4.12): those people get the `checkin` push instead of the card's.
-      const opened = card ? await noteCheckinSignal(ctx, trip.trip_id, card) : [];
-      // People Go names get Go's text (`mention`). People a new card needs get its fallback_text (`card`). Once each.
-      if (mentions.length) await sendPush(ctx, trip.trip_id, mentions, { type: 'mention', body: p.text ?? card?.fallback_text ?? '', message_id: row.message_id });
-      const needed = (card?.for_person_ids ?? []).filter((id) => !mentions.includes(id) && !opened.includes(id));
-      if (card && needed.length) {
-        const inTrip = await ctx.pool.query('select person_id from trip_people where trip_id = $1 and left_at is null and person_id = any($2)', [trip.trip_id, needed]);
-        await sendPush(ctx, trip.trip_id, inTrip.rows.map((r) => r.person_id), { type: 'card', body: card.fallback_text, message_id: row.message_id });
-      }
+      // A notice card linking go://…/checkin/<booking> is Go saying "check-in is open" (§4.12).
+      if (card) await noteCheckinSignal(ctx, trip.trip_id, card);
     });
     return { message_id: row.message_id, seq };
   });

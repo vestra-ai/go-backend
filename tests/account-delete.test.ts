@@ -38,8 +38,8 @@ describe('deleting an account', () => {
       ['person.left', 'p_kabir'],
       ['trip.updated', ['budget']], // his band stopped counting
     ]);
-    expect((await rows(h.pool, `select name, photo_url, email, phone, upi_id, from_city_default, notifications_enabled, deleted_at is not null as deleted, auth_user_id is not null as linked from people where person_id = 'p_kabir'`))[0])
-      .toEqual({ name: 'Former member', photo_url: null, email: null, phone: null, upi_id: null, from_city_default: null, notifications_enabled: false, deleted: true, linked: true });
+    expect((await rows(h.pool, `select name, photo_url, email, phone, upi_id, from_city_default, deleted_at is not null as deleted, auth_user_id is not null as linked from people where person_id = 'p_kabir'`))[0])
+      .toEqual({ name: 'Former member', photo_url: null, email: null, phone: null, upi_id: null, from_city_default: null, deleted: true, linked: true });
     expect((await rows(h.pool, `select left_at is not null as left, from_city, budget_min_minor from trip_people where person_id = 'p_kabir'`))).toEqual([{ left: true, from_city: null, budget_min_minor: null }]);
     expect(await rows(h.pool, `select 1 from invite_marks where person_id = 'p_kabir'`)).toEqual([]);
     // What stays: the message (its author now reads "Former member"), the vote he cast.

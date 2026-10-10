@@ -62,8 +62,8 @@ it('starts: migrates, opens the signed socket as its own instance, and serves th
   const config = await fetch(`http://127.0.0.1:${port}/app/v1/config`);
   expect(config.headers.get('x-request-id')).toMatch(/^[0-9a-f]{12}$/);
   expect(await config.json()).toEqual({
-    contract: '1.0.0', min_client_version: '1.0.0', currency_default: 'INR', vapid_public_key: null,
-    features: { web_push: false, checkin: false, visa: false, calls: false, vote_retract: false, vote_flexible: false, claim: false, expense_approval: true },
+    contract: '1.0.0', min_client_version: '1.0.0', currency_default: 'INR',
+    features: { checkin: false, visa: false, calls: false, vote_retract: false, vote_flexible: false, claim: false, expense_approval: true },
   });
 });
 

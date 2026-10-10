@@ -2,7 +2,6 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import pg from 'pg';
-import webpush from 'web-push';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { MockGo } from './helpers/mock-go.js';
 
@@ -14,9 +13,8 @@ let go: MockGo;
 let proc: ChildProcess;
 let port: number;
 let out = '';
-const vapid = webpush.generateVAPIDKeys();
 
-// The real process as it is released: push keys and the web app's origin set. (The existing start-up test, unmodified, remains the proof that it starts without keys.)
+// The real process as it is released, with the web app's origin set.
 beforeAll(async () => {
   go = new MockGo();
   const base = await go.listen();
@@ -36,9 +34,6 @@ beforeAll(async () => {
       PORT: String(port),
       APP_SESSION_SECRET: 'release-secret',
       APP_ORIGINS: PWA,
-      VAPID_PUBLIC_KEY: vapid.publicKey,
-      VAPID_PRIVATE_KEY: vapid.privateKey,
-      VAPID_SUBJECT: 'mailto:ops@example.com',
     },
   });
   proc.stdout!.on('data', (d) => (out += d));
@@ -59,11 +54,11 @@ afterAll(async () => {
   await admin.end();
 });
 
-it('starts with push keys and an origin set and without the warning, serves the key in the config, answers a preflight for the origin, and shuts down cleanly on SIGTERM', async () => {
+it('starts with an origin set, serves the config with no push members, answers a preflight for the origin, and shuts down cleanly on SIGTERM', async () => {
   const config = await fetch(`http://127.0.0.1:${port}/app/v1/config`, { headers: { origin: PWA } });
   const pre = await fetch(`http://127.0.0.1:${port}/app/v1/trips/t_x/messages`, { method: 'OPTIONS', headers: { origin: PWA, 'access-control-request-method': 'POST' } });
   const body = await config.json();
-  expect([out.includes('VAPID'), config.status, body.vapid_public_key, body.features.web_push, config.headers.get('access-control-allow-origin'), pre.status, pre.headers.get('access-control-allow-origin')]).toEqual([false, 200, vapid.publicKey, true, PWA, 204, PWA]);
+  expect([config.status, 'vapid_public_key' in body, 'web_push' in body.features, config.headers.get('access-control-allow-origin'), pre.status, pre.headers.get('access-control-allow-origin')]).toEqual([200, false, false, PWA, 204, PWA]);
   const exited = new Promise<number | null>((r) => proc.on('exit', (code) => r(code)));
   proc.kill('SIGTERM');
   expect(await exited).toBe(0);

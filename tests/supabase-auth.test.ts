@@ -31,7 +31,7 @@ describe('the first sign-in creates the person from the Google profile', () => {
     expect(me.status).toBe(200);
     expect(me.body).toEqual({
       person_id: expect.any(String), name: 'Asha Rao', photo_url: 'https://lh3.googleusercontent.com/a/asha', has_upi: false, upi_id_masked: null,
-      email: 'asha@gmail.com', auth_provider: 'google', from_city: null, notifications_enabled: true, counts: { active_trips: 0, past_trips: 0, pending_invites: 0 }, created_at: expect.any(String),
+      email: 'asha@gmail.com', auth_provider: 'google', from_city: null, counts: { active_trips: 0, past_trips: 0, pending_invites: 0 }, created_at: expect.any(String),
     });
     const [row] = await rows(h.pool, 'select name, email, auth_user_id, auth_provider from people where person_id = $1', [me.body.person_id]);
     expect(row).toEqual({ name: 'Asha Rao', email: 'asha@gmail.com', auth_user_id: auth.userId({ email: 'asha@gmail.com' }), auth_provider: 'google' });

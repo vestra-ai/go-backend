@@ -7,7 +7,6 @@
 import { FEATURE_DEFAULTS, type Features } from '../config.js';
 import type { Ctx } from '../context.js';
 import type { Db } from '../db/pool.js';
-import { sendPush } from '../push/send.js';
 import { Forbidden, type NeedsYouItem } from './actions.js';
 import { askGo, GoUnavailable, type GoClient } from './ask-go.js';
 import { conflict, invalid, notFound } from './errors.js';
@@ -119,7 +118,7 @@ function forApp(state: CheckinState): CheckinState {
 /**
  * Marks check-in open for these covered people without a row (a minimal state, with what is shared: the times and the
  * flight) or whose row says not open yet; rows already open, done, or waiting on Go's submit are left alone. Answers who
- * flipped: they are the ones to push.
+ * flipped.
  */
 async function markOpen(db: Db, bookingId: string, personIds: string[], shared: Partial<CheckinState>): Promise<string[]> {
   const flipped: string[] = [];
@@ -136,13 +135,6 @@ async function markOpen(db: Db, bookingId: string, personIds: string[], shared: 
   return flipped;
 }
 
-/** Push `checkin` (§8) to the people whose check-in just opened: "Web check-in is open for 6E 5313", tag <trip>:checkin:<booking>. */
-async function pushOpened(ctx: Ctx, tripId: string, b: FlightBooking, state: CheckinState | null, personIds: string[]): Promise<void> {
-  if (personIds.length === 0) return;
-  const inTrip = new Set((await ctx.pool.query('select person_id from trip_people where trip_id = $1 and left_at is null and person_id = any($2)', [tripId, personIds])).rows.map((r) => r.person_id as string));
-  await sendPush(ctx, tripId, personIds.filter((id) => inTrip.has(id)), { type: 'checkin', body: `Web check-in is open for ${flightNumberOf(state, b)}`, id: b.booking_id });
-}
-
 /** What every covered person shares of one person's state: the times and the flight, never the seat or the passenger. */
 const sharedOf = (s: CheckinState): Partial<CheckinState> => ({ ...(s.opens_at ? { opens_at: s.opens_at } : {}), ...(s.closes_at ? { closes_at: s.closes_at } : {}), ...(s.flight ? { flight: s.flight } : {}) });
 
@@ -150,7 +142,7 @@ const sharedOf = (s: CheckinState): Partial<CheckinState> => ({ ...(s.opens_at ?
  * Asks Go for the person's check-in (get_checkin, 2 s) and keeps the answer. Go's `working` keeps whatever is cached (the
  * cached state is answered; with nothing cached, Go's working state is answered and not kept). When Go is away the cached
  * state is answered; with nothing cached, 502 go_unavailable. The first time a state is open, everyone the booking covers
- * gets a row (so their strip shows it too) and the `checkin` push.
+ * gets a row (so their strip shows it too).
  */
 async function refresh(ctx: Ctx, go: GoClient, tripId: string, personId: string, b: FlightBooking): Promise<CheckinState> {
   const cached = await cachedState(ctx.pool, b.booking_id, personId);
@@ -166,10 +158,7 @@ async function refresh(ctx: Ctx, go: GoClient, tripId: string, personId: string,
   const state = withCompanion(mergeFromGo(cached, fresh), b, personId);
   await saveState(ctx.pool, b.booking_id, personId, state);
   if (state.status === 'open') {
-    // "First open" for this person: no row yet, or a row that said not open. Open again after a submit Go is still working on is not news.
-    const mine = !cached || cached.status === 'not_open' ? [personId] : [];
-    const others = await markOpen(ctx.pool, b.booking_id, b.for_person_ids.filter((id) => id !== personId), sharedOf(state));
-    await pushOpened(ctx, tripId, b, state, [...mine, ...others]);
+    await markOpen(ctx.pool, b.booking_id, b.for_person_ids.filter((id) => id !== personId), sharedOf(state));
   }
   return state;
 }
@@ -299,8 +288,8 @@ function checkinLinkOf(url: unknown, tripId: string): string | null {
  * Go's "check-in is open" signal (GO-CHANGES 3: an event, or a notice card with a go://…/checkin/<booking_id> link). The
  * 1.1 overlay has no event for it, so the card is the signal: a `notice` card from Go whose `source.url`, or whose action's
  * `url`, is `go://trips/<trip>/checkin/<booking_id>`. For the people the card names (else everyone the booking covers) the
- * cached state becomes open (a minimal `{ status: "open" }` row when there is none) and the `checkin` push goes out.
- * Answers who was pushed, so the caller does not also send them the `card` push. Nothing happens when the flag is off.
+ * cached state becomes open (a minimal `{ status: "open" }` row when there is none). Answers whose state flipped.
+ * Nothing happens when the flag is off.
  */
 export async function noteCheckinSignal(ctx: Ctx, tripId: string, card: Record<string, unknown>): Promise<string[]> {
   if (!checkinOn(ctx.features) || card.kind !== 'notice') return [];
@@ -311,7 +300,5 @@ export async function noteCheckinSignal(ctx: Ctx, tripId: string, card: Record<s
   const b = (await ctx.pool.query<FlightBooking & { kind: string }>('select booking_id, kind, status, title, currency, for_person_ids, journey, passengers from bookings where trip_id = $1 and booking_id = $2', [tripId, bookingId])).rows[0];
   if (!b || b.kind !== 'flight' || b.status !== 'confirmed') return [];
   const named = Array.isArray(card.for_person_ids) && card.for_person_ids.length ? (card.for_person_ids as string[]) : b.for_person_ids;
-  const flipped = await markOpen(ctx.pool, bookingId, named.filter((id) => b.for_person_ids.includes(id)), {});
-  await pushOpened(ctx, tripId, b, null, flipped);
-  return flipped;
+  return markOpen(ctx.pool, bookingId, named.filter((id) => b.for_person_ids.includes(id)), {});
 }

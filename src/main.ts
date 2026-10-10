@@ -9,7 +9,6 @@ import { goRequestHandlers } from './requests/index.js';
 import { startJobs } from './jobs/votes.js';
 import { PgLive } from './live/live.js';
 import { OutboxSender } from './outbox/sender.js';
-import { createPush } from './push/web-push.js';
 import { MemoryStorage } from './storage/memory-storage.js';
 import { SupabaseStorage } from './storage/supabase-storage.js';
 import type { Ctx } from './context.js';
@@ -18,9 +17,6 @@ import { migrate } from '../scripts/migrate.js';
 const config = loadConfig();
 const pool = createPool(config.databaseUrl, config.dbPoolMax, config.databaseCaCert);
 await migrate(pool);
-
-// Web Push when the three VAPID settings are present; otherwise a warning and the log-only sender.
-const { push, publicKey: pushPublicKey } = createPush({ pool, keys: { publicKey: config.vapidPublicKey, privateKey: config.vapidPrivateKey, subject: config.vapidSubject } });
 
 const live = new PgLive(pool);
 await live.listen();
@@ -35,7 +31,6 @@ else console.log(`storage: supabase bucket ${config.supabaseStorageBucket}`);
 const ctx: Ctx = {
   pool,
   live,
-  push,
   storage,
   publicBaseUrl,
   spendPrivateKey: config.goSpendPrivateKey,
@@ -71,7 +66,7 @@ const sender = new OutboxSender({
 }, { maxTrips: Math.max(1, Math.floor(config.dbPoolMax / 3)) });
 sender.start();
 
-// 3. Votes that run out of time, and the "closing soon" pushes.
+// 3. Votes that run out of time.
 const stopJobs = startJobs(ctx);
 
 // 4. The app's API.
@@ -81,7 +76,7 @@ const auth = config.authMode === 'supabase'
   ? new SupabaseAuth({ supabaseUrl: config.supabaseUrl!, pool, jwtSecret: config.supabaseJwtSecret })
   : new DevAuth(sessionSecret);
 console.log(`sign-in: ${config.authMode}${config.authMode === 'supabase' ? ` (${config.supabaseUrl})` : ' tokens from POST /app/v1/dev/sign-in'}`);
-const app = buildApp({ ctx, go, sessionSecret, auth, origins: config.appOrigins, pushPublicKey: pushPublicKey ?? undefined, features: config.features });
+const app = buildApp({ ctx, go, sessionSecret, auth, origins: config.appOrigins, features: config.features });
 await app.listen({ port: config.port, host: '0.0.0.0' });
 console.log(`server ${config.instance} listening on :${config.port}`);
 
@@ -92,7 +87,6 @@ const shutdown = async () => {
   await sender.idle(); // let an event that is on the way get its answer
   go.stop();
   await app.close();
-  await push.drain?.(); // nothing can start a notification now: the ones on the way get a bounded time to be sent
   await live.close();
   await pool.end();
   process.exit(0);

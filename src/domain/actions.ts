@@ -1,5 +1,5 @@
 // What people do in the app. Each action is one transaction that takes the trip's next change number,
-// writes the change and its event for Go, and then (after the commit) updates phones and sends pushes.
+// writes the change and its event for Go, and then (after the commit) updates phones.
 import { randomBytes } from 'node:crypto';
 import type pg from 'pg';
 import type { Ctx } from '../context.js';
@@ -8,7 +8,6 @@ import { newId } from '../db/ids.js';
 import { once } from '../db/once.js';
 import { withTx, type AfterCommit } from '../db/pool.js';
 import type { ChangeKind } from '../live/live.js';
-import { sendPush } from '../push/send.js';
 import { change, emit, nextSeq } from '../db/write-change.js';
 import type { Db } from '../db/pool.js';
 import type { PatchTripMeBody } from '../api/bodies.js';
@@ -546,21 +545,6 @@ export function formatMoney(amountMinor: number, currency: string): string {
   const unit = 10 ** digits;
   const whole = amountMinor % unit === 0;
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency, minimumFractionDigits: whole ? 0 : digits, maximumFractionDigits: whole ? 0 : digits }).format(amountMinor / unit);
-}
-
-/**
- * After an expense is added, pushes the people in its split who now owe money, from the trip's
- * `money.transfers` (guides: "Pushes"): who and how much, such as "You owe Kabir ₹680 for the airport cab".
- * Someone whose balance is settled or in credit after the whole trip's expenses gets no push.
- */
-export async function pushOwed(ctx: Ctx, tripId: string, expense: Pick<ExpenseRow, 'paid_by_person_id' | 'split_person_ids' | 'note'>): Promise<void> {
-  const snap = await buildSnapshot(ctx.pool, tripId, ctx.publicBaseUrl);
-  const names = new Map(snap.people.map((p) => [p.person_id, p.name]));
-  const inSplit = new Set(expense.split_person_ids.filter((id) => id !== expense.paid_by_person_id));
-  for (const t of snap.money.transfers) {
-    if (!inSplit.has(t.from_person_id)) continue;
-    await sendPush(ctx, tripId, [t.from_person_id], { type: 'owe', body: `You owe ${names.get(t.to_person_id) ?? 'someone'} ${formatMoney(t.amount_minor, t.currency)} for ${expense.note}`, id: t.to_person_id });
-  }
 }
 
 // ---------------------------------------------------------------- seen, needs you

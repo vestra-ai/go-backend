@@ -1,6 +1,6 @@
 // §4.12 Web check-in (APP-CONTRACT-CHANGES §4.12, GO-CHANGES 3), behind features.checkin: the state asked of Go and kept,
 // the answers (seat rules, the paid seat as a payment), the submit (done, working, failed, silent), the companion, the
-// strip's `checkin` item, the home card's task, the `checkin` push, and Go's "it's open" notice card.
+// strip's `checkin` item, the home card's task, and Go's "it's open" notice card.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/api/app.js';
 import { SupabaseAuth } from '../src/api/auth.js';
@@ -31,7 +31,6 @@ const patch = (who: string, body: unknown, b = flight) => t.api(t.as(who), 'PATC
 const complete = (who: string, b = flight) => t.api(t.as(who), 'POST', url(b, '/complete'), {});
 const strip = async (who: string) => ((await t.api(t.as(who), 'GET', '/app/v1/trips/t_goa/needs-you')).body.items as any[]).filter((i) => i.kind === 'checkin');
 const attention = async (who: string) => (await t.api(t.as(who), 'GET', '/app/v1/home')).body.trips.find((x: any) => x.trip_id === 't_goa').attention;
-const checkinPushes = () => h.push.sent.filter((p) => p.n.type === 'checkin');
 const refusal = (r: { status: number; body: any }) => [r.status, r.body.error.code];
 
 beforeAll(async () => {
@@ -68,7 +67,7 @@ describe('the flag and who may look', () => {
 });
 
 describe('GET: the state from Go, kept', () => {
-  it('asks Go get_checkin and answers the CheckinState with the companion filled from the booking; the row is kept; everyone covered gets a row and one checkin push when it first opens', async () => {
+  it('asks Go get_checkin and answers the CheckinState with the companion filled from the booking; the row is kept; everyone covered gets a row when it first opens', async () => {
     const r = await get('p_rahul');
     expect(r.status).toBe(200);
     expect(h.go.requests.filter((x) => x.method === 'get_checkin')).toEqual([{ method: 'get_checkin', params: { trip_id: 't_goa', booking_id: flight, person_id: 'p_rahul' } }]);
@@ -78,11 +77,10 @@ describe('GET: the state from Go, kept', () => {
     expect(kept.map((k) => [k.person_id, k.status])).toEqual([['p_arjun', 'open'], ['p_rahul', 'open']]);
     expect(kept[1].state).toEqual(r.body); // Rahul's, as answered
     expect(kept[0].state).toEqual({ status: 'open', opens_at: r.body.opens_at, closes_at: r.body.closes_at, flight: r.body.flight }); // Arjun's: the shared part, so his strip shows it too
-    expect(checkinPushes()).toEqual([{ to: ['p_rahul', 'p_arjun'], n: { type: 'checkin', trip_id: 't_goa', title: 'Goa 🌴', body: 'Web check-in is open for 6E 5313', deep_link: `/trips/t_goa/checkin/${flight}`, tag: `t_goa:checkin:${flight}` } }]);
-    // Read again (by either of them): the same state, no second push.
+    // Read again (by either of them): the same state.
     await get('p_rahul');
     const arjun = await get('p_arjun');
-    expect([arjun.status, arjun.body.companion, checkinPushes().length]).toEqual([200, { person_id: 'p_rahul' }, 1]); // Rahul has no seat yet
+    expect([arjun.status, arjun.body.companion]).toEqual([200, { person_id: 'p_rahul' }]); // Rahul has no seat yet
   });
 
   it('the strip shows a checkin item for each covered person, the trip counts it, and the home card says it as a task', async () => {
@@ -162,10 +160,8 @@ describe('POST complete', () => {
     expect([await strip('p_rahul'), (await rows(h.pool, 'select status from checkins where booking_id = $1 and person_id = $2', [flight, 'p_rahul']))[0].status]).toEqual([[], 'not_open']);
     expect(refusal(await patch('p_rahul', { seat: '14D' }))).toEqual([409, 'conflict']); // Go is finishing it
     // A refresh from Go (which answers open again: the fake forgot nothing was submitted) keeps my own answers over Go's blanks.
-    const pushes = checkinPushes().length;
     r = await get('p_rahul');
     expect(r.body).toMatchObject({ status: 'open', seat: '14A', digi_yatra: true, declaration: true, passenger: { mobile_masked: '+91 9•••• ••210' } });
-    expect(checkinPushes().length).toBe(pushes); // open again is not "first open" for Rahul
 
     // Done: the boarding pass.
     h.go.checkin.submit = 'done';
@@ -208,31 +204,25 @@ describe("Go's own signal: a notice card linking go://trips/<trip>/checkin/<book
   const post = (card: Record<string, unknown>) => h.go.call('post_message', { request_id: `rq_ci_${++n}`, trip_id: 't_goa', text: 'Check-in is open', card });
   const notice = (cardId: string, over: Record<string, unknown>) => ({ card_id: cardId, kind: 'notice', tone: 'heads_up', title: 'Web check-in is open', body: 'IndiGo opened check-in for Monday.', fallback_text: 'Web check-in is open for 6E 2134', ...over });
 
-  it('marks the cached state open for the people the card names (a minimal row), pushes checkin instead of card, and the strip shows it from the booking\'s own journey', async () => {
-    const before = h.push.sent.length;
+  it('marks the cached state open for the people the card names (a minimal row), and the strip shows it from the booking\'s own journey', async () => {
     const r = await post(notice('c_ci_open', { for_person_ids: ['p_meher'], actions: [{ action_id: 'open', label: 'Check in now', style: 'primary', url: `go://trips/t_goa/checkin/${later}` }] }));
     expect(r.error).toBeUndefined();
     expect(await rows(h.pool, 'select person_id, status, state from checkins where booking_id = $1', [later])).toEqual([{ person_id: 'p_meher', status: 'open', state: { status: 'open' } }]);
-    expect(h.push.sent.slice(before)).toEqual([{ to: ['p_meher'], n: { type: 'checkin', trip_id: 't_goa', title: 'Goa 🌴', body: 'Web check-in is open for 6E 2134', deep_link: `/trips/t_goa/checkin/${later}`, tag: `t_goa:checkin:${later}` } }]); // no `card` push on top
     expect(await strip('p_meher')).toEqual([{ item_id: `checkin:${later}`, kind: 'checkin', title: 'Web check-in is open', subtitle: '6E 2134 · Mon 9 Nov', cta_label: 'Check in now', since: ISO, target: { booking_id: later } }]);
     expect((await strip('p_kabir')).map((i) => i.item_id)).toEqual([`checkin:${kabirs}`]); // not named: not yet
     expect(h.go.requests.filter((x) => x.method === 'get_checkin' && x.params.booking_id === later)).toEqual([]); // the strip never asks Go
     // replace_card into the signal counts too: source.url this time, nobody named, so everyone the flight covers; Meher is already open.
     await h.go.call('replace_card', { trip_id: 't_goa', card: notice('c_ci_open', { source: { name: 'IndiGo', url: `go://trips/t_goa/checkin/${later}` } }) });
-    expect(h.push.sent.slice(before + 1)).toEqual([{ to: ['p_kabir'], n: expect.objectContaining({ type: 'checkin', tag: `t_goa:checkin:${later}` }) }]);
     expect((await strip('p_kabir')).map((i) => i.item_id)).toEqual([`checkin:${kabirs}`, `checkin:${later}`]);
-    // A GET then asks Go and keeps the full state over the minimal row, no third push.
+    // A GET then asks Go and keeps the full state over the minimal row.
     const full = await get('p_meher', later);
-    expect([full.status, full.body.seat_map.seats.length, full.body.companion, h.push.sent.length - before]).toEqual([200, 6, { person_id: 'p_kabir' }, 2]);
+    expect([full.status, full.body.seat_map.seats.length, full.body.companion]).toEqual([200, 6, { person_id: 'p_kabir' }]);
   });
 
   it('a link to another trip, a stay, an unknown booking, or not a check-in link at all does nothing: those are ordinary cards', async () => {
-    const before = h.push.sent.length;
     for (const link of [`go://trips/t_other/checkin/${later}`, `go://trips/t_goa/checkin/${stay}`, 'go://trips/t_goa/checkin/b_nope', `go://trips/t_goa/bookings/${later}`]) {
       await post(notice(`c_ci_${++n}`, { for_person_ids: ['p_priya'], actions: [{ action_id: 'open', label: 'Open', style: 'primary', url: link }] }));
     }
     expect(await rows(h.pool, `select count(*)::int as n from checkins where person_id = 'p_priya'`)).toEqual([{ n: 0 }]);
-    expect(h.push.sent.slice(before).filter((p) => p.n.type === 'checkin')).toHaveLength(0);
-    expect(h.push.sent.slice(before).filter((p) => p.n.type === 'card')).toHaveLength(4); // those were ordinary cards for Priya
   });
 });

@@ -1,14 +1,12 @@
 import type pg from 'pg';
 import type { Features, GoContract } from './config.js';
 import type { Live } from './live/live.js';
-import type { Push } from './push/push.js';
 import type { Storage } from './storage/storage.js';
 
 /** What every handler needs. Instances hold no trip state: it all lives in the database. */
 export interface Ctx {
   pool: pg.Pool;
   live: Live;
-  push: Push;
   /** Where uploaded files live (Supabase Storage, or the in-process fake). */
   storage: Storage;
   /** The app's public address, for invite links: <base>/j/<code> */

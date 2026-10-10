@@ -1,4 +1,4 @@
-// §4.9 the settle_up card's two buttons: the UPI pay link and the nudge (phase 3; the old GET …/settle-up is gone: its data is MoneyView.me).
+// §4.9 the settle_up card's UPI pay link (phase 3; the old GET …/settle-up is gone: its data is MoneyView.me).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { upiPayUri } from '../src/domain/transfers.js';
 import { appApi } from './helpers/app-api.js';
@@ -26,7 +26,6 @@ beforeAll(async () => {
 afterAll(() => h.stop());
 
 const refusal = (r: { status: number; body: any }) => [r.status, r.body?.error?.code, r.body?.error?.field];
-const reminders = () => h.push.sent.filter((s) => s.n.body.includes('reminded you'));
 
 describe('pay by UPI', () => {
   it('builds a upi://pay link to the payee with the amount in the currency\'s units, good for ten minutes, and writes nothing', async () => {
@@ -48,44 +47,8 @@ describe('pay by UPI', () => {
     expect(refusal(await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_goa/transfers/pay-link', { to_person_id: 'p_rahul', amount_minor: 0 }))).toEqual([422, 'invalid', 'amount_minor']);
   });
 
-  it('refuses an unsigned caller and a member of another trip on both routes', async () => {
+  it('refuses an unsigned caller and a member of another trip', async () => {
     expect(refusal(await t.api(null, 'POST', '/app/v1/trips/t_two/transfers/pay-link', { to_person_id: 'p_meher', amount_minor: 1 })).slice(0, 2)).toEqual([401, 'unauthorized']);
     expect(refusal(await t.api(t.as('p_orgx'), 'POST', '/app/v1/trips/t_two/transfers/pay-link', { to_person_id: 'p_meher', amount_minor: 1 })).slice(0, 2)).toEqual([403, 'forbidden']); // a member of t_other only
-    expect(refusal(await t.api(null, 'POST', '/app/v1/trips/t_two/transfers/nudge', { from_person_id: 'p_kabir' })).slice(0, 2)).toEqual([401, 'unauthorized']);
-    expect(refusal(await t.api(t.as('p_orgx'), 'POST', '/app/v1/trips/t_two/transfers/nudge', { from_person_id: 'p_kabir' })).slice(0, 2)).toEqual([403, 'forbidden']);
-  });
-});
-
-describe('nudges', () => {
-  it('answer 204 and send one notification to the right person with the amount in the trip\'s currency, tagged by the nudger; write no event and move no change number; refuse someone who does not owe and an unknown field', async () => {
-    const seqBefore = (await rows(h.pool, `select seq from trips where trip_id = 't_usd'`))[0].seq;
-    const outboxBefore = (await rows(h.pool, `select count(*)::int as n from outbox where trip_id = 't_usd'`))[0].n;
-    const ok = await t.api(t.as('p_rahul'), 'POST', '/app/v1/trips/t_usd/transfers/nudge', { from_person_id: 'p_priya' });
-    const sent = reminders().filter((s) => s.n.trip_id === 't_usd');
-    expect([ok.status, ok.body, sent.length, sent[0]!.to]).toEqual([204, null, 1, ['p_priya']]);
-    expect(sent[0]!.n).toEqual({ type: 'nudge', trip_id: 't_usd', title: 'Goa 🌴', body: 'Rahul reminded you: you owe $12.50', deep_link: '/trips/t_usd/expenses', tag: 't_usd:nudge:p_rahul' });
-    const [claim] = await rows(h.pool, `select last_sent_at from nudges where trip_id = 't_usd' and from_person_id = 'p_rahul' and to_person_id = 'p_priya'`);
-    expect(Math.abs(Date.now() - new Date(claim.last_sent_at).getTime()) < 60_000).toBe(true); // the 24 hours run from now
-    expect([(await rows(h.pool, `select seq from trips where trip_id = 't_usd'`))[0].seq, (await rows(h.pool, `select count(*)::int as n from outbox where trip_id = 't_usd'`))[0].n]).toEqual([seqBefore, outboxBefore]);
-    expect(refusal(await t.api(t.as('p_rahul'), 'POST', '/app/v1/trips/t_usd/transfers/nudge', { from_person_id: 'p_kabir' })).slice(0, 2)).toEqual([409, 'conflict']); // Kabir owes nothing here
-    expect(refusal(await t.api(t.as('p_rahul'), 'POST', '/app/v1/trips/t_usd/transfers/nudge', { from_person_id: 'p_priya', extra: 1 })).slice(0, 2)).toEqual([422, 'invalid']);
-  });
-
-  it('allow one reminder per pair per 24 hours: a second is 429 with retry_after_seconds and Retry-After and sends nothing, two at once send one, and after the window it works again', async () => {
-    const kabir = t.as('p_kabir');
-    const nudge = (to: string) => t.api(kabir, 'POST', '/app/v1/trips/t_n/transfers/nudge', { from_person_id: to });
-    const first = await nudge('p_arjun');
-    const second = await nudge('p_arjun');
-    const wait = second.body.error.retry_after_seconds;
-    expect([first.status, second.status, second.body.error.code, wait > 0 && wait <= 86400, Number(second.headers['retry-after']), reminders().filter((s) => s.n.trip_id === 't_n').length]).toEqual([204, 429, 'rate_limited', true, wait, 1]);
-    const two = await Promise.all([nudge('p_meher'), nudge('p_meher')]);
-    expect([two.map((r) => r.status).sort(), reminders().filter((s) => s.n.trip_id === 't_n').length]).toEqual([[204, 429], 2]); // one more send, not two
-    await h.pool.query(`update nudges set last_sent_at = now() - interval '25 hours' where trip_id = 't_n' and to_person_id = 'p_arjun'`);
-    expect([(await nudge('p_arjun')).status, reminders().filter((s) => s.n.trip_id === 't_n').length]).toEqual([204, 3]);
-  });
-
-  it('refuse reminding someone who has left, and a debtor reminding the person they owe', async () => {
-    expect(refusal(await t.api(t.as('p_kabir'), 'POST', '/app/v1/trips/t_gone/transfers/nudge', { from_person_id: 'p_arjun' })).slice(0, 2)).toEqual([409, 'conflict']); // Arjun still owes, but is no longer in the trip
-    expect(refusal(await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_usd/transfers/nudge', { from_person_id: 'p_rahul' })).slice(0, 2)).toEqual([409, 'conflict']); // Priya owes Rahul, not the other way round
   });
 });

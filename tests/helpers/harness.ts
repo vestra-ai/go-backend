@@ -6,7 +6,6 @@ import { GoSocket } from '../../src/go/go-socket.js';
 import type { Live, LiveEvent } from '../../src/live/live.js';
 import type { LiveHub, LiveHubOptions } from '../../src/live/ws.js';
 import { MemoryStorage } from '../../src/storage/memory-storage.js';
-import type { Push, PushPayload } from '../../src/push/push.js';
 import { goRequestHandlers } from '../../src/requests/index.js';
 import { OutboxSender } from '../../src/outbox/sender.js';
 import { buildApp } from '../../src/api/app.js';
@@ -33,24 +32,12 @@ export class RecordingLive implements Live {
   }
 }
 
-/** A recorded push: the §8 payload as the sender received it. */
-export type SentPush = { to: string[]; n: PushPayload };
-
-export class RecordingPush implements Push {
-  sent: SentPush[] = [];
-  async send(to: string[], n: PushPayload) {
-    this.sent.push({ to, n });
-  }
-}
-
 const spend = JSON.parse(readFileSync(new URL('../../contract/test-vectors/spend-approval.json', import.meta.url), 'utf8'));
 export const SPEND_PUBLIC_KEY: string = spend.public_key_pem;
 
 export interface HarnessOptions {
   seed?: boolean;
   origins?: string[];
-  makePush?: (pool: pg.Pool) => Push;
-  pushPublicKey?: string;
   features?: Partial<Features>;
   /** What the mock Go accepts. Tests run on 1.1 (every event is sent and checked) unless they test the 1.0 behaviour. */
   goContract?: GoContract;
@@ -72,9 +59,8 @@ const nameFor = (personId: string) => personId.replace(/^p_/, '').replace(/^./, 
 export async function startHarness(opts: HarnessOptions = {}) {
   const { pool, close } = await freshDb();
   const live = new RecordingLive();
-  const push = new RecordingPush();
   const storage = new MemoryStorage('https://go.example'); // its signed URLs point at the server under test (app.inject takes the path)
-  const ctx: Ctx = { pool, live, push: opts.makePush ? opts.makePush(pool) : push, storage, publicBaseUrl: 'https://go.example', spendPrivateKey: spend.private_key_pem, features: opts.features, goContract: opts.goContract ?? '1.1' };
+  const ctx: Ctx = { pool, live, storage, publicBaseUrl: 'https://go.example', spendPrivateKey: spend.private_key_pem, features: opts.features, goContract: opts.goContract ?? '1.1' };
   const go = new MockGo();
   const base = await go.listen();
   const socket = new GoSocket({
@@ -92,7 +78,7 @@ export async function startHarness(opts: HarnessOptions = {}) {
   if (fakeAuth) await fakeAuth.start();
   const auth: Authenticator = opts.makeAuth ? opts.makeAuth(pool) : fakeAuth ? new SupabaseAuth({ supabaseUrl: fakeAuth.url, pool }) : new DevAuth(sessionSecret);
   let hub!: LiveHub;
-  const app = buildApp({ ctx, go: socket, sessionSecret, auth, origins: opts.origins, pushPublicKey: opts.pushPublicKey, features: opts.features, live: opts.live, onLiveHub: (h) => (hub = h) });
+  const app = buildApp({ ctx, go: socket, sessionSecret, auth, origins: opts.origins, features: opts.features, live: opts.live, onLiveHub: (h) => (hub = h) });
   await app.ready();
   const sender = new OutboxSender({ pool, send: (e) => socket.request('send_event', e, { timeoutMs: 2500 }), ready: () => socket.connected });
   /** Sends every pending event to Go now, in order. */
@@ -140,7 +126,7 @@ export async function startHarness(opts: HarnessOptions = {}) {
     return `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
   };
   return {
-    pool, ctx, go, socket, live, push, storage, hub, sender, flush, app, sessionSecret, fakeAuth, token, signIn, listen,
+    pool, ctx, go, socket, live, storage, hub, sender, flush, app, sessionSecret, fakeAuth, token, signIn, listen,
     async stop() {
       sender.stop();
       socket.stop();

@@ -8,7 +8,7 @@ import { rows, startHarness, v1, type Harness } from './helpers/harness.js';
 let h: Harness;
 let t: ReturnType<typeof appApi>;
 beforeAll(async () => {
-  h = await startHarness({ pushPublicKey: 'PUBLIC', features: { checkin: true } }); // t_goa: p_rahul (organizer), p_priya, p_arjun, p_meher, p_kabir
+  h = await startHarness({ features: { checkin: true } }); // t_goa: p_rahul (organizer), p_priya, p_arjun, p_meher, p_kabir
   t = appApi(h);
 });
 afterAll(() => h.stop());
@@ -34,10 +34,20 @@ describe('the error shape', () => {
     expect([unknownField.status, unknownField.body.error.field, wrongType.status, wrongType.body.error.field]).toEqual([422, 'colour', 422, 'title']);
   });
 
+  it('the notification and Nudge routes are gone: 404 like any unknown route, for a member too', async () => {
+    const gone = [
+      await t.api(rahul(), 'POST', v1('/me/devices'), { platform: 'web_push', web_push: { endpoint: 'https://fcm.googleapis.com/fcm/send/x', keys: { p256dh: 'a', auth: 'b' } } }),
+      await t.api(rahul(), 'DELETE', v1('/me/devices/dev_1')),
+      await t.api(rahul(), 'POST', v1('/trips/t_goa/transfers/nudge'), { from_person_id: 'p_priya' }),
+    ];
+    expect(gone.map((r) => [r.status, r.body.error.code])).toEqual([[404, 'not_found'], [404, 'not_found'], [404, 'not_found']]);
+  });
+
   it('a 429 carries retry_after_seconds in the body and the Retry-After header', async () => {
-    await t.api(rahul(), 'POST', v1('/trips/t_goa/expenses'), { paid_by_person_id: 'p_rahul', amount_minor: 1000, note: 'Tea', category: 'food', split_person_ids: ['p_rahul', 'p_priya'] });
-    await t.api(rahul(), 'POST', v1('/trips/t_goa/transfers/nudge'), { from_person_id: 'p_priya' });
-    const again = await t.api(rahul(), 'POST', v1('/trips/t_goa/transfers/nudge'), { from_person_id: 'p_priya' });
+    h.ctx.limits = { messagesPerMinute: 1 };
+    await t.api(rahul(), 'POST', v1('/trips/t_goa/messages'), { client_message_id: 'cm_429_a', text: 'one' });
+    const again = await t.api(rahul(), 'POST', v1('/trips/t_goa/messages'), { client_message_id: 'cm_429_b', text: 'two' });
+    h.ctx.limits = undefined;
     expect([again.status, again.body.error.code, again.body.error.retry_after_seconds, Number(again.headers['retry-after'])]).toEqual([429, 'rate_limited', expect.any(Number), again.body.error.retry_after_seconds]);
   });
 });
@@ -87,11 +97,11 @@ describe('Idempotency-Key', () => {
 });
 
 describe('GET /config and /health', () => {
-  it('answers the contract version, the flags (defaults, the environment, the push keys) and the public key, without sign-in', async () => {
+  it('answers the contract version, the flags (defaults, then the environment), without sign-in', async () => {
     const config = await t.api(null, 'GET', v1('/config'));
     expect(config.body).toEqual({
-      contract: '1.0.0', min_client_version: '1.0.0', currency_default: 'INR', vapid_public_key: 'PUBLIC',
-      features: { web_push: true, checkin: true, visa: false, calls: false, vote_retract: false, vote_flexible: false, claim: false, expense_approval: true },
+      contract: '1.0.0', min_client_version: '1.0.0', currency_default: 'INR',
+      features: { checkin: true, visa: false, calls: false, vote_retract: false, vote_flexible: false, claim: false, expense_approval: true },
     });
     expect((await t.api(null, 'GET', v1('/health'))).body).toEqual({ ok: true, go: true });
     expect((await t.api(null, 'GET', '/health')).body).toEqual({ ok: true, go: true });
@@ -104,7 +114,7 @@ describe('Me', () => {
     const me = await t.api(asha, 'GET', v1('/me'));
     expect(me.body).toEqual({
       person_id: asha.id, name: 'Asha', photo_url: 'https://lh3.googleusercontent.com/a/test-photo', has_upi: false, upi_id_masked: null, email: 'asha@gmail.com', auth_provider: 'google', from_city: null,
-      notifications_enabled: true, counts: { active_trips: 0, past_trips: 0, pending_invites: 0 }, created_at: expect.any(String),
+      counts: { active_trips: 0, past_trips: 0, pending_invites: 0 }, created_at: expect.any(String),
     });
     expect(Date.now() - Date.parse(me.body.created_at)).toBeLessThan(60_000);
   });

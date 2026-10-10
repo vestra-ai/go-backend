@@ -162,25 +162,6 @@ describe('A3: an update that sends only fields the contract does not know', () =
   });
 });
 
-describe('A4: the "you owe" push comes from money.transfers', () => {
-  it('someone in credit for the whole trip is not pushed, even when they are in the new split', async () => {
-    // A new small trip so the balances are easy to follow.
-    const [asha, ben] = await Promise.all(['Asha', 'Ben'].map((name) => h.signIn(name)));
-    const [a, b] = [asha!.id, ben!.id];
-    const t = (await api(asha!, 'POST', '/app/v1/trips', { title: 'Owe test' })).body;
-    await api(ben!, 'POST', `/app/v1/invites/${t.invite_url.split('/j/')[1]}/accept`, {});
-    // Asha pays ₹1,000 for both: Ben is asked to approve his ₹500 share (phase 3: the "you owe" push is for an expense that needs no approval).
-    h.push.sent.length = 0;
-    const dinner = await api(asha!, 'POST', `/app/v1/trips/${t.trip_id}/expenses`, { paid_by_person_id: a, amount_minor: 100000, note: 'Dinner', category: 'food', split_person_ids: [a, b] });
-    expect(h.push.sent).toEqual([{ to: [b], n: { type: 'expense', trip_id: t.trip_id, title: 'Owe test', body: 'Asha added Dinner · your share ₹500. Approve?', deep_link: `/trips/${t.trip_id}/expenses`, tag: `${t.trip_id}:expense:${dinner.body.expense_id}` } }]);
-    await api(ben!, 'POST', `/app/v1/trips/${t.trip_id}/expenses/${dinner.body.expense_id}/approve`);
-    // Ben pays ₹200 for both through the vault (approved at once, so the "you owe" rule runs): Asha's share is ₹100, but she is still owed ₹400 overall, so she gets no push.
-    h.push.sent.length = 0;
-    const coffee = await h.go.call('add_expense', { request_id: rq(), trip_id: t.trip_id, paid_by_person_id: b, amount_minor: 20000, currency: 'INR', note: 'Coffee', category: 'food', split_person_ids: [a, b], approval_id: 'ap_coffee' });
-    expect([coffee.error, h.push.sent]).toEqual([undefined, []]);
-  });
-});
-
 describe('A5: a booking after a person undid the decided line', () => {
   it('leaves the undone line undone and gives the booking a booked line of its own', async () => {
     const d = await ok('open_vote', { question: 'Which villa?', kind: 'choice', anonymous: false, options: [{ label: 'Villa Sol' }, { label: 'Casa Azul' }] });

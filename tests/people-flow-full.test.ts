@@ -1,32 +1,17 @@
-import { createECDH, randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { check } from '../src/contract/index.js';
-import { WebPushSender, type SendFn } from '../src/push/web-push.js';
 import { appApi } from './helpers/app-api.js';
 import { EVERYONE } from './helpers/cancel-flow.js';
 import { rows, startHarness, type Harness } from './helpers/harness.js';
 
 const PWA = 'https://pwa.example';
-const sent: Array<{ endpoint: string; payload: string }> = [];
-const transport: SendFn = async (sub, payload) => void sent.push({ endpoint: sub.endpoint, payload }); // the real sender, a recording transport
 let h: Harness;
-let sender: WebPushSender;
 beforeAll(async () => {
-  h = await startHarness({
-    origins: [PWA],
-    pushPublicKey: 'PUBLIC',
-    makePush: (pool) => (sender = new WebPushSender({ pool, vapid: { publicKey: 'p', privateKey: 'k', subject: 'mailto:ops@example.com' }, send: transport, log: () => {} })),
-  });
+  h = await startHarness({ origins: [PWA] });
 });
 afterAll(() => h.stop());
 
-const browserKeys = () => {
-  const ecdh = createECDH('prime256v1');
-  ecdh.generateKeys();
-  return { p256dh: ecdh.getPublicKey().toString('base64url'), auth: randomBytes(16).toString('base64url') };
-};
-
-it('the whole feature in one walk from the web app\'s origin: every change takes the next number with one valid event, Go never sees a UPI id, a contact detail or any event naming a budget amount, and exactly the expected notifications go out', async () => {
+it('the whole feature in one walk from the web app\'s origin: every change takes the next number with one valid event, Go never sees a UPI id, a contact detail or any event naming a budget amount', async () => {
   const t = appApi(h);
   const statuses: string[] = [];
   const call = async (who: string, method: 'GET' | 'POST' | 'PUT' | 'PATCH', url: string, body?: unknown) => {
@@ -35,12 +20,6 @@ it('the whole feature in one walk from the web app\'s origin: every change takes
     return r;
   };
   const trip = '/app/v1/trips/t_goa';
-  const endpointOf = new Map<string, string>();
-  for (const who of EVERYONE) {
-    const endpoint = `https://fcm.googleapis.com/fcm/send/${who}`;
-    endpointOf.set(endpoint, who);
-    await call(who, 'POST', '/app/v1/me/devices', { platform: 'web_push', web_push: { endpoint, keys: browserKeys() } });
-  }
   // a vote, decided; a booking against it, updated; the group cancels it
   const vote = await call('p_priya', 'POST', `${trip}/decisions`, { client_id: 'v1', question: 'Where do we stay?', kind: 'choice', anonymous: false, options: [{ label: 'Villa Sol', price_minor: 5420000 }, { label: 'Casa Azul' }] });
   for (const who of EVERYONE) await call(who, 'PUT', `${trip}/decisions/${vote.body.decision.decision_id}/vote`, { option_index: 0 });
@@ -55,18 +34,15 @@ it('the whole feature in one walk from the web app\'s origin: every change takes
   await call('p_arjun', 'PUT', `${trip}/me/join-answers`, { from_city: 'Delhi', know: ['Window seat'] });
   await call('p_kabir', 'PUT', `${trip}/me/budget`, { min_minor: 1234567, max_minor: 2345678 });
   await call('p_meher', 'PATCH', trip, { title: 'Goa, again', status: 'booked' });
-  // money: an expense (pending: the four others are asked to approve, and already count), whom Priya owes, a pay link to Rahul, and a reminder
+  // money: an expense (pending: the four others are asked to approve, and already count), whom Priya owes, and a pay link to Rahul
   await call('p_rahul', 'POST', `${trip}/expenses`, { paid_by_person_id: 'p_rahul', amount_minor: 100000, note: 'Dinner', category: 'food', split_person_ids: EVERYONE });
   const money = await call('p_priya', 'GET', `${trip}/money`);
   const link = await call('p_priya', 'POST', `${trip}/transfers/pay-link`, { to_person_id: 'p_rahul', amount_minor: 20000 });
-  await call('p_rahul', 'POST', `${trip}/transfers/nudge`, { from_person_id: 'p_priya' });
   await h.flush();
-  await sender.drain();
 
   const events = (await rows(h.pool, 'select body from outbox where trip_id = $1 order by seq', ['t_goa'])).map((r) => r.body);
   const snap = (await h.go.call('read_trip', { trip_id: 't_goa' })).result;
   const seen = JSON.stringify([events, snap]);
-  const pushes = sent.map((s) => [endpointOf.get(s.endpoint), JSON.parse(s.payload)] as const);
   expect(statuses).toEqual([]); // every call succeeded and carried the origin's headers
   // 2, 3, 4... no gap, no repeat, once the server's own pills (poll anchors, "won", "booked": a change number, no event) are counted in
   const pills = (await rows(h.pool, `select seq from messages where trip_id = 't_goa' and author_kind = 'system' order by seq`)).map((p) => p.seq as number);
@@ -86,10 +62,4 @@ it('the whole feature in one walk from the web app\'s origin: every change takes
   // Go reads only the lowest band (with one answer, the band is that answer: by design), and no event carries an amount or a person for it.
   expect([/rahul@upi|priya@okbank|\+91p_|@mail\.test/.test(seen), /1234567|2345678/.test(JSON.stringify(events)), snap.budget]).toEqual([false, false, { lowest: { min_minor: 1234567, max_minor: 2345678, currency: 'INR' }, answered: 1, of: 5 }]);
   expect([money.body.me.i_owe, money.body.me.spent_minor, link.body.upi_uri]).toEqual([[{ from_person_id: 'p_priya', to_person_id: 'p_rahul', amount_minor: 20000, currency: 'INR' }], 20000, 'upi://pay?pa=rahul%40upi&pn=Rahul%20K&am=200.00&cu=INR&tn=Goa%2C%20again%20%C2%B7%20settle%20up']);
-  expect(pushes.map(([who, p]) => [who, p.type, p.body]).sort()).toEqual([
-    ['p_arjun', 'expense', 'Rahul K added Dinner · your share ₹200. Approve?'], ['p_kabir', 'expense', 'Rahul K added Dinner · your share ₹200. Approve?'], ['p_meher', 'expense', 'Rahul K added Dinner · your share ₹200. Approve?'],
-    ['p_priya', 'expense', 'Rahul K added Dinner · your share ₹200. Approve?'], ['p_priya', 'nudge', 'Rahul K reminded you: you owe ₹200'],
-  ]); // the four asked to approve, and the reminder; nothing for votes, bookings, edits or the cancellation
-  // Every push is the contract's payload (§8): type, trip, title, body, deep link and tag, no absolute link; the money ones open the Expenses tab.
-  expect(pushes.every(([, p]) => JSON.stringify(Object.keys(p)) === '["type","trip_id","title","body","deep_link","tag"]' && p.trip_id === 't_goa' && p.title === 'Goa, again' && p.deep_link === '/trips/t_goa/expenses' && !/https?:|upi:/.test(JSON.stringify(p)))).toBe(true);
 });

@@ -28,7 +28,7 @@ export type AfterCommit = (fn: () => void | Promise<void>) => void;
 
 /**
  * Runs `work` in one transaction. Functions registered with `after` run once, after the commit
- * (live updates and pushes), and never when the transaction rolls back.
+ * (live updates), and never when the transaction rolls back.
  */
 export async function withTx<T>(pool: pg.Pool, work: (db: pg.PoolClient, after: AfterCommit) => Promise<T>): Promise<T> {
   const db = await pool.connect();

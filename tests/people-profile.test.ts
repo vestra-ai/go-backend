@@ -28,7 +28,7 @@ describe('the account profile', () => {
     await h.flush();
     expect([first.status, typeof first.body.seq, again.status, again.body.seq, personUpdates('p_rahul').length]).toEqual([200, 'number', 200, null, 2]); // the repeat sent nothing
     expect((await t.api(rahul(), 'GET', '/app/v1/me')).body).toEqual({
-      person_id: 'p_rahul', name: 'Rahul K', photo_url: null, has_upi: true, upi_id_masked: 'rah••••@upi', email: 'p_rahul@mail.test', auth_provider: 'google', from_city: null, notifications_enabled: true,
+      person_id: 'p_rahul', name: 'Rahul K', photo_url: null, has_upi: true, upi_id_masked: 'rah••••@upi', email: 'p_rahul@mail.test', auth_provider: 'google', from_city: null,
       counts: { active_trips: 2, past_trips: 0, pending_invites: 0 }, created_at: expect.any(String), // t_goa and t_b; he left t_c
     });
     expect((await t.api(null, 'GET', '/app/v1/me')).status).toBe(401);
@@ -62,16 +62,17 @@ describe('the account profile', () => {
     expect((await t.api(rahul(), 'PATCH', '/app/v1/me', { name: null })).status).toBe(422);
   });
 
-  it('the default "travelling from" and the notifications switch are the person\'s own: saved, cleared, and never sent to Go', async () => {
+  it('the default "travelling from" is the person\'s own: saved, cleared, and never sent to Go; the notifications switch is gone', async () => {
     const kabir = t.as('p_kabir');
     const before = t.events('person.updated').length;
-    const set = await t.api(kabir, 'PATCH', '/app/v1/me', { from_city: 'Pune', notifications_enabled: false });
+    const set = await t.api(kabir, 'PATCH', '/app/v1/me', { from_city: 'Pune' });
     const same = await t.api(kabir, 'PATCH', '/app/v1/me', { from_city: 'Pune' });
     const cleared = await t.api(kabir, 'PATCH', '/app/v1/me', { from_city: null });
     await h.flush();
-    expect([set.status, set.body.from_city, set.body.notifications_enabled, set.body.seq, same.body.seq, cleared.body.from_city, t.events('person.updated').length - before]).toEqual([200, 'Pune', false, null, null, null, 0]);
-    expect((await rows(h.pool, `select from_city_default, notifications_enabled from people where person_id = 'p_kabir'`))[0]).toEqual({ from_city_default: null, notifications_enabled: false });
-    expect((await t.api(kabir, 'PATCH', '/app/v1/me', { notifications_enabled: 'yes' })).status).toBe(422);
+    expect([set.status, set.body.from_city, 'notifications_enabled' in set.body, set.body.seq, same.body.seq, cleared.body.from_city, t.events('person.updated').length - before]).toEqual([200, 'Pune', false, null, null, null, 0]);
+    expect((await rows(h.pool, `select from_city_default from people where person_id = 'p_kabir'`))[0]).toEqual({ from_city_default: null });
+    const gone = await t.api(kabir, 'PATCH', '/app/v1/me', { notifications_enabled: false });
+    expect([gone.status, gone.body.error.field]).toEqual([422, 'notifications_enabled']);
   });
 
   it('a person whose stored photo link fails the URL test can still pause Go and edit their profile; Go\'s trip read leaves out that photo and nobody else\'s; the app still gets the stored value', async () => {

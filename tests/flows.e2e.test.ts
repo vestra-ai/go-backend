@@ -1,6 +1,6 @@
 // The guide's flow pages, end to end, against the real server code, a real Postgres and a mock Go over the real
 // signed socket. Each describe follows one page step by step: what the app does, what the server stores, the
-// events Go receives, the requests Go makes back, and what people see (live updates, pushes, the "needs you" strip).
+// events Go receives, the requests Go makes back, and what people see (live updates, the "needs you" strip).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { check, verifySpendApproval } from '../src/contract/index.js';
 import { SPEND_PUBLIC_KEY, rows, startHarness, type Harness } from './helpers/harness.js';
@@ -35,8 +35,6 @@ const eventsFor = (tripId: string, from = 0) => {
 const types = (list: Array<Record<string, any>>) => list.map((e) => e.type as string);
 const tripSeq = async (tripId: string) => (await rows(h.pool, 'select seq from trips where trip_id = $1', [tripId]))[0].seq as number;
 const strip = async (who: Who, tripId: string) => (await api(who, 'GET', `/app/v1/trips/${tripId}/needs-you`)).body.items as any[];
-/** The push the room sends about one message (app contract §8): the type, the trip, the text and where a tap lands. */
-const pushAbout = (type: string, tripId: string, title: string, body: string, messageId: string) => ({ type, trip_id: tripId, message_id: messageId, title, body, deep_link: `/trips/${tripId}/chat?msg=${messageId}`, tag: `${tripId}:${messageId}` });
 const liveFor = (tripId: string, from = 0) => h.live.events.slice(from).filter((e) => e.tripId === tripId).map((e) => e.event);
 const outboxCount = async (tripId: string) => (await rows(h.pool, 'select count(*)::int as n from outbox where trip_id = $1', [tripId]))[0].n as number;
 
@@ -98,14 +96,12 @@ describe('F1. Go answers a question (guide: "Go answers a question")', () => {
     expect(JSON.stringify(snap)).not.toMatch(/phone|email|upi_id/);
   });
 
-  it('6-7. Go replies with a flights card: one push to Priya only, typing hidden, the card stored as sent, and message.created back to Go', async () => {
-    h.push.sent.length = 0;
+  it('6-7. Go replies with a flights card: typing hidden, the card stored as sent, and message.created back to Go', async () => {
     liveMark = h.live.events.length;
     mark = h.go.events.length;
     const card = flightCard('c_flights_1');
     const r = await go('post_message', trip, { text: 'Priya, 2 non-stop flights under ₹6,200 on Friday:', reply_to: question, mentions: [priya.id], card }, 'rq_f1_reply');
     expect(r.seq).toBe((await tripSeq(trip)));
-    expect(h.push.sent).toEqual([{ to: [priya.id], n: pushAbout('mention', trip, 'Goa F1', 'Priya, 2 non-stop flights under ₹6,200 on Friday:', r.message_id) }]);
     const live = liveFor(trip, liveMark);
     expect(live).toContainEqual({ kind: 'message', message_id: r.message_id, updated_seq: r.seq });
     expect(live).toContainEqual({ kind: 'typing', who: { kind: 'go' }, on: false });
@@ -118,12 +114,10 @@ describe('F1. Go answers a question (guide: "Go answers a question")', () => {
     expect(room.at(-1)).toMatchObject({ message_id: r.message_id, author: { kind: 'go' }, card: { card_id: 'c_flights_1' } });
   });
 
-  it('a repeat of the same request_id changes nothing: same answer, no second message or push', async () => {
-    h.push.sent.length = 0;
+  it('a repeat of the same request_id changes nothing: same answer, no second message', async () => {
     const seq = await tripSeq(trip);
     const again = await go('post_message', trip, { text: 'Priya, 2 non-stop flights under ₹6,200 on Friday:', mentions: [priya.id], card: flightCard('c_flights_1') }, 'rq_f1_reply');
     expect(again.seq).toBe(seq);
-    expect(h.push.sent).toEqual([]);
     expect(await tripSeq(trip)).toBe(seq);
   });
 
@@ -164,8 +158,7 @@ describe('F2. A trip starts (guide: "A trip starts")', () => {
     expect(JSON.stringify(created)).not.toMatch(/\+919999|r@x\.test|rahul@upi/);
   });
 
-  it('3-4. Go opens "When can everyone go?" and posts the vote card: changes 3 and 4 (2 was the room\'s "Trip created" pill, no event), no push', async () => {
-    h.push.sent.length = 0;
+  it('3-4. Go opens "When can everyone go?" and posts the vote card: changes 3 and 4 (2 was the room\'s "Trip created" pill, no event)', async () => {
     const mark = h.go.events.length;
     expect((await rows(h.pool, 'select seq, author_kind, text from messages where trip_id = $1', [trip]))).toEqual([{ seq: 2, author_kind: 'system', text: 'Trip created · Rahul joined' }]);
     const o = await go('open_vote', trip, { question: 'When can everyone go?', kind: 'choice', anonymous: false, options: [{ label: '6-9 Nov' }, { label: '13-16 Nov' }] });
@@ -173,7 +166,6 @@ describe('F2. A trip starts (guide: "A trip starts")', () => {
     decision = o.decision_id;
     const m = await go('post_message', trip, { text: 'Hi all, I\'m Go. First: when can everyone go?', card: { card_id: 'c_when_vote', kind: 'vote', decision_id: decision, fallback_text: 'Vote: when can everyone go?' } });
     expect(m.seq).toBe(4);
-    expect(h.push.sent).toEqual([]);
     await h.flush();
     const list = eventsFor(trip, mark);
     expect(types(list)).toEqual(['decision.opened', 'message.created']);
@@ -354,14 +346,12 @@ describe('F4. From a vote to a booking (guides: "From a vote to a booking", "Mon
     expect(await outboxCount(trip)).toBe(outbox);
   });
 
-  it('7. Go posts the pay card for Rahul: one push to him with its fallback_text, and it is in his strip', async () => {
-    h.push.sent.length = 0;
+  it('7. Go posts the pay card for Rahul: it is in his strip', async () => {
     const r = await go('post_message', trip, { text: 'Ready to pay', card: {
       card_id: 'c_villa_pay', kind: 'pay', fallback_text: 'Rahul, approve ₹54,200 for Villa Sol', for_person_ids: [rahul.id], approval_id: approval.approval_id,
       payer_person_id: rahul.id, amount_minor: 5420000, currency: 'INR', merchant: 'ixigo: Villa Sol, Anjuna', purpose: 'Villa Sol, 3 nights', expires_at: approval.expires_at, state: 'waiting',
       actions: [{ action_id: 'approve', label: 'Approve', style: 'primary', only_for_person_ids: [rahul.id] }, { action_id: 'decline', label: 'Not now', style: 'secondary', only_for_person_ids: [rahul.id] }],
     } });
-    expect(h.push.sent).toEqual([{ to: [rahul.id], n: pushAbout('card', trip, 'Goa F4', 'Rahul, approve ₹54,200 for Villa Sol', r.message_id) }]);
     expect(await strip(rahul, trip)).toContainEqual({ item_id: 'card:c_villa_pay', kind: 'card', title: 'Rahul, approve ₹54,200 for Villa Sol', cta_label: 'Approve', since: expect.any(String), target: { card_id: 'c_villa_pay', message_id: r.message_id } });
   });
 
@@ -390,19 +380,15 @@ describe('F4. From a vote to a booking (guides: "From a vote to a booking", "Mon
     expect(await goError('add_booking', trip, params)).toMatchObject({ code: 409 });
   });
 
-  it('10. Go adds the expense for the villa with its approval (a vault payment needs no one\'s approval): each of the other four is pushed what they owe Rahul', async () => {
-    h.push.sent.length = 0;
+  it('10. Go adds the expense for the villa with its approval (a vault payment needs no one\'s approval)', async () => {
     const [b] = await rows(h.pool, 'select booking_id, approval_id from bookings where trip_id = $1', [trip]);
     await go('add_expense', trip, { paid_by_person_id: rahul.id, amount_minor: 5420000, currency: 'INR', note: 'Villa Sol', category: 'stay', split_person_ids: all.map((p) => p.id), booking_id: b.booking_id, approval_id: b.approval_id });
-    expect(h.push.sent.map((s) => s.to[0]).sort()).toEqual([priya.id, arjun.id, meher.id, kabir.id].sort());
-    for (const s of h.push.sent) expect(s.n.body).toBe('You owe Rahul ₹10,840 for Villa Sol');
     expect(await goError('post_message', trip, { card: { card_id: 'c_ticket_bad', kind: 'ticket', booking_id: 'b_nope', fallback_text: 'x' } })).toMatchObject({ code: 422 });
     await go('post_message', trip, { text: 'Booked!', card: { card_id: 'c_villa_ticket', kind: 'ticket', booking_id: b.booking_id, fallback_text: 'Villa Sol is booked' } });
   });
 
-  it('12. Go marks the pay card paid with replace_card: no change number, no event, no push, and Rahul\'s strip is clear', async () => {
+  it('12. Go marks the pay card paid with replace_card: no change number, no event, and Rahul\'s strip is clear', async () => {
     await h.flush();
-    h.push.sent.length = 0;
     const seq = await tripSeq(trip);
     const outbox = await outboxCount(trip);
     const liveMark = h.live.events.length;
@@ -413,7 +399,6 @@ describe('F4. From a vote to a booking (guides: "From a vote to a booking", "Mon
     expect(r.message_id).toBeTruthy();
     expect(await tripSeq(trip)).toBe(seq + 1); // the replaced card takes a change number (D9) so an offline phone can fetch it...
     expect(await outboxCount(trip)).toBe(outbox); // ...but no event: Go replaced it itself
-    expect(h.push.sent).toEqual([]);
     expect(liveFor(trip, liveMark)).toContainEqual({ kind: 'card', message_id: r.message_id });
     expect((await strip(rahul, trip)).find((x) => x.kind === 'card')).toBeUndefined();
   });
@@ -463,9 +448,7 @@ describe('F5. A phone call (guide: "A phone call")', () => {
   });
 
   it('4-5. The call card: dialing, then talking, then ended, each replaced in place with only live updates', async () => {
-    h.push.sent.length = 0;
     call = (await go('post_message', trip, { card: callCard('dialing') })).message_id;
-    expect(h.push.sent).toEqual([]);
     await h.flush();
     const seq = await tripSeq(trip);
     const outbox = await outboxCount(trip);
@@ -484,11 +467,9 @@ describe('F5. A phone call (guide: "A phone call")', () => {
     expect(h.go.requests.at(-1)).toMatchObject({ method: 'card_tap', params: { card_id: 'c_villa_call', action_id: 'stop', person_id: arjun.id } });
   });
 
-  it('7-8. Go posts the outcome naming Rahul (a push) and writes the open question for him in the record (his strip)', async () => {
-    h.push.sent.length = 0;
+  it('7-8. Go posts the outcome naming Rahul and writes the open question for him in the record (his strip)', async () => {
     const text = 'Late check-in is fine. Rahul, Villa Sol offers ₹2,000 off if we pay the deposit this week. Shall we?';
     const m = await go('post_message', trip, { text, reply_to: ask, mentions: [rahul.id] });
-    expect(h.push.sent).toEqual([{ to: [rahul.id], n: pushAbout('mention', trip, 'Goa F5', text, m.message_id) }]);
     const mark = h.go.events.length;
     const l = await go('add_record_line', trip, { kind: 'open', text: '₹2,000 off Villa Sol: pay the deposit this week?', proof: [{ message_id: call }], person_ids: [rahul.id], due_at: new Date(Date.now() + 5 * 86_400_000).toISOString() });
     await h.flush();

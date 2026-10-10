@@ -11,8 +11,7 @@ import type { Db } from '../db/pool.js';
 import { withTx } from '../db/pool.js';
 import { change, nextSeq } from '../db/write-change.js';
 import type { LiveEvent } from '../live/live.js';
-import { sendPush } from '../push/send.js';
-import { Forbidden, formatMoney, pushOwed, requireMember } from './actions.js';
+import { Forbidden, requireMember } from './actions.js';
 import { conflict, invalid, notFound } from './errors.js';
 import { expenseView, loadExpenses, type ConfirmationRow, type ExpenseStatusRow, type ExpenseView } from './ledger.js';
 import { readOnly } from './money-view.js';
@@ -101,34 +100,6 @@ const payerOrOrganizer = (row: ExpenseStatusRow, personId: string, role: string,
   if (row.paid_by_person_id !== personId && role !== 'organizer') throw new Forbidden(`only the payer or the organizer can ${what} an expense`);
 };
 
-// ---------------------------------------------------------------- pushes (§8 `expense`, tagged by the expense)
-
-/** "<payer> added <note> · your share ₹1,700. Approve?" to the people whose entry is pending (each their own share, so one push each). */
-export async function pushApprovals(ctx: Ctx, tripId: string, expense: ExpenseView, to: string[]): Promise<void> {
-  if (to.length === 0) return;
-  const people = await activePeople(ctx.pool, tripId);
-  const names = new Map(people.map((p) => [p.person_id, p.name]));
-  const shares = sharesOf(expense, people.map((p) => p.person_id));
-  const payer = names.get(expense.paid_by_person_id) ?? 'Someone';
-  for (const id of to) {
-    await sendPush(ctx, tripId, [id], { type: 'expense', body: `${payer} added ${expense.note} · your share ${formatMoney(shares.get(id) ?? 0, expense.currency)}. Approve?`, id: expense.expense_id });
-  }
-}
-
-/** After a new expense: the approvers hear "approve?", or, when nothing waits, whoever now owes hears "you owe" (as before approval existed). */
-export async function tellSplit(ctx: Ctx, tripId: string, expense: ExpenseView): Promise<void> {
-  const pending = expense.confirmations.filter((c) => c.state === 'pending').map((c) => c.person_id);
-  if (pending.length) await pushApprovals(ctx, tripId, expense, pending);
-  else await pushOwed(ctx, tripId, expense);
-}
-
-/** "<name> disputed <note>: <reason>. Fix the split or remove it." to the payer. */
-async function pushDispute(ctx: Ctx, tripId: string, expense: ExpenseView, byPersonId: string, reason: string | undefined): Promise<void> {
-  const who = (await ctx.pool.query('select name from people where person_id = $1', [byPersonId])).rows[0]?.name ?? 'Someone';
-  const body = `${who} disputed ${expense.note}${reason ? `: ${reason}` : ''}. Fix the split or remove it.`;
-  await sendPush(ctx, tripId, [expense.paid_by_person_id], { type: 'expense', body, id: expense.expense_id });
-}
-
 // ---------------------------------------------------------------- what people do
 
 export interface NewExpense {
@@ -151,14 +122,13 @@ export async function createExpense(ctx: Ctx, tripId: string, personId: string, 
     const expense = await insertExpense(db, tripId, fields, !approvalOn(ctx));
     const seq = await change(db, tripId, 'expense.changed', { expense, change: 'added', by: { kind: 'person', person_id: personId } });
     after(() => moneyChanged(ctx, tripId, seq));
-    after(() => tellSplit(ctx, tripId, expense));
     return { ...expense, seq };
   });
 }
 
 /**
  * Approve or dispute: only someone with an entry (403: the payer, or a person outside the split), 409 when the entry is
- * already in that state or the flag is off. Go hears `expense.changed` with the answer; a dispute also pushes the payer.
+ * already in that state or the flag is off. Go hears `expense.changed` with the answer.
  */
 export async function answerExpense(ctx: Ctx, tripId: string, personId: string, expenseId: string, state: 'approved' | 'disputed', reason?: string): Promise<ExpenseView & { seq: number }> {
   return withTx(ctx.pool, async (db, after) => {
@@ -172,7 +142,6 @@ export async function answerExpense(ctx: Ctx, tripId: string, personId: string, 
     const expense = await refresh(db, row);
     const seq = await expenseChanged(ctx, db, tripId, { expense, change: state, by: { kind: 'person', person_id: personId }, by_person_id: personId });
     after(() => moneyChanged(ctx, tripId, seq));
-    if (state === 'disputed') after(() => pushDispute(ctx, tripId, expense, personId, reason));
     return { ...expense, seq };
   });
 }
@@ -198,7 +167,7 @@ export interface ExpenseSplitEdit {
 
 /**
  * "Fix split" (payer or organizer): the new split, and a new note if given. Anyone whose share changed, or who is new to
- * the split, is asked again (their entry goes back to pending, and they are pushed); someone taken out loses their entry;
+ * the split, is asked again (their entry goes back to pending); someone taken out loses their entry;
  * a share that did not move keeps its answer. Go hears `expense.changed` with change `updated`.
  */
 export async function updateExpenseSplit(ctx: Ctx, tripId: string, personId: string, expenseId: string, input: ExpenseSplitEdit): Promise<ExpenseView & { seq: number }> {
@@ -226,7 +195,6 @@ export async function updateExpenseSplit(ctx: Ctx, tripId: string, personId: str
     const expense = await refresh(db, updated);
     const seq = await expenseChanged(ctx, db, tripId, { expense, change: 'updated', by: { kind: 'person', person_id: personId }, by_person_id: personId });
     after(() => moneyChanged(ctx, tripId, seq));
-    if (state === 'pending') after(() => pushApprovals(ctx, tripId, expense, asked));
     return { ...expense, seq };
   });
 }

@@ -27,11 +27,10 @@ export async function deleteAccount(ctx: Ctx, go: GoClient, personId: string): P
   // private budget answers go too (a leave keeps them; they no longer count, but there is no reason to keep them here).
   await ctx.pool.query(
     `update people set name = $2, photo_url = null, email = null, phone = null, upi_id = null, from_city_default = null,
-       notifications_enabled = false, deleted_at = now() where person_id = $1`,
+       deleted_at = now() where person_id = $1`,
     [personId, FORMER_MEMBER],
   );
   await ctx.pool.query('update trip_people set budget_min_minor = null, budget_max_minor = null where person_id = $1', [personId]);
-  await ctx.pool.query('delete from push_subscriptions where person_id = $1', [personId]);
   await ctx.pool.query('delete from invite_marks where person_id = $1', [personId]);
   await ctx.pool.query('delete from live_tickets where person_id = $1', [personId]);
 }

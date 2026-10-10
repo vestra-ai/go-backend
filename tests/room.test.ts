@@ -80,22 +80,10 @@ describe('post_message', () => {
 
   it('does a repeated request_id once and answers with the first answer', async () => {
     const before = await rows(h.pool, 'select count(*)::int as n from messages');
-    const pushes = h.push.sent.length;
     const again = await h.go.call('post_message', params);
     const first = await rows(h.pool, "select message_id from messages where card_id = 'c_flights_1'");
     expect(again.result).toEqual({ message_id: first[0].message_id, seq: 2 });
     expect((await rows(h.pool, 'select count(*)::int as n from messages'))[0].n).toBe(before[0].n);
-    expect(h.push.sent.length).toBe(pushes); // no second push
-  });
-
-  it('pushes the people Go names and the people the card needs, once each', () => {
-    const toPriya = h.push.sent.filter((s) => s.to.includes('p_priya'));
-    const toRahul = h.push.sent.filter((s) => s.to.includes('p_rahul'));
-    expect(toPriya).toHaveLength(1);
-    expect(toPriya[0]!.n.body).toBe('Priya, here are three flights.');
-    expect(toRahul).toHaveLength(1);
-    expect(toRahul[0]!.n.body).toBe('Heads up'); // the card's fallback_text
-    expect([toPriya[0]!.n.type, toRahul[0]!.n.type, toRahul[0]!.n.trip_id, toRahul[0]!.n.title]).toEqual(['mention', 'card', 't_goa', 'Goa 🌴']);
   });
 
   it('shows the message live and hides "Go is typing..."', () => {
@@ -212,7 +200,7 @@ describe('typing and replace_card', () => {
     expect(h.go.frames.length).toBe(before);
   });
 
-  it('replaces a card in place: the message takes a change number (D9) so changes mode returns it, but no event and no push', async () => {
+  it('replaces a card in place: the message takes a change number (D9) so changes mode returns it, but no event', async () => {
     const seqBefore = (await rows(h.pool, "select seq from trips where trip_id = 't_goa'"))[0].seq;
     const outboxBefore = (await rows(h.pool, 'select count(*)::int as n from outbox'))[0].n;
     const liveMark = h.live.events.length;

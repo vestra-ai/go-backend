@@ -20,7 +20,7 @@ const priya = () => t.as('p_priya');
 const vote = { client_id: 'c1', question: 'Where do we stay?', kind: 'choice', anonymous: false, options: [{ label: 'Villa Sol', price_minor: 1200000 }, { label: 'Beach hut' }] };
 
 describe('a member opens a vote', () => {
-  it('Go hears it by that person, others see it in their strip, it closes when all vote, and no push is sent', async () => {
+  it('Go hears it by that person, others see it in their strip, it closes when all vote', async () => {
     const r = await t.api(priya(), 'POST', '/app/v1/trips/t_goa/decisions', vote);
     expect([r.status, Object.keys(r.body).sort()]).toEqual([201, ['decision', 'message']]);
     const did = r.body.decision.decision_id as string;
@@ -39,7 +39,6 @@ describe('a member opens a vote', () => {
     for (const p of ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir']) await t.api(t.as(p), 'PUT', `/app/v1/trips/t_goa/decisions/${did}/vote`, { option_index: 0 });
     await h.flush();
     expect(t.events('decision.closed').find((e) => e.data.decision.decision_id === did)!.data).toMatchObject({ reason: 'everyone_voted', decision: { result_index: 0 } });
-    expect(h.push.sent).toEqual([]);
   });
 
   it('refuses an unsigned caller, someone outside the trip, an unknown field and a closing time in the past', async () => {
@@ -108,7 +107,7 @@ describe('cancelling a booking by group vote', () => {
     expect(line.data.line).toMatchObject({ kind: 'decided', text: 'Cancel: Villa Sol' });
     expect(await f.bookingStatus(bid)).toBe('cancelled');
     const everything = JSON.stringify([(await rows(h.pool, 'select body from outbox')).map((r) => r.body), (await h.go.call('read_trip', { trip_id: 't_goa' })).result]); // Go's events and the trip as Go reads it (the app's own read carries the marker: see tests/follow-ups.test.ts)
-    expect([everything.includes('cancels_booking'), h.push.sent.length]).toEqual([false, 0]); // the link is in no event; no push
+    expect(everything.includes('cancels_booking')).toBe(false); // the link is in no event
   });
 
   it('2 of 5 closed early leaves the booking standing and a new proposal succeeds; one "Cancel" vote closed early does not cancel', async () => {

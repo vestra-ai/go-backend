@@ -77,12 +77,8 @@ describe('dates and itinerary sizes Postgres or a frame could not take', () => {
   });
 });
 
-describe('amounts in notifications', () => {
+describe('amounts in the room', () => {
   it('are written in the currency\'s own units: rupees as before, yen without a fraction, dinars with three digits', async () => {
     expect([formatMoney(113334, 'INR'), formatMoney(68000, 'INR'), formatMoney(5000, 'JPY'), formatMoney(5000, 'KWD'), formatMoney(5001, 'KWD')].map((x) => x.replace(/\u00a0/g, ' '))).toEqual(['₹1,133.34', '₹680', 'JP¥5,000', 'KWD 5', 'KWD 5.001']);
-    await t.api(t.as('p_rahul'), 'POST', '/app/v1/trips/t_yen/expenses', { paid_by_person_id: 'p_rahul', amount_minor: 5000, note: 'Ramen', category: 'food', split_person_ids: ['p_rahul', 'p_priya'] });
-    const before = h.push.sent.length;
-    await t.api(t.as('p_rahul'), 'POST', '/app/v1/trips/t_yen/transfers/nudge', { from_person_id: 'p_priya' });
-    expect(h.push.sent.slice(before).map((s) => s.n.body)).toEqual(['Rahul reminded you: you owe JP¥2,500']);
   });
 });

@@ -17,9 +17,9 @@ import { activePeople, budgetSummary } from './snapshot.js';
 
 interface PersonRecord {
   person_id: string; name: string; photo_url: string | null; upi_id: string | null;
-  email: string | null; auth_provider: string | null; from_city_default: string | null; notifications_enabled: boolean; created_at: Date;
+  email: string | null; auth_provider: string | null; from_city_default: string | null; created_at: Date;
 }
-const PERSON_COLUMNS = 'person_id, name, photo_url, upi_id, email, auth_provider, from_city_default, notifications_enabled, created_at';
+const PERSON_COLUMNS = 'person_id, name, photo_url, upi_id, email, auth_provider, from_city_default, created_at';
 
 /** The app's `Me.counts`: trips I am in now that are not over, trips that are over, and invites I kept for later and can still accept. */
 export interface MeCounts { active_trips: number; past_trips: number; pending_invites: number }
@@ -27,7 +27,7 @@ export interface MeCounts { active_trips: number; past_trips: number; pending_in
 /** The app's `Me` (contract §2). The UPI id is masked; the full id and the email go nowhere else. */
 export interface Me {
   person_id: string; name: string; email: string | null; photo_url: string | null; auth_provider: string | null; from_city: string | null;
-  has_upi: boolean; upi_id_masked: string | null; notifications_enabled: boolean; counts: MeCounts; created_at: string;
+  has_upi: boolean; upi_id_masked: string | null; counts: MeCounts; created_at: string;
 }
 
 /** "aarav@okhdfc" → "aar••••@okhdfc": the first three characters of the local part and the bank suffix. */
@@ -40,7 +40,7 @@ export function maskUpi(upiId: string): string {
 
 const own = (r: PersonRecord, counts: MeCounts): Me => ({
   person_id: r.person_id, name: r.name, email: r.email, photo_url: r.photo_url, auth_provider: r.auth_provider, from_city: r.from_city_default,
-  has_upi: !!r.upi_id, upi_id_masked: r.upi_id ? maskUpi(r.upi_id) : null, notifications_enabled: r.notifications_enabled,
+  has_upi: !!r.upi_id, upi_id_masked: r.upi_id ? maskUpi(r.upi_id) : null,
   counts, created_at: r.created_at.toISOString(),
 });
 
@@ -68,7 +68,7 @@ export async function getMyProfile(ctx: Ctx, personId: string): Promise<Me> {
 type ProfileEdit = PatchMeBody & { upi_id?: string | null };
 
 /**
- * Edits the person's name, photo, UPI id, default "travelling from" and notifications switch. One transaction locks the
+ * Edits the person's name, photo, UPI id and default "travelling from". One transaction locks the
  * person's row first, writes, and then tells every trip the person is in now (in ascending trip id, so two edits by people who
  * share trips cannot cross): one `person.updated` each, with `changed` drawn from name, photo_url and has_upi (has_upi only when
  * it flips). A new UPI id that replaces another, the default city and the switch change nothing Go can see, so they send
@@ -88,13 +88,12 @@ async function editProfile(ctx: Ctx, personId: string, input: ProfileEdit): Prom
       photo_url: photoUrl === undefined ? cur.photo_url : photoUrl,
       upi_id: input.upi_id === undefined ? cur.upi_id : input.upi_id,
       from_city_default: input.from_city === undefined ? cur.from_city_default : input.from_city,
-      notifications_enabled: input.notifications_enabled ?? cur.notifications_enabled,
     };
     const counts = await meCounts(db, personId);
-    const same = (['name', 'photo_url', 'upi_id', 'from_city_default', 'notifications_enabled'] as const).every((f) => next[f] === cur[f]);
+    const same = (['name', 'photo_url', 'upi_id', 'from_city_default'] as const).every((f) => next[f] === cur[f]);
     if (same) return { ...own(cur, counts), seq: null };
-    await db.query('update people set name = $2, photo_url = $3, upi_id = $4, from_city_default = $5, notifications_enabled = $6 where person_id = $1', [
-      personId, next.name, next.photo_url, next.upi_id, next.from_city_default, next.notifications_enabled,
+    await db.query('update people set name = $2, photo_url = $3, upi_id = $4, from_city_default = $5 where person_id = $1', [
+      personId, next.name, next.photo_url, next.upi_id, next.from_city_default,
     ]);
     const changed = [
       ...(next.name !== cur.name ? ['name'] : []),
@@ -119,7 +118,7 @@ async function editProfile(ctx: Ctx, personId: string, input: ProfileEdit): Prom
   });
 }
 
-/** PATCH /me: name, photo (an upload of mine, or a link), default city, notifications switch. */
+/** PATCH /me: name, photo (an upload of mine, or a link), default city. */
 export const updateMyProfile = (ctx: Ctx, personId: string, input: PatchMeBody) => editProfile(ctx, personId, input);
 
 /** PUT /me/upi (a validated id) and DELETE /me/upi (null). Go hears `has_upi` only when it flips. */
