@@ -37,15 +37,14 @@ describe('the app can tell a cancellation vote from an ordinary one; Go cannot',
 });
 
 describe('leaving a trip', () => {
-  it('sends the departure and then, only if the leaver had a budget answer, the moved band naming nobody (the first event is the answer being set; the last person.left is the leaver with no answer: no budget event follows)', async () => {
-    await t.api(t.as('p_kabir'), 'PUT', '/app/v1/trips/t_leave/me/budget', { min_minor: 1234500, max_minor: 2345600 });
+  it('sends person.left for each leaver, in order, and nothing after it: no budget event follows', async () => {
     await t.api(t.as('p_kabir'), 'POST', '/app/v1/trips/t_leave/leave');
-    await t.api(t.as('p_meher'), 'POST', '/app/v1/trips/t_leave/leave'); // never answered
+    await t.api(t.as('p_meher'), 'POST', '/app/v1/trips/t_leave/leave');
     await h.flush();
     const after = goEvents('t_leave').map((e) => [e.seq, e.type, e.data]);
-    const left = after.filter((e) => e[1] === 'person.left' || (e[1] === 'trip.updated' && e[2].by.kind === 'system'));
     const snap = (await h.go.call('read_trip', { trip_id: 't_leave' })).result;
-    expect([left.map((e) => e[1]), left[2]![0] === left[1]![0] + 1, left[2]![2], /1234500|2345600|p_kabir/.test(JSON.stringify(left[2]![2])), snap.budget.answered]).toEqual([['trip.updated', 'person.left', 'trip.updated', 'person.left'], true, { by: { kind: 'system' }, changed: ['budget'] }, false, 0]);
+    expect(after.map((e) => e[1])).toEqual(['person.left', 'person.left']);
+    expect([after[1]![0] > after[0]![0], after.map((e) => e[2]), snap.people.length]).toEqual([true, [{ person_id: 'p_kabir' }, { person_id: 'p_meher' }], 3]);
   });
 });
 

@@ -22,7 +22,7 @@ describe('the error shape', () => {
     const unsigned = await t.api(null, 'GET', v1('/trips/t_goa'));
     const outsider = await t.api(t.as('p_nobody'), 'GET', v1('/trips/t_goa'));
     const missing = await t.api(rahul(), 'GET', v1('/trips/t_goa/messages/m_nope'));
-    const rule = await t.api(rahul(), 'PUT', v1('/trips/t_goa/me/budget'), { min_minor: 500, max_minor: 100 });
+    const rule = await t.api(rahul(), 'PATCH', v1('/trips/t_goa'), { dates: { start: '2026-11-09', end: '2026-11-06' } });
     const unknownField = await t.api(rahul(), 'PATCH', v1('/trips/t_goa'), { colour: 'blue' });
     const wrongType = await t.api(rahul(), 'PATCH', v1('/trips/t_goa'), { title: 5 });
     const shape = (r: { body: any; headers: any }) => ({ ...r.body.error, request_id: r.body.error.request_id === r.headers['x-request-id'] ? 'matches the header' : r.body.error.request_id });
@@ -30,7 +30,7 @@ describe('the error shape', () => {
     expect(shape(unsigned)).toEqual({ code: 'unauthorized', message: 'sign in first', field: null, retry_after_seconds: null, request_id: 'matches the header' });
     expect(shape(outsider)).toMatchObject({ code: 'forbidden', field: null, retry_after_seconds: null, request_id: 'matches the header' });
     expect(shape(missing)).toMatchObject({ code: 'not_found', request_id: 'matches the header' });
-    expect([rule.status, shape(rule)]).toEqual([422, { code: 'invalid', message: 'max_minor must not be below min_minor', field: null, retry_after_seconds: null, request_id: 'matches the header' }]);
+    expect([rule.status, shape(rule)]).toEqual([422, { code: 'invalid', message: 'dates.start must be on or before dates.end', field: null, retry_after_seconds: null, request_id: 'matches the header' }]);
     expect([unknownField.status, unknownField.body.error.field, wrongType.status, wrongType.body.error.field]).toEqual([422, 'colour', 422, 'title']);
   });
 

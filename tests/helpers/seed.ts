@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type pg from 'pg';
 
-export interface SeedPerson { id: string; name: string; role?: 'organizer' | 'member'; upi?: string; paused?: boolean; budget?: [number, number] }
+export interface SeedPerson { id: string; name: string; role?: 'organizer' | 'member'; upi?: string; paused?: boolean }
 
 /**
  * The Supabase user id a seeded (or any named) person signs in as: fixed by the person id, so the fake Supabase Auth
@@ -37,9 +37,9 @@ export async function seedTrip(
       [p.id, p.name, p.upi ?? null, `+91${p.id}`, `${p.id}@mail.test`, uuidFor(p.id)],
     );
     await pool.query(
-      `insert into trip_people (trip_id, person_id, role, joined_at, go_paused, budget_min_minor, budget_max_minor)
-       values ($1, $2, $3, now() + make_interval(secs => $4), $5, $6, $7)`,
-      [tripId, p.id, p.role ?? 'member', n++, p.paused ?? false, p.budget?.[0] ?? null, p.budget?.[1] ?? null],
+      `insert into trip_people (trip_id, person_id, role, joined_at, go_paused)
+       values ($1, $2, $3, now() + make_interval(secs => $4), $5)`,
+      [tripId, p.id, p.role ?? 'member', n++, p.paused ?? false],
     );
   }
 }

@@ -25,10 +25,10 @@ describe('trip created, joined, left', () => {
     const r = await t.api(rahul, 'POST', '/app/v1/trips', { title: 'Goa' });
     trip = r.body.trip_id;
     code = r.body.invite_url.split('/j/')[1];
-    await t.api(priya, 'POST', `/app/v1/invites/${code}/accept`, { join_answers: { spend_band: 'lt15' } });
+    await t.api(priya, 'POST', `/app/v1/invites/${code}/accept`, { join_answers: { from_city: 'Delhi' } });
     await t.api(kabir, 'POST', `/app/v1/invites/${code}/accept`, {});
-    expect(await pills(trip)).toEqual([{ seq: 2, text: 'Trip created · Rahul joined', card: null }, { seq: 5, text: 'Priya joined', card: null }, { seq: 7, text: 'Kabir joined', card: null }]);
-    expect(await outboxSeqs(trip)).toEqual([1, 3, 4, 6]); // trip.created; person.joined, trip.updated (budget); person.joined
+    expect(await pills(trip)).toEqual([{ seq: 2, text: 'Trip created · Rahul joined', card: null }, { seq: 4, text: 'Priya joined', card: null }, { seq: 6, text: 'Kabir joined', card: null }]);
+    expect(await outboxSeqs(trip)).toEqual([1, 3, 5]); // trip.created; person.joined; person.joined (no budget event)
     const room = (await t.api(rahul, 'GET', `/app/v1/trips/${trip}/messages`)).body.messages;
     expect(room.map((m: any) => [m.author, m.text])).toEqual([[{ kind: 'system' }, 'Trip created · Rahul joined'], [{ kind: 'system' }, 'Priya joined'], [{ kind: 'system' }, 'Kabir joined']]);
     for (const m of room) expect(check('Message', m)).toMatchObject({ ok: true });
@@ -39,14 +39,14 @@ describe('trip created, joined, left', () => {
     await h.flush();
     const page = (await h.go.call('read_messages', { trip_id: trip, after_seq: 0 })).result;
     expect(check('MessagesPage', page)).toMatchObject({ ok: true });
-    expect(page.messages.map((m: any) => [m.seq, m.author.kind])).toEqual([[2, 'system'], [5, 'system'], [7, 'system']]);
-    expect(h.go.events.filter((e) => e.trip_id === trip).map((e) => e.seq)).toEqual([1, 3, 4, 6]);
+    expect(page.messages.map((m: any) => [m.seq, m.author.kind])).toEqual([[2, 'system'], [4, 'system'], [6, 'system']]);
+    expect(h.go.events.filter((e) => e.trip_id === trip).map((e) => e.seq)).toEqual([1, 3, 5]);
   });
 
   it('"Kabir left" after person.left', async () => {
     await t.api(kabir, 'POST', `/app/v1/trips/${trip}/leave`);
-    expect((await pills(trip)).at(-1)).toMatchObject({ seq: 9, text: 'Kabir left' });
-    expect((await outboxSeqs(trip)).at(-1)).toBe(8);
+    expect((await pills(trip)).at(-1)).toMatchObject({ seq: 8, text: 'Kabir left' });
+    expect((await outboxSeqs(trip)).at(-1)).toBe(7);
   });
 });
 

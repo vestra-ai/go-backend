@@ -101,7 +101,7 @@ describe('A2: bad app input answers 422 with the standard error (400 only for un
     const over = await api(stranger, 'POST', '/app/v1/invites/inv_t_goa/accept', { join_answers: { know: Array.from({ length: 21 }, (_, i) => `k${i}`) } });
     expect([over.status, over.body.error.field]).toEqual([422, 'join_answers.know']);
     expect((await api(stranger, 'POST', '/app/v1/invites/inv_t_goa/accept', { join_answers: { from_city: 'x'.repeat(61) } })).status).toBe(422);
-    expect((await api(stranger, 'POST', '/app/v1/invites/inv_t_goa/accept', { join_answers: { spend_band: 'lots' } })).status).toBe(422);
+    expect((await api(stranger, 'POST', '/app/v1/invites/inv_t_goa/accept', { join_answers: { spend_band: 'lt15' } })).status).toBe(422); // no longer an answer
     expect((await api(stranger, 'POST', '/app/v1/invites/inv_t_goa/accept', { budget: { min_minor: 1 } })).status).toBe(422); // the old shape
   });
 
@@ -196,23 +196,8 @@ describe('A6: two different requests for the same thing at the same moment', () 
   });
 });
 
-describe('A7: someone with a budget answer leaves', () => {
-  it('sends trip.updated ["budget"] by the system after person.left, so Go knows the band moved', async () => {
-    const budgeter = await h.signIn('Budgeter');
-    await api(budgeter, 'POST', '/app/v1/invites/inv_t_goa/accept', { join_answers: { spend_band: 'lt15' } });
-    const before = (await h.go.call('read_trip', { trip_id: T })).result.budget;
-    expect(before.lowest).toEqual({ min_minor: 0, max_minor: 1500000, currency: 'INR' });
-    await api(budgeter, 'POST', `/app/v1/trips/${T}/leave`);
-    await h.flush();
-    const left = events('person.left').at(-1)!;
-    const updated = events('trip.updated').at(-1)!;
-    expect(left.data).toEqual({ person_id: budgeter.id });
-    expect(updated).toMatchObject({ seq: left.seq + 1, data: { by: { kind: 'system' }, changed: ['budget'] } });
-    const after = (await h.go.call('read_trip', { trip_id: T })).result.budget;
-    expect(after.answered).toBe(before.answered - 1);
-  });
-
-  it('someone with no budget answer leaving sends no budget event', async () => {
+describe('A7: leaving a trip sends no budget event', () => {
+  it('person.left is the last event of a leave: no trip.updated for the budget follows it', async () => {
     const p = await h.signIn('NoBudget');
     await api(p, 'POST', '/app/v1/invites/inv_t_goa/accept', {});
     await api(p, 'POST', `/app/v1/trips/${T}/leave`);

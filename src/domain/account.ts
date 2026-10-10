@@ -20,17 +20,15 @@ export async function deleteAccount(ctx: Ctx, go: GoClient, personId: string): P
     if (err instanceof GoUnavailable) throw new GoUnavailable(502, 'Go could not forget you just now; nothing was deleted. Try again.');
     throw err;
   }
-  // 3. Leave every trip, in a fixed order: `person.left`, the budget band moving, votes that now have everyone's answer.
+  // 3. Leave every trip, in a fixed order: `person.left`, votes that now have everyone's answer.
   const trips = await ctx.pool.query('select trip_id from trip_people where person_id = $1 and left_at is null order by trip_id', [personId]);
   for (const { trip_id } of trips.rows) await leaveTrip(ctx, trip_id, personId);
-  // 4 and 5. The person as the rooms will show them from now on, and nothing that could reach them or identify them. Their
-  // private budget answers go too (a leave keeps them; they no longer count, but there is no reason to keep them here).
+  // 4 and 5. The person as the rooms will show them from now on, and nothing that could reach them or identify them.
   await ctx.pool.query(
     `update people set name = $2, photo_url = null, email = null, phone = null, upi_id = null, from_city_default = null,
        deleted_at = now() where person_id = $1`,
     [personId, FORMER_MEMBER],
   );
-  await ctx.pool.query('update trip_people set budget_min_minor = null, budget_max_minor = null where person_id = $1', [personId]);
   await ctx.pool.query('delete from invite_marks where person_id = $1', [personId]);
   await ctx.pool.query('delete from live_tickets where person_id = $1', [personId]);
 }

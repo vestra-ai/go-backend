@@ -24,9 +24,7 @@ describe('read_trip', () => {
     expect(f.result.people.map((p: any) => p.person_id)).toEqual(['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir']);
   });
 
-  it('never shows contact details or anyone\'s own budget answer', async () => {
-    await h.pool.query("update trip_people set budget_min_minor = 1500000, budget_max_minor = 2000000 where person_id = 'p_priya'");
-    await h.pool.query("update trip_people set budget_min_minor = 1000000, budget_max_minor = 1500000 where person_id = 'p_arjun'");
+  it('never shows contact details', async () => {
     const f = await h.go.call('read_trip', { trip_id: 't_goa' });
     const text = JSON.stringify(f.result);
     expect(text).not.toMatch(/\+91|@mail\.test|rahul@upi|phone|email|upi_id/);
@@ -34,8 +32,7 @@ describe('read_trip', () => {
     const priya = f.result.people.find((p: any) => p.person_id === 'p_priya');
     expect(rahul.has_upi).toBe(true);
     expect(priya.has_upi).toBe(false);
-    // only the lowest band and how many answered
-    expect(f.result.budget).toEqual({ lowest: { min_minor: 1000000, max_minor: 1500000, currency: 'INR' }, answered: 2, of: 5 });
+    expect(f.result.budget).toEqual({ answered: 0, of: 5 }); // no group budget set
   });
 
   it('leaves out a person who left the trip', async () => {

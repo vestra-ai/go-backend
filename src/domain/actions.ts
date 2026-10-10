@@ -15,7 +15,7 @@ import type { Features } from '../config.js';
 import { resolveAttachments } from './attachments.js';
 import { checkinItems, checkinOn } from './checkin.js';
 import { conflict, invalid, notFound, rateLimited } from './errors.js';
-import { BUDGET_BANDS, knowWithVibe } from './join-answers.js';
+import { knowWithVibe } from './join-answers.js';
 import { assertDate } from './limits.js';
 import { compact, decisionOf, expenseOf, messageForGo, personForGo, recordLineOf, tallyOf } from './mappers.js';
 import type { DecisionRow, ExpenseRow, MessageRow, RecordLineRow, VoteRow } from './mappers.js';
@@ -116,7 +116,7 @@ export async function createTrip(ctx: Ctx, organizerId: string, input: NewTrip) 
   });
 }
 
-/** The join answers (contract JoinAnswers): the three group-visible ones, the vibe (one `know` entry) and the spend band (a private budget answer). */
+/** The join answers (contract JoinAnswers): the three group-visible ones and the vibe (one `know` entry). */
 export type JoinAnswers = PatchTripMeBody;
 
 /** The trip behind an invite code that still works: unknown → 404, rotated away → 409, trip over → 409. */
@@ -129,9 +129,8 @@ async function tripForInvite(db: Db, code: string): Promise<string> {
 }
 
 /**
- * Someone joins with the invite link and answers the join questions. Go gets `person.joined` with those answers, never
- * their budget answer: that only moves the lowest band, announced as a `trip.updated` that names nobody (so the band cannot
- * be traced to a person). Already in the trip: nothing changes (`already: true`). A mark left on the link ("later" or
+ * Someone joins with the invite link and answers the join questions. Go gets `person.joined` with those answers.
+ * Already in the trip: nothing changes (`already: true`). A mark left on the link ("later" or
  * "declined") goes, and the joiner's home screen is told to re-read.
  */
 export async function joinTrip(ctx: Ctx, code: string, personId: string, answers: JoinAnswers) {
@@ -144,18 +143,17 @@ export async function joinTrip(ctx: Ctx, code: string, personId: string, answers
       return { trip_id: tripId, seq: seq as number, already: true };
     }
     const know = JSON.stringify(knowWithVibe(answers.know ?? [], answers.vibe));
-    const band = answers.spend_band ? BUDGET_BANDS[answers.spend_band] : null;
-    const values = [tripId, personId, answers.from_city ?? null, answers.earliest_leave ?? null, know, band?.min_minor ?? null, band?.max_minor ?? null];
+    const values = [tripId, personId, answers.from_city ?? null, answers.earliest_leave ?? null, know];
     if (existing) {
       await db.query(
-        `update trip_people set left_at = null, joined_at = now(), from_city = $3, earliest_leave = $4, know = $5, budget_min_minor = $6, budget_max_minor = $7
+        `update trip_people set left_at = null, joined_at = now(), from_city = $3, earliest_leave = $4, know = $5
           where trip_id = $1 and person_id = $2`,
         values,
       );
     } else {
       await db.query(
-        `insert into trip_people (trip_id, person_id, role, from_city, earliest_leave, know, budget_min_minor, budget_max_minor)
-         values ($1, $2, 'member', $3, $4, $5, $6, $7)`,
+        `insert into trip_people (trip_id, person_id, role, from_city, earliest_leave, know)
+         values ($1, $2, 'member', $3, $4, $5)`,
         values,
       );
     }
@@ -168,10 +166,9 @@ export async function joinTrip(ctx: Ctx, code: string, personId: string, answers
     await db.query('delete from invite_marks where person_id = $1 and code = $2', [personId, code]);
     const people = await activePeople(db, tripId);
     const person = people.find((p) => p.person_id === personId)!;
-    let seq = await change(db, tripId, 'person.joined', { person: personForGo(person) });
-    if (band) seq = await change(db, tripId, 'trip.updated', { by: { kind: 'system' }, changed: ['budget'] });
+    const seq = await change(db, tripId, 'person.joined', { person: personForGo(person) });
     await postSystemMessage(ctx, db, after, tripId, joinedText(person.name)); // after the events, so they keep adjacent numbers
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq, kinds: band ? ['people', 'budget'] : ['people'] }));
+    after(() => ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['people'] }));
     publishHome(ctx, after, tripId, people.map((p) => p.person_id)); // the joiner's home gains the trip; everyone's card shows one more face
     return { trip_id: tripId, seq, already: false };
   });
@@ -180,7 +177,7 @@ export async function joinTrip(ctx: Ctx, code: string, personId: string, answers
 export async function leaveTrip(ctx: Ctx, tripId: string, personId: string) {
   return withTx(ctx.pool, async (db, after) => {
     await requireMember(db, tripId, personId);
-    const left = (await db.query('update trip_people set left_at = now() where trip_id = $1 and person_id = $2 returning budget_min_minor', [tripId, personId])).rows[0];
+    await db.query('update trip_people set left_at = now() where trip_id = $1 and person_id = $2', [tripId, personId]);
     // Someone who left can no longer vote, so an open vote no longer waits for them.
     await db.query(
       `update decisions set of_count = greatest(1, of_count - 1)
@@ -195,12 +192,10 @@ export async function leaveTrip(ctx: Ctx, tripId: string, personId: string) {
         order by booking_id for update`,
       [tripId],
     );
-    let seq = await change(db, tripId, 'person.left', { person_id: personId });
-    // Their budget answer no longer counts, so the band (and how many answered) moved: say so, naming nobody.
-    if (left.budget_min_minor !== null) seq = await change(db, tripId, 'trip.updated', { by: { kind: 'system' }, changed: ['budget'] });
+    const seq = await change(db, tripId, 'person.left', { person_id: personId });
     await postSystemMessage(ctx, db, after, tripId, leftText(await personName(db, personId)));
     const lastSeq = seq;
-    const kinds: ChangeKind[] = left.budget_min_minor !== null ? ['people', 'budget'] : ['people'];
+    const kinds: ChangeKind[] = ['people'];
     after(() => ctx.live.publish(tripId, { kind: 'trip', seq: lastSeq, kinds }));
     publishHome(ctx, after, tripId, [personId, ...(await activePeople(db, tripId)).map((p) => p.person_id)]);
     // A vote that was only waiting for the person who left has now been voted on by everyone.

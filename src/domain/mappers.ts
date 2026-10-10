@@ -62,7 +62,7 @@ export interface PersonRow {
 }
 
 /**
- * A person as Go may see them: no phone, email or UPI id, no budget answer. A stored photo link that fails the contract's
+ * A person as Go may see them: no phone, email or UPI id. A stored photo link that fails the contract's
  * own URL test (older sign-ups were not checked) is left out: sent as it is, it would make every event about that person invalid.
  */
 export const personForGo = (r: PersonRow): Person =>

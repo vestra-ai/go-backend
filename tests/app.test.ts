@@ -49,24 +49,20 @@ describe('creating and joining a trip', () => {
     expect((await api(null, 'GET', '/app/v1/invites/nope')).status).toBe(404);
   });
 
-  it('joining sends person.joined with the join answers but never the budget answer (the spend band), then trip.updated by the system', async () => {
+  it('joining sends person.joined with the join answers and nothing else: no trip.updated follows', async () => {
     const r = await api(priya, 'POST', `/app/v1/invites/${code}/accept`, {
-      join_answers: { from_city: 'Delhi', earliest_leave: 'Fri after 6 pm', know: ['Vegetarian', 'Window seat'], spend_band: '15to25' },
+      join_answers: { from_city: 'Delhi', earliest_leave: 'Fri after 6 pm', know: ['Vegetarian', 'Window seat'] },
     });
     expect(r.body).toEqual({ trip_id: trip, seq: expect.any(Number), landing: 'trip_home' }); // nobody has spoken yet
     await h.flush();
     const joined = events('person.joined').at(-1)!;
     expect(joined.data.person).toMatchObject({ person_id: priya.id, name: 'Priya', from_city: 'Delhi', know: ['Vegetarian', 'Window seat'], role: 'member', go_paused: false });
-    expect(JSON.stringify(joined)).not.toMatch(/budget|1500000|15to25/);
-    const updated = events('trip.updated').at(-1)!;
-    expect(updated.data).toEqual({ by: { kind: 'system' }, changed: ['budget'] });
-    expect([updated.seq, r.body.seq]).toEqual([joined.seq + 1, updated.seq]);
+    expect(events('trip.updated').filter((e) => e.trip_id === trip)).toEqual([]);
+    expect(r.body.seq).toBe(joined.seq);
+    expect((await api(priya, 'POST', `/app/v1/invites/${code}/accept`, {})).body).toEqual({ trip_id: trip, seq: joined.seq + 1, landing: 'trip_home' }); // already in: nothing happens; the trip's seq is the "Priya joined" pill
+    await api(kabir, 'POST', `/app/v1/invites/${code}/accept`, {});
     const snap = (await h.go.call('read_trip', { trip_id: trip })).result;
-    expect(snap.budget).toEqual({ lowest: { min_minor: 1500000, max_minor: 2500000, currency: 'INR' }, answered: 1, of: 2 });
-    expect((await api(priya, 'POST', `/app/v1/invites/${code}/accept`, {})).body).toEqual({ trip_id: trip, seq: updated.seq + 1, landing: 'trip_home' }); // already in: nothing happens; the trip's seq is the "Priya joined" pill
-    await api(kabir, 'POST', `/app/v1/invites/${code}/accept`, { join_answers: { spend_band: 'lt15' } });
-    const snap2 = (await h.go.call('read_trip', { trip_id: trip })).result;
-    expect(snap2.budget.lowest).toEqual({ min_minor: 0, max_minor: 1500000, currency: 'INR' });
+    expect(snap.budget).toEqual({ answered: 0, of: 3 }); // no group budget set: nobody has answered
   });
 
   it('refuses requests with no sign-in, a forged token, an expired token, and someone outside the trip', async () => {

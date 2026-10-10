@@ -6,14 +6,14 @@ import type { Ctx } from '../context.js';
 import { withTx } from '../db/pool.js';
 import { change } from '../db/write-change.js';
 import { check } from '../contract/index.js';
-import type { PatchMeBody, PatchTripBody, PatchTripMeBody, PutBudgetBody } from '../api/bodies.js';
+import type { PatchMeBody, PatchTripBody, PatchTripMeBody } from '../api/bodies.js';
 import { Forbidden, requireMember as requireMemberTx } from './actions.js';
 import { resolveUploadUrl } from './attachments.js';
 import { invalid, notFound } from './errors.js';
-import { BUDGET_BANDS, knowWithVibe } from './join-answers.js';
+import { knowWithVibe } from './join-answers.js';
 import { assertDate, assertItinerarySize } from './limits.js';
 import { personForGo } from './mappers.js';
-import { activePeople, budgetSummary } from './snapshot.js';
+import { activePeople } from './snapshot.js';
 
 interface PersonRecord {
   person_id: string; name: string; photo_url: string | null; upi_id: string | null;
@@ -128,7 +128,6 @@ export const setMyUpi = (ctx: Ctx, personId: string, upiId: string | null) => ed
 
 interface MembershipRecord {
   role: 'organizer' | 'member'; go_paused: boolean; from_city: string | null; earliest_leave: string | null; know: string[];
-  budget_min_minor: number | null; budget_max_minor: number | null;
 }
 
 /** Locks the person's membership row for the rest of the transaction. The person must be in the trip now. */
@@ -138,20 +137,17 @@ async function lockMembership(db: pg.PoolClient, tripId: string, personId: strin
   return row;
 }
 
-/** The caller's own join answers, with their own budget answer (which only they ever see). */
+/** The caller's own join answers, role and pause. */
 export async function getMyTripAnswers(ctx: Ctx, tripId: string, personId: string) {
   const { rows } = await ctx.pool.query<MembershipRecord>('select * from trip_people where trip_id = $1 and person_id = $2 and left_at is null', [tripId, personId]);
   const m = rows[0];
   if (!m) throw new Forbidden(`${personId} is not in trip ${tripId}`);
-  const budget = m.budget_min_minor === null ? null : { min_minor: m.budget_min_minor, ...(m.budget_max_minor === null ? {} : { max_minor: m.budget_max_minor }) };
-  return { from_city: m.from_city, earliest_leave: m.earliest_leave, know: m.know, budget, role: m.role, go_paused: m.go_paused };
+  return { from_city: m.from_city, earliest_leave: m.earliest_leave, know: m.know, role: m.role, go_paused: m.go_paused };
 }
 
 /**
- * Edits the join answers in this trip (PUT …/me/join-answers): one `person.updated` here only, listing what differs, and, when
- * `spend_band` moves the budget answer, a `trip.updated` by the system after it (as a budget set does). Nothing differs:
- * `seq: null`. Answers the caller's own Person, in full. The vibe lands in `know` as "Vibe: beach"; the band in the private
- * budget answer (see join-answers.ts).
+ * Edits the join answers in this trip (PUT …/me/join-answers): one `person.updated` here only, listing what differs. Nothing
+ * differs: `seq: null`. Answers the caller's own Person, in full. The vibe lands in `know` as "Vibe: beach" (see join-answers.ts).
  */
 export async function updateMyTripAnswers(ctx: Ctx, tripId: string, personId: string, input: PatchTripMeBody) {
   return withTx(ctx.pool, async (db, after) => {
@@ -171,11 +167,6 @@ export async function updateMyTripAnswers(ctx: Ctx, tripId: string, personId: st
       const person = (await activePeople(db, tripId)).find((p) => p.person_id === personId)!;
       seq = await change(db, tripId, 'person.updated', { person: personForGo(person), changed });
     }
-    if (input.spend_band) {
-      const band = BUDGET_BANDS[input.spend_band];
-      const moved = await writeBudget(db, tripId, personId, cur, band.min_minor, band.max_minor);
-      if (moved !== null) seq = moved;
-    }
     if (seq !== null) {
       const last = seq;
       after(() => ctx.live.publish(tripId, { kind: 'trip', seq: last }));
@@ -185,50 +176,11 @@ export async function updateMyTripAnswers(ctx: Ctx, tripId: string, personId: st
   });
 }
 
-/** Writes a budget answer when it differs from the stored one and tells Go the band moved (`trip.updated` by the system). The change number, or null. */
-async function writeBudget(db: pg.PoolClient, tripId: string, personId: string, cur: MembershipRecord, min: number | null, max: number | null): Promise<number | null> {
-  if (cur.budget_min_minor === min && cur.budget_max_minor === max) return null;
-  await db.query('update trip_people set budget_min_minor = $3, budget_max_minor = $4 where trip_id = $1 and person_id = $2', [tripId, personId, min, max]);
-  // Names nobody and no amount: only the lowest band, which Go reads, can move.
-  return change(db, tripId, 'trip.updated', { by: { kind: 'system' }, changed: ['budget'] });
-}
-
-/**
- * Sets the caller's whole budget answer. When the stored answer changes Go hears `trip.updated` by the system, `changed: ['budget']`,
- * which names nobody and no amount: only the lowest band, which Go reads, can move. The same answer again sends nothing.
- * Answers the stored answer, the group's summary and the change number.
- */
-export async function setMyBudget(ctx: Ctx, tripId: string, personId: string, input: PutBudgetBody) {
-  if (input.max_minor !== undefined && input.max_minor !== null && input.max_minor < input.min_minor) throw invalid('max_minor must not be below min_minor');
-  return withTx(ctx.pool, async (db, after) => {
-    const trip = (await db.query('select currency from trips where trip_id = $1', [tripId])).rows[0];
-    if (!trip) throw notFound(`trip ${tripId} does not exist`);
-    if (input.currency !== undefined && input.currency !== trip.currency) throw invalid(`currency must be the trip's (${trip.currency})`, 'currency');
-    const cur = await lockMembership(db, tripId, personId);
-    const max = input.max_minor ?? null;
-    const seq = await writeBudget(db, tripId, personId, cur, input.min_minor, max);
-    if (seq !== null) after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
-    const summary = await budgetSummary(db, tripId, trip.currency);
-    return { budget: { min_minor: input.min_minor, max_minor: max, currency: trip.currency as string }, summary, seq };
-  });
-}
-
-/** Withdraws the caller's budget answer (DELETE …/me/budget). The band and the count moved, so Go hears the same `trip.updated` as a set. */
-export async function deleteMyBudget(ctx: Ctx, tripId: string, personId: string) {
-  return withTx(ctx.pool, async (db, after) => {
-    const trip = (await db.query('select currency from trips where trip_id = $1', [tripId])).rows[0];
-    if (!trip) throw notFound(`trip ${tripId} does not exist`);
-    const cur = await lockMembership(db, tripId, personId);
-    const seq = await writeBudget(db, tripId, personId, cur, null, null);
-    if (seq !== null) after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
-    return { summary: await budgetSummary(db, tripId, trip.currency), seq };
-  });
-}
-
 // ---------------------------------------------------------------- the trip's details and status
 
 /**
- * Any member edits the trip's title, dates, itinerary or status (status may move in any direction). Locks the trip row, compares,
+ * Any member edits the trip's title, dates, itinerary, status (status may move in any direction) or the group's budget per
+ * person (null clears it; it is the only field that can be cleared). Locks the trip row, compares,
  * writes only what differs, and sends one `trip.updated` by the person listing only those fields; nothing differs: `seq: null`.
  * The itinerary replaces the whole itinerary: each day is checked against the contract's own Day and item definitions and stored
  * exactly as sent (fields the server does not know survive); "differs" means differs by value, ignoring the order of keys inside
@@ -249,7 +201,7 @@ export async function updateTripDetails(ctx: Ctx, tripId: string, personId: stri
   }
   return withTx(ctx.pool, async (db, after) => {
     // The trip row, locked: the same lock the change number takes, held from here so nothing else changes the trip between compare and write.
-    const cur = (await db.query('select title, status, dates_start, dates_end from trips where trip_id = $1 for no key update', [tripId])).rows[0];
+    const cur = (await db.query('select title, status, dates_start, dates_end, budget_per_person_minor from trips where trip_id = $1 for no key update', [tripId])).rows[0];
     if (!cur) throw notFound(`trip ${tripId} does not exist`);
     // Membership is checked after the trip lock, so a leave that is ahead of this edit has committed and is seen (403), and one that is
     // behind it numbers its `person.left` after this edit. (Locking the membership row here would invert the order a leave takes.)
@@ -275,10 +227,11 @@ export async function updateTripDetails(ctx: Ctx, tripId: string, personId: stri
       if (!same) (set('itinerary', JSON.stringify(input.itinerary)), changed.push('itinerary'));
     }
     if (input.status !== undefined && input.status !== cur.status) (set('status', input.status), changed.push('status'));
+    if (input.budget_per_person_minor !== undefined && input.budget_per_person_minor !== cur.budget_per_person_minor) (set('budget_per_person_minor', input.budget_per_person_minor), changed.push('budget'));
     if (changed.length === 0) return { seq: null };
     await db.query(`update trips set ${sets.join(', ')} where trip_id = $1`, values);
     const seq = await change(db, tripId, 'trip.updated', { by: { kind: 'person', person_id: personId }, changed });
-    after(() => ctx.live.publish(tripId, { kind: 'trip', seq }));
+    after(() => ctx.live.publish(tripId, { kind: 'trip', seq, ...(changed.includes('budget') ? { kinds: ['trip', 'budget'] } : {}) }));
     return { seq };
   });
 }

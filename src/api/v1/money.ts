@@ -21,13 +21,13 @@ const EXPENSE = {
 const SETTLEMENT = { settlement_id: 'st_01', from_person_id: 'p_priya', to_person_id: 'p_aarav', amount_minor: 170000, currency: 'INR', method: 'upi', note: 'cab share', created_at: '2026-11-07T09:00:00.000Z' };
 const MONEY = {
   currency: 'INR', plan_minor: 7500000, spent_minor: 680000, by_category: [{ category: 'getting_around', amount_minor: 680000 }], transfers: [TRANSFER],
-  me: { budget: { min_minor: 1500000, max_minor: 2500000, currency: 'INR' }, spent_minor: 170000, by_category: [{ category: 'getting_around', amount_minor: 170000 }], owed_to_me: [], i_owe: [TRANSFER] }, seq: 42,
+  me: { spent_minor: 170000, by_category: [{ category: 'getting_around', amount_minor: 170000 }], owed_to_me: [], i_owe: [TRANSFER] }, seq: 42,
 };
 const ROW_EXPENSE = { transaction_id: 'e_cab', kind: 'booking', occurred_at: '2026-11-06T16:40:00.000Z', payer_person_id: 'p_aarav', verb: 'paid', to: { kind: 'merchant', name: 'Airport cab' }, amount_minor: 680000, currency: 'INR', note: 'Airport cab', mine: true, expense_id: 'e_cab' };
 const ROW_PAYBACK = { transaction_id: 'st_01', kind: 'payback', occurred_at: '2026-11-07T09:00:00.000Z', payer_person_id: 'p_priya', verb: 'paid', to: { kind: 'person', person_id: 'p_aarav' }, amount_minor: 170000, currency: 'INR', method: 'upi', note: 'cab share', mine: true, settlement_id: 'st_01' };
 
 export const routes: RouteMeta[] = [
-  { method: 'GET', path: '/app/v1/trips/:trip/money', section: SECTIONS.money, title: 'Money', summary: 'The Expenses tab in one read: the contract Money (plan_minor, spent_minor, by_category, transfers) plus me (my private budget range or null, my share spent by equal split, my share by category, owed_to_me, i_owe) and seq. Every expense and every recorded payment counts. private, no-store.',
+  { method: 'GET', path: '/app/v1/trips/:trip/money', section: SECTIONS.money, title: 'Money', summary: 'The Expenses tab in one read: the contract Money (plan_minor, spent_minor, by_category, transfers) plus me (my share spent by equal split, my share by category, owed_to_me, i_owe) and seq. Every expense and every recorded payment counts. private, no-store.',
     example: { responses: [{ name: 'MoneyView', status: 200, body: MONEY }] } },
   { method: 'GET', path: '/app/v1/trips/:trip/transactions', section: SECTIONS.money, title: 'Transactions', summary: '?filter=all|booking|payback|mine&limit=50&before=<cursor> → { items: Transaction[], total_count, next_cursor }, newest first. booking = an expense, payback = a settlement; method card only on an expense of a vault-paid booking. total_count ignores the filter.',
     example: { query: { filter: 'all', limit: '50' }, responses: [{ name: 'First page', status: 200, body: { items: [ROW_PAYBACK, ROW_EXPENSE], total_count: 2, next_cursor: null } }, { name: 'Bad cursor', status: 422, body: ERR('invalid', 'before is not a cursor from this list', 'before') }] } },

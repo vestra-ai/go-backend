@@ -11,7 +11,7 @@ beforeAll(async () => {
 });
 afterAll(() => h.stop());
 
-it('the whole feature in one walk from the web app\'s origin: every change takes the next number with one valid event, Go never sees a UPI id, a contact detail or any event naming a budget amount', async () => {
+it('the whole feature in one walk from the web app\'s origin: every change takes the next number with one valid event, Go never sees a UPI id or a contact detail', async () => {
   const t = appApi(h);
   const statuses: string[] = [];
   const call = async (who: string, method: 'GET' | 'POST' | 'PUT' | 'PATCH', url: string, body?: unknown) => {
@@ -28,11 +28,10 @@ it('the whole feature in one walk from the web app\'s origin: every change takes
   const cancel = await call('p_priya', 'POST', `${trip}/bookings/${booking.body.booking_id}/cancel-vote`, {});
   for (const who of ['p_rahul', 'p_priya', 'p_arjun']) await call(who, 'PUT', `${trip}/decisions/${cancel.body.decision_id}/vote`, { option_index: 0 });
   await call('p_rahul', 'POST', `${trip}/decisions/${cancel.body.decision_id}/close`);
-  // people change their own details, answers, budget and the trip
+  // people change their own details, answers and the trip
   await call('p_rahul', 'PATCH', '/app/v1/me', { name: 'Rahul K' });
   await call('p_priya', 'PUT', '/app/v1/me/upi', { upi_id: 'priya@okbank' });
   await call('p_arjun', 'PUT', `${trip}/me/join-answers`, { from_city: 'Delhi', know: ['Window seat'] });
-  await call('p_kabir', 'PUT', `${trip}/me/budget`, { min_minor: 1234567, max_minor: 2345678 });
   await call('p_meher', 'PATCH', trip, { title: 'Goa, again', status: 'booked' });
   // money: an expense (it counts at once), whom Priya owes, and a pay link to Rahul
   await call('p_rahul', 'POST', `${trip}/expenses`, { paid_by_person_id: 'p_rahul', amount_minor: 100000, note: 'Dinner', category: 'food', split_person_ids: EVERYONE });
@@ -54,12 +53,12 @@ it('the whole feature in one walk from the web app\'s origin: every change takes
     'booking.changed:added', 'record.changed:updated', 'booking.changed:updated', // a booking against it, updated
     'decision.opened', ...Array(3).fill('decision.voted'), 'decision.closed', 'booking.changed:cancelled', 'record.changed:added', // the group cancels it
     'person.updated:name', 'person.updated:has_upi', 'person.updated:from_city,know', // a rename, a UPI id (only that one exists), join answers
-    'trip.updated:system:budget', 'trip.updated:person:title,status', // the budget names nobody; the trip edit names the person
+    'trip.updated:person:title,status', // the trip edit names the person
     'expense.changed:added',
   ]);
   expect([snap.bookings[0].status, snap.title, snap.status, snap.people.find((p: any) => p.person_id === 'p_rahul').name, snap.people.find((p: any) => p.person_id === 'p_priya').has_upi]).toEqual(['cancelled', 'Goa, again', 'booked', 'Rahul K', true]);
   expect([events.every((e) => check('Event', e).ok), check('TripSnapshot', snap).ok, snap.seq === Math.max(events.at(-1).seq, pills.at(-1)!)]).toEqual([true, true, true]); // the last change is the room's line for the expense
-  // Go reads only the lowest band (with one answer, the band is that answer: by design), and no event carries an amount or a person for it.
-  expect([/rahul@upi|priya@okbank|\+91p_|@mail\.test/.test(seen), /1234567|2345678/.test(JSON.stringify(events)), snap.budget]).toEqual([false, false, { lowest: { min_minor: 1234567, max_minor: 2345678, currency: 'INR' }, answered: 1, of: 5 }]);
+  // Go never sees a contact detail, and with no group budget set it reads nobody having answered.
+  expect([/rahul@upi|priya@okbank|\+91p_|@mail\.test/.test(seen), snap.budget]).toEqual([false, { answered: 0, of: 5 }]);
   expect([money.body.me.i_owe, money.body.me.spent_minor, link.body.upi_uri]).toEqual([[{ from_person_id: 'p_priya', to_person_id: 'p_rahul', amount_minor: 20000, currency: 'INR' }], 20000, 'upi://pay?pa=rahul%40upi&pn=Rahul%20K&am=200.00&cu=INR&tn=Goa%2C%20again%20%C2%B7%20settle%20up']);
 });

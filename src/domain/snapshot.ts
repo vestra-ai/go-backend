@@ -21,22 +21,14 @@ export async function activePeople(db: Db, tripId: string): Promise<PersonRow[]>
   return rows;
 }
 
-/** The budget as Go may see it: the lowest band anyone picked and how many answered. Never anyone's own answer. */
-export async function budgetSummary(db: Db, tripId: string, currency: string): Promise<BudgetSummary> {
-  const { rows } = await db.query(
-    `select budget_min_minor, budget_max_minor from trip_people
-      where trip_id = $1 and left_at is null`,
-    [tripId],
-  );
-  const answered = rows.filter((r) => r.budget_min_minor !== null);
-  const lowest = [...answered].sort((a, b) => a.budget_min_minor - b.budget_min_minor)[0];
-  return {
-    ...(lowest
-      ? { lowest: compact({ min_minor: lowest.budget_min_minor, max_minor: lowest.budget_max_minor ?? undefined, currency }) }
-      : {}),
-    answered: answered.length,
-    of: rows.length,
-  } as BudgetSummary;
+/**
+ * The group's budget as Go and the app read it (rev 4 §5.1): one amount per person, the same for everyone. The contract's
+ * 1.0 shape is kept so a 1.0 Go still understands it ("everyone answered the same band"); `per_person_minor` is the one
+ * 1.1 member, and the only one the app reads. Not set: nobody has answered.
+ */
+export function budgetOf(perPersonMinor: number | null, peopleCount: number, currency: string): BudgetSummary {
+  if (perPersonMinor === null) return { answered: 0, of: peopleCount } as BudgetSummary;
+  return { lowest: { min_minor: perPersonMinor, max_minor: perPersonMinor, currency }, answered: peopleCount, of: peopleCount, per_person_minor: perPersonMinor } as unknown as BudgetSummary;
 }
 
 export async function loadDecisions(db: Db, tripId: string, onlyId?: string) {
@@ -64,7 +56,6 @@ export async function buildSnapshot(db: Db, tripId: string, publicBaseUrl: strin
   const expenses = await loadExpenses(db, tripId);
   const settlements = await loadSettlements(db, tripId); // never in the snapshot itself; they only move `money.transfers`
   const record = await db.query<RecordLineRow>('select * from record_lines where trip_id = $1 order by created_at, line_id', [tripId]);
-  const budget = await budgetSummary(db, tripId, t.currency);
   return compact({
     trip_id: t.trip_id,
     seq: t.seq,
@@ -77,7 +68,7 @@ export async function buildSnapshot(db: Db, tripId: string, publicBaseUrl: strin
     dates: t.dates_start && t.dates_end ? { start: t.dates_start, end: t.dates_end } : undefined,
     vibe: t.vibe,
     stay: t.stay ?? undefined,
-    budget,
+    budget: budgetOf(t.budget_per_person_minor ?? null, people.length, t.currency),
     people: people.map(personForGo),
     decisions,
     bookings: bookings.rows.map(bookingOf),

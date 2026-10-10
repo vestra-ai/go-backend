@@ -44,15 +44,14 @@ describe('the preview', () => {
 });
 
 describe('accepting', () => {
-  it('joins with the join answers (vibe as a know entry, the band as the private budget), lands on the trip home when the room is quiet, says so again on a repeat, and the mark goes', async () => {
+  it('joins with the join answers (vibe as a know entry), sends person.joined and no budget event, lands on the trip home when the room is quiet, says so again on a repeat, and the mark goes', async () => {
     const before = h.live.events.length;
-    const r = await t.api(sam, 'POST', v1('/invites/inv_t_goa/accept'), { join_answers: { from_city: 'Pune', vibe: 'beach', spend_band: 'gt25' } });
+    const r = await t.api(sam, 'POST', v1('/invites/inv_t_goa/accept'), { join_answers: { from_city: 'Pune', vibe: 'beach' } });
     await h.flush();
     expect(r.body).toEqual({ trip_id: 't_goa', seq: expect.any(Number), landing: 'trip_home' });
     const joined = t.events('person.joined').at(-1)!;
     expect(joined.data.person).toMatchObject({ person_id: sam.id, from_city: 'Pune', know: ['Vibe: beach'] });
-    expect(t.events('trip.updated').at(-1)!.data).toEqual({ by: { kind: 'system' }, changed: ['budget'] });
-    expect((await rows(h.pool, 'select budget_min_minor, budget_max_minor from trip_people where trip_id = $1 and person_id = $2', ['t_goa', sam.id]))[0]).toEqual({ budget_min_minor: 2500000, budget_max_minor: null });
+    expect(t.events('trip.updated')).toEqual([]);
     // The "Sam joined" pill, the trip notice, then a home notice for every member (their card shows one more face) and for Sam.
     const kinds = h.live.events.slice(before).map((e) => e.event.kind);
     expect([kinds.filter((k) => k !== 'home'), kinds.filter((k) => k === 'home').length]).toEqual([['message', 'trip'], 6]);

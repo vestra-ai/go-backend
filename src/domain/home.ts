@@ -22,6 +22,8 @@ export interface TripSummary {
   dates?: { start: string; end: string };
   /** The destination photo Go set: the one image the server has (our change to the contract's three fields). */
   photo_url?: string;
+  /** The group's budget per person, when one is set (rev 4 §5.1). */
+  budget_per_person_minor?: number;
   people_preview: PersonLite[];
   people_count: number;
   attention: Attention;
@@ -62,7 +64,7 @@ export interface Home {
 
 interface TripRow {
   trip_id: string; title: string; status: TripSummary['status']; destination: Place | null; dates_start: string | null; dates_end: string | null;
-  currency: string; plan_minor: number | null; seq: number; last_activity_at: Date;
+  currency: string; plan_minor: number | null; budget_per_person_minor: number | null; seq: number; last_activity_at: Date;
 }
 
 const datesOf = (t: { dates_start: string | null; dates_end: string | null }) => (t.dates_start && t.dates_end ? { start: t.dates_start, end: t.dates_end } : undefined);
@@ -103,7 +105,7 @@ export async function homeFor(ctx: Ctx, personId: string): Promise<Home> {
   const db = ctx.pool;
   const me = (await db.query('select person_id, name, photo_url from people where person_id = $1', [personId])).rows[0];
   const trips = (await db.query<TripRow>(
-    `select t.trip_id, t.title, t.status, t.destination, t.dates_start, t.dates_end, t.currency, t.plan_minor, t.seq,
+    `select t.trip_id, t.title, t.status, t.destination, t.dates_start, t.dates_end, t.currency, t.plan_minor, t.budget_per_person_minor, t.seq,
             coalesce((select max(o.created_at) from outbox o where o.trip_id = t.trip_id), t.created_at) as last_activity_at
        from trips t join trip_people tp using (trip_id)
       where tp.person_id = $1 and tp.left_at is null
@@ -135,6 +137,7 @@ export async function homeFor(ctx: Ctx, personId: string): Promise<Home> {
       destination: t.destination ?? undefined,
       dates: datesOf(t),
       photo_url: t.destination?.photo_url ?? undefined,
+      budget_per_person_minor: t.budget_per_person_minor ?? undefined,
       people_preview: peoplePreview(people),
       people_count: people.length,
       attention: (await taskFor(db, t.trip_id, personId, needs, ctx.features)) ?? attentionOf(stage, needs.length),
