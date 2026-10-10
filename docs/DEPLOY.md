@@ -31,7 +31,7 @@ Not secret (set on the service):
 | `PUBLIC_BASE_URL` | the service's public address (invite links are `<it>/j/<code>`) |
 | `APP_ORIGINS` | the web app's exact address(es), comma-separated, no wildcard |
 | `SUPABASE_STORAGE_BUCKET` | `go-files`: the private Storage bucket (above). Default `go-files` when unset |
-| `GO_CONTRACT` | `1.0` (the default, and what Go spoke on 8 Oct 2026): an expense approved, disputed or re-split takes its change number but sends no event, because Go 1.0's `expense.changed` knows only `added` and `removed`; Go reads the expense's state on its next `read_trip`. Set `1.1` the day Keshav's team ships `docs/GO-CHANGES.md` |
+| `GO_CONTRACT` | `1.0` (the default, and what Go spoke on 8 Oct 2026): a re-split expense takes its change number but sends no event, because Go 1.0's `expense.changed` knows only `added` and `removed`; Go reads the expense's state on its next `read_trip`. Set `1.1` the day Keshav's team ships `docs/GO-CHANGES.md` |
 | `FEATURE_*` | the feature flags (below), only the ones to change from their defaults |
 
 Secret (pasted by a person in Railway → service → Variables → Raw Editor; never in git or chat):
@@ -42,15 +42,12 @@ Secret (pasted by a person in Railway → service → Variables → Raw Editor; 
 | `GO_SIGNING_SECRET` | the socket signing secret shared with the Go team |
 | `GO_SPEND_PRIVATE_KEY` | our Ed25519 spend key (one line with `\n`); the Go team holds its public half |
 | `SUPABASE_SECRET_KEY` | the project's secret key (`sb_secret_…`, Project Settings → API Keys): it signs Storage upload and download links. **With it set, `STORAGE` defaults to `supabase`**; without it the server keeps files in memory, warns at start, and loses them on every redeploy |
-| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Web Push keys (`npx web-push generate-vapid-keys`; the subject is a `mailto:` or `https:` address). All three, or pushes are only logged and `GET /app/v1/config` says `web_push: false`. Changing them later invalidates every browser subscription |
 
 Feature flags (`1` or `0`; unset = the default from `src/config.ts`). Each is served to the app by `GET /app/v1/config`
 and `docs/API.md` §9 says what it hides. Flip one on the day Go's side of that item is live:
 
 | Variable | Default | On |
 |---|---|---|
-| `FEATURE_WEB_PUSH` | on when the three VAPID keys are set | the app offers notifications |
-| `FEATURE_EXPENSE_APPROVAL` | **on** | expenses need the split's approval |
 | `FEATURE_CHECKIN` | off | the three web check-in routes exist (`get_checkin` / `submit_checkin` on Go's side) |
 | `FEATURE_VISA` | off | `POST /app/v1/me/vault-link { start: "add_documents" }` is allowed; checklist rows drive the home card |
 | `FEATURE_CALLS` | off | `POST …/cards/:id/share` (call recordings into the room) |
@@ -81,10 +78,9 @@ bypass in the code and nothing to remove later.
 
 - Build log: Node 22 and pnpm detected; the install succeeded.
 - Deploy log: `sign-in: supabase (…)`, `storage: supabase bucket go-files` (not the `STORAGE=memory` warning),
-  `go socket open`, `listening`. No `push: VAPID_…` warning once the keys are set.
+  `go socket open`, `listening`.
 - `GET /health` and `GET /app/v1/health` return `{"ok":true,"go":true}`.
-- `GET /app/v1/config` returns the contract version, the `features` you expect and a `vapid_public_key` (or `null`
-  until the keys are set).
+- `GET /app/v1/config` returns the contract version and the `features` you expect.
 - `GET /app/v1/me` with no token returns `401` with the one error shape and an `X-Request-Id` header.
   `POST /app/v1/dev/sign-in` returns `404` (dev sign-in is off).
 - With a test-user token: `POST /app/v1/uploads` answers a `upload_url` on `<SUPABASE_URL>/storage/v1/...`; a `PUT`

@@ -10,7 +10,7 @@ Two contracts rule the code:
 - **Server ↔ Go:** https://vestrago.vercel.app/llms-full.txt (1.0.0), plus the additive 1.1 proposal in
   [`docs/GO-CHANGES.md`](docs/GO-CHANGES.md) (`contract/extensions-1.1.json`). If a rule is unclear, the rulebook wins.
 - **App ↔ Server:** [`docs/API.md`](docs/API.md), the app team's contract (rev 3) as this server runs it. **Frontend
-  team: start there.** Postman: [`docs/go-server.postman_collection.json`](docs/go-server.postman_collection.json)
+  team: start there.** Postman (**not maintained since contract rev 4, 10 Oct 2026: it still describes rev 3**): [`docs/go-server.postman_collection.json`](docs/go-server.postman_collection.json)
   and the environment next to it (generated from the code with `pnpm postman:build`).
 
 ---
@@ -55,12 +55,11 @@ Two contracts rule the code:
 | `src/db/` | Database helpers: transactions, "do this only once" (`once.ts`), writing a change plus its event (`write-change.ts`) |
 | `src/outbox/sender.ts` | The sender that delivers events to Go in order, with retries |
 | `src/requests/` | Go's 18 requests, answered from our database |
-| `src/domain/` | The business logic: snapshots, what Go and the app may see, money maths and expense approval, voting, spend check, bookings and documents, itinerary scopes, check-in, invites, home, system messages, our requests to Go (`ask-go.ts`) |
+| `src/domain/` | The business logic: snapshots, what Go and the app may see, money maths, voting, spend check, bookings and documents, itinerary scopes, check-in, invites, home, system messages, our requests to Go (`ask-go.ts`) |
 | `src/api/` | The app's API: `app.ts` is the shell (request id, CORS, one error shape, sign-in, `Idempotency-Key`); `v1/` has one file per section of `docs/API.md`, each with its routes' metadata; `bodies.ts` the strict body definitions; `auth.ts` Supabase and dev tokens |
 | `src/live/` | Live updates to phones: the WebSocket hub (`ws.ts`) fed by Postgres LISTEN/NOTIFY (`live.ts`) |
-| `src/push/` | Push notifications to browsers (Web Push; log-only when the VAPID keys are not set) |
 | `src/storage/` | Files: Supabase Storage (private bucket, signed links) and an in-memory stand-in for tests and laptops |
-| `src/jobs/` | Background jobs: close votes when time runs out, "vote closing soon" pushes, sweeps (idempotency keys, uploads, tickets) |
+| `src/jobs/` | Background jobs: close votes when time runs out, sweeps (idempotency keys, uploads, tickets) |
 | `migrations/` | The database tables (SQL, `001`–`009`, applied at start under a lock) |
 | `data/cities-in.json` | The bundled city dataset for "travelling from" (loaded by the migration) |
 | `contract/` | Copies of the public rulebook files and test vectors, and `extensions-1.1.json` |
@@ -91,8 +90,7 @@ Settings (all in `.env.example`, each with a comment):
 | Server | `PORT` (8080), `PUBLIC_BASE_URL` (invite links are `<it>/j/<code>`), `APP_ORIGINS` (the web app's exact addresses, comma-separated, no wildcard; none by default) |
 | Sign-in | `SUPABASE_URL` (sets `AUTH_MODE=supabase`), `SUPABASE_JWT_SECRET` (legacy projects only), `AUTH_MODE` (`supabase` \| `dev`; `dev` is refused in production), `APP_SESSION_SECRET` (dev tokens only) |
 | Files | `SUPABASE_SECRET_KEY` (Storage; sets `STORAGE=supabase`), `SUPABASE_STORAGE_BUCKET` (default `go-files`), `STORAGE` (`supabase` \| `memory`) |
-| Push | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (`npx web-push generate-vapid-keys`; all three or pushes are only logged and `features.web_push` is false; changing them invalidates every subscription) |
-| Feature flags | `FEATURE_WEB_PUSH`, `FEATURE_CHECKIN`, `FEATURE_VISA`, `FEATURE_CALLS`, `FEATURE_VOTE_RETRACT`, `FEATURE_VOTE_FLEXIBLE`, `FEATURE_CLAIM`, `FEATURE_EXPENSE_APPROVAL` (`1` or `0`; unset = the default: `expense_approval` on, `web_push` from the keys, the rest off). `docs/API.md` §9 says what each hides |
+| Feature flags | `FEATURE_CHECKIN`, `FEATURE_VISA`, `FEATURE_CALLS`, `FEATURE_VOTE_RETRACT`, `FEATURE_VOTE_FLEXIBLE`, `FEATURE_CLAIM` (`1` or `0`; unset = the default: off). `docs/API.md` §9 says what each hides |
 | Debug | `LOG_GO_TRAFFIC=1` writes every socket frame to `logs/go-traffic.jsonl` (no secrets) |
 
 ## Try it locally, with nothing to set up
@@ -183,8 +181,6 @@ The review of this server against every page of the docs, what was built in Octo
 
 ## What is still a placeholder or waiting on someone
 
-- **Push notifications:** real Web Push delivery exists but has not yet been tried against a real browser or push
-  service, only against a test stand-in. Without the VAPID keys the server only writes pushes to the log.
 - **Supabase Storage** is tested against an in-process fake and the local Supabase rehearsal, not yet against the
   production bucket (`docs/DEPLOY.md` has the checks).
 - **Contract 1.1:** check-in, visa documents, calls, flexible votes, taking a vote back and `claim` are built behind
