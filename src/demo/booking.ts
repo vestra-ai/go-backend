@@ -1,9 +1,9 @@
 // The demo booking's fields and its ticket files, built from the option that was paid for (docs/DEMO-BOOKING-MODULE.md).
 // Real data wherever Go gave it: the route, times, carrier and flight number of a journey; the stay's name, place, room
-// and refund date; the trip's dates; the covered people's names. Everything else is made up (src/demo/fake.ts) or a
-// plain placeholder, and both the booking and the files say DEMO. Pure and synchronous: it runs inside the payment's
-// transaction. Every string is cut to the contract's limit, and the files are built from the same values as the booking,
-// so the PDF and the app always agree.
+// and refund date; the trip's dates, else the stay's own; the covered people's names. Everything else is made up
+// (src/demo/fake.ts) or a plain placeholder, and both the booking and the files say DEMO. Dates are never made up: a stay
+// nobody gave dates for has none. Pure and synchronous: it runs inside the payment's transaction. Every string is cut to
+// the contract's limit, and the files are built from the same values as the booking, so the PDF and the app always agree.
 import type { DemoBookingFields, DemoBookingSource, DemoOption } from '../domain/demo-booking.js';
 import type { JourneyLike, Passenger } from '../domain/mappers.js';
 import { fakesFor } from './fake.js';
@@ -12,6 +12,8 @@ import * as when from './when.js';
 
 const FLIGHT_BRAND = { name: 'ixigo', color: '#fc4c02' };
 const STAY_BRAND = { name: 'ixigo', color: '#e8682d' };
+/** A voucher's check-in and check-out when nobody gave the stay's dates. */
+const NOT_SET = 'Not set';
 /** The detail row that tells a person this is not a real ticket. */
 const DEMO_ROW = { label: 'Booking', value: 'Demo, no real ticket' };
 const TICKET_MODES = new Set(['flight', 'train', 'bus']);
@@ -28,6 +30,8 @@ const STAY_TERMS = [
 ];
 
 type Row = { label: string; value: string };
+/** A calendar date. */
+type Day = Pick<when.Wall, 'y' | 'mo' | 'd'>;
 type PlaceLike = { name?: unknown; address?: unknown; lat?: unknown; lng?: unknown; timezone?: unknown };
 
 const text = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
@@ -141,7 +145,22 @@ export function journeyBooking(s: DemoBookingSource, o: DemoOption, kind: string
   };
 }
 
-/** A stay, from the option (its name, place, first room type, refund date) and the trip's dates: one hotel voucher. */
+/** A stay's own check-in and check-out, from the ixigo link Go sent with the option (`checkinDate=01112026`, day first). */
+function linkDates(url: unknown): Array<Day | undefined> {
+  let q: URLSearchParams;
+  try {
+    q = new URL(String(url)).searchParams;
+  } catch {
+    return [];
+  }
+  const day = (v: string | null) => {
+    const m = /^(\d{2})(\d{2})(\d{4})$/.exec(v ?? '');
+    return m ? when.dateParts(`${m[3]}-${m[2]}-${m[1]}`) : undefined;
+  };
+  return [day(q.get('checkinDate')), day(q.get('checkoutDate'))];
+}
+
+/** A stay, from the option (its name, place, first room type, refund date, dates) and the trip's dates: one hotel voucher. */
 export function stayBooking(s: DemoBookingSource, o: DemoOption, now: Date): DemoBookingFields {
   const place = asPlace(o.place);
   const destination = asPlace(s.trip?.destination);
@@ -152,10 +171,11 @@ export function stayBooking(s: DemoBookingSource, o: DemoOption, now: Date): Dem
   const bookingId = f.stayBookingId();
   const hotelNumber = f.hotelBookingNumber();
 
-  // The trip's dates when it has them; else tomorrow for three nights.
-  let [checkIn, checkOut] = [when.dateParts(s.trip?.dates?.start), when.dateParts(s.trip?.dates?.end)];
-  if (!checkIn || !checkOut || when.daysBetween(checkIn, checkOut) < 1) [checkIn, checkOut] = [when.dateParts(when.dayIn(now, tz, 1))!, when.dateParts(when.dayIn(now, tz, 4))!];
-  const nights = when.daysBetween(checkIn, checkOut);
+  // The trip's dates when it has them; else the dates of the stay that was paid for, from its link. Never made up: with
+  // neither, the booking has no dates, so it never gives the trip any (src/domain/trip-from-booking.ts).
+  const span = (from?: Day, to?: Day): [Day, Day] | undefined => (from && to && when.daysBetween(from, to) >= 1 ? [from, to] : undefined);
+  const dates = span(when.dateParts(s.trip?.dates?.start), when.dateParts(s.trip?.dates?.end)) ?? span(...linkDates(o.url));
+  const [checkIn, checkOut] = dates ?? [];
 
   const guests = Math.max(1, s.for_person_ids.length);
   const room = Array.isArray(o.room_types) ? o.room_types[0] : undefined;
@@ -168,7 +188,7 @@ export function stayBooking(s: DemoBookingSource, o: DemoOption, now: Date): Dem
   // An email is shown only on a voucher nobody else sees (app contract §1.7: no other person's email).
   const solo = s.for_person_ids.length === 1 && s.for_person_ids[0] === s.payer_person_id;
   // Free cancellation never runs past check-in: Go's date is capped at a day before it.
-  const checkInAt = Date.parse(when.zonedIso(checkIn, 14, 0, tz));
+  const checkInAt = checkIn ? Date.parse(when.zonedIso(checkIn, 14, 0, tz)) : Infinity;
   const refundMs = text(o.refundable_until) ? Date.parse(o.refundable_until!) : NaN;
   const refundableUntil = Number.isNaN(refundMs) ? undefined : refundMs <= checkInAt - 86_400_000 ? o.refundable_until! : new Date(checkInAt - 86_400_000).toISOString();
   const until = refundableUntil && Date.parse(refundableUntil) > now.getTime() ? when.longTime(when.wallOf(refundableUntil, tz)) : undefined;
@@ -192,8 +212,8 @@ export function stayBooking(s: DemoBookingSource, o: DemoOption, now: Date): Dem
       ...(lat !== undefined && lng !== undefined ? { mapUrl: `https://maps.google.com/?q=${lat},${lng}` } : {}),
     },
     status: 'Booking Confirmed · Demo',
-    checkIn: when.stayDay(checkIn),
-    checkOut: when.stayDay(checkOut),
+    checkIn: checkIn ? when.stayDay(checkIn) : NOT_SET,
+    checkOut: checkOut ? when.stayDay(checkOut) : NOT_SET,
     primaryGuest: { name: (text(payer?.name) ?? 'Guest').toUpperCase(), ...(solo && text(payer?.email) ? { email: payer!.email! } : {}) },
     travellers,
     rooms: { summary: rooms, ...(inclusions ? { inclusions } : {}) },
@@ -203,9 +223,7 @@ export function stayBooking(s: DemoBookingSource, o: DemoOption, now: Date): Dem
   };
 
   const details: Row[] = [
-    row('Check-in', `${data.checkIn} · 14:00`),
-    row('Check-out', `${data.checkOut} · 11:00`),
-    row('Nights', String(nights)),
+    ...(dates ? [row('Check-in', `${data.checkIn} · 14:00`), row('Check-out', `${data.checkOut} · 11:00`), row('Nights', String(when.daysBetween(...dates)))] : []),
     row('Room', rooms),
     row('Guests', travellers),
     row('Cancellation', until ? `Free cancellation until ${until}` : 'Non-refundable'),
@@ -216,7 +234,7 @@ export function stayBooking(s: DemoBookingSource, o: DemoOption, now: Date): Dem
   return {
     kind: 'stay', title: name, vendor: s.merchant.slice(0, 80), ref,
     refundable_until: until ? refundableUntil! : null,
-    starts_at: when.zonedIso(checkIn, 14, 0, tz), ends_at: when.zonedIso(checkOut, 11, 0, tz),
+    starts_at: checkIn ? when.zonedIso(checkIn, 14, 0, tz) : null, ends_at: checkOut ? when.zonedIso(checkOut, 11, 0, tz) : null,
     journey: null, return_journey: null, place: text(place.name) ? o.place : null, image_url: o.image_url ?? null,
     details, passengers: null,
     tickets: [{ kind: 'stay', name: `Hotel voucher ${name.slice(0, 180)}.pdf`, data }],

@@ -184,7 +184,9 @@ error `-32601`; params that do not match the contract with `422`, `data.code: "i
 - **`add_expense`** always creates an expense that counts at once, split equally among `split_person_ids` (odd minor
   units go one each to the first people in joining order). `approval_id` (1.1) names the vault payment it belongs to
   and changes nothing else. **For rooms at different prices, send one `add_expense` per room**, split among that
-  room's people.
+  room's people. An expense for a booking (`booking_id`) split with people the booking does not cover adds them to the
+  booking's `for_person_ids` (never removes anyone): you hear `booking.changed` `updated` (by you) before the
+  `expense.changed`. `update_expense`, a person's expense and their Fix split do the same.
 - **`update_expense`** (in `contract/extensions-1.1.json` until Go's contract has it) changes who an existing expense is
   split between, and its `note` when given: `{ request_id, trip_id, expense_id, split_person_ids, note? }` →
   `{ expense, seq }`. It is the App's Fix the split, done by Go: everyone named must be in the trip (`422`), an expense

@@ -122,3 +122,55 @@ describe('what is gone', () => {
     expect('expense_approval' in (await t.api(null, 'GET', '/app/v1/config')).body.features).toBe(false);
   });
 });
+
+describe("a booking's cost shared with people it does not cover", () => {
+  it('covers them too, so they see it and open its voucher: Go\'s add_expense and update_expense, an expense a person adds, and a fixed split; only ever adds; Go hears booking.changed updated first; a split it covers changes nothing', async () => {
+    /** Go books a villa for Rahul alone, with its voucher (a covered file). */
+    const villa = async () => {
+      const b = (await h.go.call('add_booking', { request_id: `rq_rules_${++rq}`, trip_id: 't_goa', kind: 'stay', title: 'Villa Sol', vendor: 'ixigo', ref: 'IXG-9', amount_minor: 2000000, currency: 'INR', payer_person_id: 'p_rahul', for_person_ids: ['p_rahul'] })).result.booking_id as string;
+      await h.pool.query(`insert into booking_documents (document_id, booking_id, name, mime, size_bytes, visibility, path) values ($1, $2, 'Hotel voucher.pdf', 'application/pdf', 9, 'covered', $3)`, [`doc_${b}`, b, `bookings/t_goa/${b}/voucher.pdf`]);
+      return b;
+    };
+    const covered = async (b: string) => (await h.pool.query('select for_person_ids from bookings where booking_id = $1', [b])).rows[0].for_person_ids;
+    const voucher = (who: string, b: string) => call(who, 'GET', `${trip}/bookings/${b}/documents/doc_${b}`);
+    const listed = async (who: string, b: string) => (await call(who, 'GET', `${trip}/bookings`)).body.items.find((x: any) => x.booking_id === b);
+
+    // Go splits the villa with Priya (the prod case, 12 Oct: the friend could not open the voucher).
+    const byGo = await villa();
+    expect([await listed('p_priya', byGo), refusal(await voucher('p_priya', byGo))]).toEqual([undefined, [403, 'forbidden', null]]);
+    await h.flush();
+    const mark = h.go.events.length;
+    const live = h.live.events.length;
+    const added = await h.go.call('add_expense', { request_id: `rq_rules_${++rq}`, trip_id: 't_goa', paid_by_person_id: 'p_rahul', amount_minor: 2000000, currency: 'INR', note: 'Villa Sol', category: 'stay', split_person_ids: ['p_rahul', 'p_priya'], booking_id: byGo });
+    expect(added.error).toBeUndefined();
+    expect(await covered(byGo)).toEqual(['p_rahul', 'p_priya']);
+    expect([(await listed('p_priya', byGo)).documents.map((d: any) => d.name), (await voucher('p_priya', byGo)).status]).toEqual([['Hotel voucher.pdf'], 302]);
+    await h.flush();
+    const heard = h.go.events.slice(mark).filter((e) => e.trip_id === 't_goa');
+    expect(heard.slice(0, 2).map((e) => [e.type, (e.data as any).change])).toEqual([['booking.changed', 'updated'], ['expense.changed', 'added']]);
+    expect((heard[0]!.data as any)).toMatchObject({ booking: { booking_id: byGo, for_person_ids: ['p_rahul', 'p_priya'] }, by: { kind: 'go' } });
+    expect(h.live.events.slice(live).some((e) => (e.event as any).kind === 'trip' && (e.event as any).kinds?.includes('booking') && (e.event as any).seq === heard[0]!.seq)).toBe(true);
+
+    // Go's update_expense on it does the same, by Go.
+    await h.flush();
+    const regoMark = h.go.events.length;
+    const resplit = await h.go.call('update_expense', { request_id: `rq_rules_${++rq}`, trip_id: 't_goa', expense_id: added.result.expense_id, split_person_ids: ['p_rahul', 'p_priya', 'p_kabir'] });
+    expect([resplit.error, await covered(byGo)]).toEqual([undefined, ['p_rahul', 'p_priya', 'p_kabir']]);
+    await h.flush();
+    expect(h.go.events.slice(regoMark).find((e) => e.type === 'booking.changed')!.data).toMatchObject({ change: 'updated', by: { kind: 'go' }, booking: { for_person_ids: ['p_rahul', 'p_priya', 'p_kabir'] } });
+
+    // A person's own expense for it, and then Fix the split, each add who they name; taking someone out of the split leaves them covered.
+    const byHand = await villa();
+    const own = await call('p_rahul', 'POST', `${trip}/expenses`, { amount_minor: 2000000, note: 'Villa Sol', category: 'stay', split_person_ids: ['p_rahul', 'p_arjun'], booking_id: byHand });
+    expect([own.status, await covered(byHand)]).toEqual([201, ['p_rahul', 'p_arjun']]);
+    const fixed = await call('p_rahul', 'PATCH', `${trip}/expenses/${own.body.expense_id}`, { split_person_ids: ['p_rahul', 'p_meher'] });
+    expect([fixed.status, await covered(byHand), (await voucher('p_meher', byHand)).status]).toEqual([200, ['p_rahul', 'p_arjun', 'p_meher'], 302]);
+
+    // A split the booking covers already: no booking change at all.
+    await h.flush();
+    const quiet = h.go.events.length;
+    await call('p_rahul', 'PATCH', `${trip}/expenses/${own.body.expense_id}`, { split_person_ids: ['p_meher', 'p_rahul'] });
+    await h.flush();
+    expect(h.go.events.slice(quiet).filter((e) => e.type === 'booking.changed')).toEqual([]);
+  });
+});

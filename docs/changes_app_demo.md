@@ -37,7 +37,8 @@ For the demo, a booking made by **Approve** on Go's pay card now looks like a re
 1. **Richer demo bookings (§4.10).** A flight, train or bus booking has the carrier, flight number, route and times, a
    seat and PNR for each traveller in `passengers[]` (covered people only), and detail rows such as Cabin, Fare,
    Baggage, Terminal, Stops and Duration. A stay has `starts_at`/`ends_at` (check-in 14:00, check-out 11:00 local time,
-   on the trip's dates), and rows for Check-in, Check-out, Nights, Room, Guests and Cancellation. Every demo booking has
+   on the trip's dates, else the stay's own), and rows for Check-in, Check-out, Nights, Room, Guests and Cancellation
+   (a stay with no known dates has neither: see below). Every demo booking has
    the row **"Booking · Demo, no real ticket"** and a `DEMO-…` reference. Nothing to change if you already draw
    `details[]` and `passengers[]`.
 2. **A PDF a moment after Approve.** The booking is answered at once without a file. A few seconds later the Server adds
@@ -64,6 +65,23 @@ After any booking (Approve on the pay card, Go's own booking, or one added by ha
 **Do:** nothing new beyond the usual. It arrives as `trip_changed kinds:["trip"]` (plus `home_changed` when the place
 or dates changed): re-read the trip. The header and home card then show the place, the dates and the automatic name
 ("Goa 2026"), and the trip can move to stage `planned`.
+
+## Bookings are private to the people they cover; a stay's dates are never made up (12 Oct)
+
+1. **You only get the bookings that cover you, or that you paid for (§1.7, §4.10).** The bookings list,
+   `TripView.bookings` and `GET …/bookings/:id` leave out a booking whose `for_person_ids` does not include you and that
+   you did not pay for: someone's own flight is theirs, like Go's cards for it. A group stay covers everyone, so it still
+   shows for all. `GET …/bookings/:id` answers **404** for a booking you don't get. The shape is unchanged.
+   **Do:** nothing, unless you counted on every booking in the trip (a "4 bookings" summary now counts yours).
+2. **Sharing a booking's cost shares the booking.** When an expense for a booking (`booking_id`) is split with people the
+   booking does not cover (Go's expense, one added in the app, or **Fix split**), they are added to its
+   `for_person_ids`: the friend you split the villa with now sees it and opens its voucher. It arrives as
+   `trip_changed kinds:["booking"]`. **Do:** re-read the bookings on that frame, as usual.
+3. **A stay's dates are the trip's, else the stay's own, else none.** A demo stay booked while the trip has no dates
+   takes the dates of the stay that was paid for (from the option Go sent). When nobody gave any, the booking has **no
+   `starts_at`/`ends_at`** and no Check-in, Check-out or Nights rows, the voucher says "Not set", and the trip's dates
+   stay empty (before, it made up tomorrow for three nights and the trip took those). **Do:** draw a stay without
+   `starts_at`/`ends_at` without dates (no "Invalid date").
 
 ## How to get the ticket PDF, step by step
 

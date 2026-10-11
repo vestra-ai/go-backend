@@ -1,11 +1,13 @@
 // §4.10 Bookings as the app reads them, and the ticket files behind them. Two rules live here. The covered-people rule
-// (app contract §1.7): `passengers[]` and `documents[]` are returned only to the people in
-// `for_person_ids`; everyone else gets the booking without those two keys. Go's own reads keep everything. And the
+// (app contract §1.7): a booking is read only by the people in `for_person_ids` and whoever paid for it (someone's own
+// flight is theirs, as Go's cards for it are), and `passengers[]` and `documents[]` only by the people it covers: a payer
+// it does not cover gets it without those two keys. Go's own reads keep everything. And the
 // files: when Go's add_booking names documents, each `url` is fetched once, the file is kept in Storage under our own
 // path, and the app only ever gets short signed links, never the stored link: each document it sees carries `url`
 // (valid an hour, minted on every read), and GET …/documents/:document_id answers a fresh one.
 import type { Ctx } from '../context.js';
 import type { Db } from '../db/pool.js';
+import { change } from '../db/write-change.js';
 import { IMAGE, MAX_UPLOAD_BYTES, extensionFor } from '../api/v1/uploads.js';
 import { DOWNLOAD_TTL_SECONDS, type Storage } from '../storage/storage.js';
 import { Forbidden } from './actions.js';
@@ -34,6 +36,26 @@ export async function documentsOf(db: Db, bookingIds: string[]): Promise<Map<str
   return out;
 }
 
+/** Who reads a booking at all: the people it covers, and whoever paid for it. */
+export const readsBooking = (b: Pick<Booking, 'for_person_ids' | 'payer_person_id'>, personId: string) => b.for_person_ids.includes(personId) || b.payer_person_id === personId;
+
+/**
+ * A booking's cost split with people it does not cover (Go's add_expense, a person's expense, Fix the split): they pay
+ * their share of it, so it covers them too, and they read it and open its ticket files (a friend sharing the villa
+ * gets its voucher). Only ever adds people. Inside the caller's transaction, before the expense's own change: Go hears
+ * `booking.changed` updated, phones `trip_changed kinds: ["booking"]`. Nothing when the split is covered already.
+ */
+export async function coverSplit(ctx: Ctx, db: Db, tripId: string, bookingId: string | null | undefined, splitIds: string[], by: { kind: 'go' } | { kind: 'person'; person_id: string }): Promise<void> {
+  if (!bookingId) return;
+  const row = (await db.query<BookingRow>('select * from bookings where trip_id = $1 and booking_id = $2 for update', [tripId, bookingId])).rows[0];
+  if (!row) return;
+  const added = [...new Set(splitIds)].filter((id) => !row.for_person_ids.includes(id));
+  if (!added.length) return;
+  const updated = (await db.query<BookingRow>('update bookings set for_person_ids = $2 where booking_id = $1 returning *', [bookingId, JSON.stringify([...row.for_person_ids, ...added])])).rows[0]!;
+  const seq = await change(db, tripId, 'booking.changed', { booking: bookingOf(updated), change: 'updated', by });
+  await ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['booking'] });
+}
+
 /** The covered-people rule: the booking whole for someone in `for_person_ids`, without `passengers` and `documents` for anyone else. */
 export function bookingForApp(booking: Booking, documents: BookingDocumentRow[], viewerId: string): BookingForApp {
   const { passengers, ...rest } = booking as Booking & { passengers?: unknown };
@@ -42,10 +64,12 @@ export function bookingForApp(booking: Booking, documents: BookingDocumentRow[],
 }
 
 /**
- * The trip's bookings as this person may see them, inside the caller's transaction (TripView and the list share it),
- * and where each document they see is stored, by document id: `linkDocuments` signs them once the read is over.
+ * The trip's bookings as this person may see them (only the ones they read), inside the caller's transaction (TripView
+ * and the list share it), and where each document they see is stored, by document id: `linkDocuments` signs them once
+ * the read is over.
  */
-export async function bookingsForPerson(db: Db, bookings: Booking[], personId: string): Promise<{ items: BookingForApp[]; paths: Map<string, string> }> {
+export async function bookingsForPerson(db: Db, all: Booking[], personId: string): Promise<{ items: BookingForApp[]; paths: Map<string, string> }> {
+  const bookings = all.filter((b) => readsBooking(b, personId));
   const docs = await documentsOf(db, bookings.map((b) => b.booking_id));
   const paths = new Map(bookings.filter((b) => b.for_person_ids.includes(personId)).flatMap((b) => (docs.get(b.booking_id) ?? []).map((d) => [d.document_id, d.path] as const)));
   return { items: bookings.map((b) => bookingForApp(b, docs.get(b.booking_id) ?? [], personId)), paths };
@@ -89,7 +113,7 @@ async function readOnly<T>(ctx: Ctx, work: (db: Db) => Promise<T>): Promise<T> {
   }
 }
 
-/** GET /trips/:trip/bookings: every booking, confirmed and cancelled, newest first, with the trip's change number. */
+/** GET /trips/:trip/bookings: every booking the person reads, confirmed and cancelled, newest first, with the trip's change number. */
 export async function listBookings(ctx: Ctx, tripId: string, personId: string): Promise<{ items: BookingForApp[]; seq: number }> {
   const { items, paths, seq } = await readOnly(ctx, async (db) => {
     const seq = (await db.query('select seq from trips where trip_id = $1', [tripId])).rows[0]?.seq as number | undefined;
@@ -106,10 +130,11 @@ async function bookingRow(db: Db, tripId: string, bookingId: string): Promise<Bo
   return row;
 }
 
-/** GET /trips/:trip/bookings/:id. */
+/** GET /trips/:trip/bookings/:id. 404 for a booking the person does not read, as for one that is not there. */
 export async function getBooking(ctx: Ctx, tripId: string, personId: string, bookingId: string): Promise<BookingForApp> {
   const row = await bookingRow(ctx.pool, tripId, bookingId);
   const { items, paths } = await bookingsForPerson(ctx.pool, [bookingOf(row)], personId);
+  if (!items.length) throw notFound(`booking ${bookingId} does not exist in trip ${tripId}`);
   return (await linkDocuments(ctx.storage, items, paths))[0]!;
 }
 

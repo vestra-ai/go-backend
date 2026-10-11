@@ -185,23 +185,25 @@ describe('updating a booking', () => {
 });
 
 describe('reading bookings (the covered-people rule)', () => {
-  it('lists every booking newest first with seq, and gives passengers only to the people the booking covers; everyone else gets the booking without passengers or documents; one booking reads the same way; 404 for another trip\'s', async () => {
-    const r = await add(booking({ kind: 'flight', title: 'Covered read', journey, for_person_ids: ['p_arjun', 'p_meher'], passengers: [{ person_id: 'p_arjun', seat: '14A' }, { person_id: 'p_meher', seat: '14B' }] }));
+  it('lists the bookings the caller is covered by or paid for, newest first with seq: passengers only for the covered; the payer it does not cover gets it without passengers or documents; anyone else never sees it (one booking is 404, the trip read leaves it out); Go\'s read keeps it whole', async () => {
+    const r = await add(booking({ kind: 'flight', title: 'Covered read', journey, for_person_ids: ['p_arjun', 'p_meher'], passengers: [{ person_id: 'p_arjun', seat: '14A' }, { person_id: 'p_meher', seat: '14B' }] })); // paid by Rahul
     const bid = r.body.booking_id as string;
     const seq = (await rows(h.pool, `select seq from trips where trip_id = 't_goa'`))[0].seq;
     const covered = await list(arjun());
-    const other = await list(t.as('p_priya'));
     expect([covered.status, covered.body.seq, covered.body.items[0].booking_id, covered.body.items.length > 1]).toEqual([200, seq, bid, true]);
     const ordered = covered.body.items.map((b: any) => b.created_at);
     expect(ordered).toEqual([...ordered].sort().reverse()); // newest first
     const mine = covered.body.items.find((b: any) => b.booking_id === bid);
-    const theirs = other.body.items.find((b: any) => b.booking_id === bid);
-    expect([mine.passengers, mine.documents, 'passengers' in theirs, 'documents' in theirs, theirs.journey]).toEqual([[{ person_id: 'p_arjun', seat: '14A' }, { person_id: 'p_meher', seat: '14B' }], [], false, false, journey]);
+    const payers = (await list(t.as('p_rahul'))).body.items.find((b: any) => b.booking_id === bid);
+    expect([mine.passengers, mine.documents, 'passengers' in payers, 'documents' in payers, payers.journey]).toEqual([[{ person_id: 'p_arjun', seat: '14A' }, { person_id: 'p_meher', seat: '14B' }], [], false, false, journey]);
+    const others = (await list(t.as('p_priya'))).body.items;
+    expect([others.length > 0, others.some((b: any) => b.booking_id === bid)]).toEqual([true, false]); // the group's bookings, never Arjun and Meher's flight
     expect((await one(bid)).body.passengers).toHaveLength(2);
-    expect('passengers' in (await one(bid, t.as('p_priya'))).body).toBe(false);
+    expect('passengers' in (await one(bid, t.as('p_rahul'))).body).toBe(false);
+    expect(refusal(await one(bid, t.as('p_priya')))).toEqual([404, 'not_found']);
     // The trip read applies the same rule; Go's read does not.
     const view = (who: string) => t.api(t.as(who), 'GET', '/app/v1/trips/t_goa').then((x) => x.body.bookings.find((b: any) => b.booking_id === bid));
-    expect([(await view('p_arjun')).passengers.length, 'passengers' in (await view('p_priya')), (await h.go.call('read_trip', { trip_id: 't_goa' })).result.bookings.find((b: any) => b.booking_id === bid).passengers.length]).toEqual([2, false, 2]);
+    expect([(await view('p_arjun')).passengers.length, 'passengers' in (await view('p_rahul')), await view('p_priya'), (await h.go.call('read_trip', { trip_id: 't_goa' })).result.bookings.find((b: any) => b.booking_id === bid).passengers.length]).toEqual([2, false, undefined, 2]);
     expect(refusal(await one('b_elsewhere'))).toEqual([404, 'not_found']);
     expect(refusal(await list(t.as('p_stranger')))).toEqual([403, 'forbidden']);
     expect(refusal(await list(null))).toEqual([401, 'unauthorized']);
@@ -233,13 +235,12 @@ describe('documents Go sends with add_booking', () => {
     expect((await h.go.call('add_booking', params)).result).toEqual(r.result);
     await settleDocumentCopies();
     expect((await rows(h.pool, 'select count(*)::int as n from booking_documents where booking_id = $1', [bid]))[0].n).toBe(2);
-    // Covered people see the documents (the facts, and a signed link to our copy); the rest of the trip sees neither documents nor passengers.
+    // Covered people see the documents (the facts, and a signed link to our copy); the rest of the trip does not see the booking.
     const rahul = (await one(bid, t.as('p_rahul'))).body;
-    const priya = (await one(bid, t.as('p_priya'))).body;
     const signed = expect.stringContaining('https://go.example/_dev/storage/');
-    expect([rahul.documents, rahul.passengers, rahul.details, 'documents' in priya, 'passengers' in priya, priya.details]).toEqual([
+    expect([rahul.documents, rahul.passengers, rahul.details, refusal(await one(bid, t.as('p_priya')))]).toEqual([
       [{ document_id: 'doc_pdf', name: '6E5313-K7QX2M.pdf', mime: 'application/pdf', size_bytes: 15, pages: 2, visibility: 'covered', url: signed }, { document_id: 'doc_png', name: 'voucher.png', mime: 'image/png', size_bytes: 3, visibility: 'group', url: signed }],
-      [{ person_id: 'p_rahul', seat: '14A', pnr: 'K7QX2M' }], [{ label: 'PNR', value: 'K7QX2M' }], false, false, [{ label: 'PNR', value: 'K7QX2M' }],
+      [{ person_id: 'p_rahul', seat: '14A', pnr: 'K7QX2M' }], [{ label: 'PNR', value: 'K7QX2M' }], [404, 'not_found'],
     ]);
     expect(JSON.stringify(rahul)).not.toContain(filesBase);
   });

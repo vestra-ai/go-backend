@@ -3,6 +3,7 @@ import { newId } from '../db/ids.js';
 import { once } from '../db/once.js';
 import type { Db } from '../db/pool.js';
 import { change, emit, nextSeq } from '../db/write-change.js';
+import { coverSplit } from '../domain/bookings.js';
 import { conflict, invalid, notFound } from '../domain/errors.js';
 import { changeExpenseSplit, insertExpense, lockExpense, moneyChanged } from '../domain/expenses.js';
 import { postExpenseAdded } from '../domain/ledger-lines.js';
@@ -106,6 +107,7 @@ export const addExpense = (ctx: Ctx) => async (p: any) =>
       );
       if (has.rowCount) throw conflict(`approval ${p.approval_id} already has its expense`);
     }
+    await coverSplit(ctx, db, p.trip_id, p.booking_id, p.split_person_ids, { kind: 'go' });
     const expense = await insertExpense(db, p.trip_id, { ...p, booking_id: p.booking_id ?? null });
     const seq = await change(db, p.trip_id, 'expense.changed', { expense, change: 'added', by: { kind: 'go' } });
     await moneyChanged(ctx, p.trip_id, seq);

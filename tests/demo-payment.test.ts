@@ -137,7 +137,7 @@ describe("the demo's payment", () => {
     expect(docs).toEqual([{ name: 'Boarding pass.pdf', mime: 'application/pdf', visibility: 'covered' }]);
     const mine = (await t.api(t.as('p_priya'), 'GET', '/app/v1/trips/t_goa/bookings')).body.items.find((b: any) => b.booking_id === booking.booking_id);
     const theirs = (await t.api(t.as('p_arjun'), 'GET', '/app/v1/trips/t_goa/bookings')).body.items.find((b: any) => b.booking_id === booking.booking_id);
-    expect([mine.documents.length, theirs.documents, theirs.passengers]).toEqual([1, undefined, undefined]);
+    expect([mine.documents.length, theirs]).toEqual([1, undefined]); // Priya's own flight is hers: not in Arjun's list
   });
 
   it("the demo module's ticket PDF is rendered after the payment, kept in storage, and reaches the covered person with a signed link; others get none", async () => {
@@ -164,7 +164,7 @@ describe("the demo's payment", () => {
       expect(landed.map((e) => e.seq)).toEqual([Number(trip.seq)]);
       expect(live.filter((e) => e.kind === 'home' && e.person_id === 'p_meher').length).toBeGreaterThanOrEqual(2);
 
-      // Meher gets the document with a link valid an hour, in the list, the booking and the trip; Rahul gets no documents.
+      // Meher gets the document with a link valid an hour, in the list, the booking and the trip; Rahul does not see her flight.
       const mine = (await t.api(t.as('p_meher'), 'GET', '/app/v1/trips/t_goa/bookings')).body.items.find((b: any) => b.booking_id === booking.booking_id);
       expect(mine.documents).toEqual([{ document_id: docs[0].document_id, name: 'E-ticket BLR-GOX.pdf', mime: 'application/pdf', size_bytes: 17, pages: 1, visibility: 'covered', url: expect.stringContaining('/_dev/storage/') }]);
       const fetched = await h.app.inject({ method: 'GET', url: new URL(mine.documents[0].url).pathname });
@@ -179,7 +179,7 @@ describe("the demo's payment", () => {
       expect([one.documents[0].url, inTrip.documents[0].url]).toEqual([expect.stringContaining('/_dev/storage/'), expect.stringContaining('/_dev/storage/')]);
       expect(one.documents[0].url).not.toBe(mine.documents[0].url); // minted on every read
       const theirs = (await t.api(t.as('p_rahul'), 'GET', '/app/v1/trips/t_goa/bookings')).body.items.find((b: any) => b.booking_id === booking.booking_id);
-      expect([theirs.documents, theirs.passengers, theirs.details.length > 0]).toEqual([undefined, undefined, true]);
+      expect(theirs).toBeUndefined();
       expect((await t.api(t.as('p_meher'), 'GET', `/app/v1/trips/t_goa/bookings/${booking.booking_id}/documents/${docs[0].document_id}`)).status).toBe(302);
 
       // A render that fails is logged and skipped: the booking stands without a file.
@@ -296,5 +296,31 @@ describe("the demo's payment", () => {
     expect(paid.data.personal).toBeUndefined();
     // A second approval for the same vote is refused: it is booked.
     expect(await ok('request_spend_approval', { amount_minor: 5420000, currency: 'INR', merchant: 'ixigo: Villa Sol', purpose: 'Villa Sol, 3 nights', decision_id: did })).toMatchObject({ status: 'denied', reason: 'already_booked' });
+  });
+
+  it("a stay paid for on a trip with no dates (Munnar, 11 Oct): its dates are the stay's own from its link, and the trip takes them; with none to read the booking has no dates and neither has the trip, never tomorrow's", async () => {
+    const tripDates = async () => (await rows(h.pool, `select dates_start::text as s, dates_end::text as e from trips where trip_id = 't_goa'`))[0];
+    const kept = await tripDates();
+    await h.pool.query(`update trips set dates_start = null, dates_end = null where trip_id = 't_goa'`);
+    /** Go posts the person a stays card, they pick, Go is granted the approval, and they pay. */
+    const paidStay = async (personId: string, tag: string, url?: string) => {
+      const stays = `c_st_${tag}`;
+      const option = { option_id: 'o1', title: 'Camelot Resort', price_minor: 4286800, currency: 'INR', highlights: ['4-star'], place: { name: 'Camelot Resort', address: 'Nullatanni, Munnar' }, ...(url ? { url } : {}) };
+      await ok('post_message', { text: 'Stays', card: { card_id: stays, kind: 'options', fallback_text: 'Stays in Munnar', title: 'Stays', option_kind: 'stay', checked_at: '2026-10-11T20:30:00Z', for_person_ids: [personId], options: [option], actions: [{ action_id: 'pick', label: 'Pick', style: 'primary', per_option: true }] } });
+      await tap(personId, stays, { action_id: 'pick', option_id: 'o1' });
+      const approval = await ok('request_spend_approval', { amount_minor: 4286800, currency: 'INR', merchant: 'ixigo', purpose: 'Camelot Resort, Munnar: 4 nights', personal: { person_id: personId, card_id: stays, option_id: 'o1' } });
+      await ok('post_message', { text: 'Ready to pay', card: payCard(`c_pay_${tag}`, approval.approval_id, personId, 4286800, { purpose: 'Camelot Resort, Munnar: 4 nights' }) });
+      expect((await tap(personId, `c_pay_${tag}`, { action_id: 'approve' })).body).toEqual({ result: 'done' });
+      return (await rows(h.pool, 'select starts_at, ends_at from bookings where approval_id = $1', [approval.approval_id]))[0];
+    };
+    try {
+      expect(await paidStay('p_arjun', 'nodates')).toEqual({ starts_at: null, ends_at: null });
+      expect(await tripDates()).toEqual({ s: null, e: null });
+      const own = await paidStay('p_arjun', 'link', 'https://www.ixigo.com/hotels/1128030/details?locationName=Munnar&checkinDate=01112026&checkoutDate=05112026&adultCount=2');
+      expect([own.starts_at.toISOString(), own.ends_at.toISOString()]).toEqual(['2026-11-01T08:30:00.000Z', '2026-11-05T05:30:00.000Z']);
+      expect(await tripDates()).toEqual({ s: '2026-11-01', e: '2026-11-05' });
+    } finally {
+      await h.pool.query(`update trips set dates_start = $1, dates_end = $2 where trip_id = 't_goa'`, [kept.s, kept.e]);
+    }
   });
 });

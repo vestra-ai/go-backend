@@ -1,5 +1,5 @@
 // The demo booking module (docs/DEMO-BOOKING-MODULE.md): `demoBookingFor` called directly with what the Server knows about
-// a payment. A flight with its return leg, a stay with and without the trip's dates, and a payment whose option was not
+// a payment. A flight with its return leg, a stay with the trip's dates, its own or none, and a payment whose option was not
 // found. Every answer must pass the contract's Booking check, the made-up parts must be the same for the same payment,
 // passengers come only from the covered people, and the ticket files carry the same values as the booking.
 import { describe, expect, it } from 'vitest';
@@ -144,15 +144,31 @@ describe('demoBookingFor: a stay', () => {
     expect(v.cancellation.rules[0]!.title).toMatch(/^Free cancellation till 19 Nov 2026/);
   });
 
-  it('without trip dates: tomorrow in the place\'s time for three nights; a voucher only the payer sees shows their email; the default room', () => {
-    const s = stay({ for_person_ids: ['p_rahul'], trip: { title: 'Goa 2026' }, option: { label: 'Casa Azul', refundable_until: null } });
+  it("without trip dates: the stay's own dates from the ixigo link Go sent (Munnar, 11 Oct: paid for 1 to 5 Nov), never tomorrow; the trip's dates win when it has them", () => {
+    const url = 'https://www.ixigo.com/hotels/1128030/details?locationName=Munnar&checkinDate=01112026&checkoutDate=05112026&adultCount=2';
+    const s = stay({ trip: { title: 'Munnar' }, option: { ...VILLA, url } });
     const f = sync(s);
     expect(asBooking(s, f)).toMatchObject({ ok: true });
-    expect([f.title, f.starts_at, f.ends_at, f.place]).toEqual(['Casa Azul', '2026-10-14T08:30:00.000Z', '2026-10-17T05:30:00.000Z', null]);
-    const v = f.tickets![0]!.data as HotelBookingData;
-    expect(v).toMatchObject({ checkIn: 'Wed, 14 Oct', checkOut: 'Sat, 17 Oct', travellers: '1 Adult', rooms: { summary: '1 x Deluxe Room' }, hotel: { name: 'Casa Azul', address: 'Casa Azul' }, primaryGuest: { name: 'RAHUL MANGLANI', email: 'rahul@example.com' } });
-    expect([v.hotel.mapUrl, v.cancellation.rules.map((r) => r.title)]).toEqual([undefined, ['Non-refundable']]);
-    expect((f.details as any[]).find((d) => d.label === 'Cancellation').value).toBe('Non-refundable');
+    expect([f.starts_at, f.ends_at]).toEqual(['2026-11-01T08:30:00.000Z', '2026-11-05T05:30:00.000Z']);
+    expect((f.details as any[]).slice(0, 3)).toEqual([{ label: 'Check-in', value: 'Sun, 01 Nov · 14:00' }, { label: 'Check-out', value: 'Thu, 05 Nov · 11:00' }, { label: 'Nights', value: '4' }]);
+    expect(f.tickets![0]!.data as HotelBookingData).toMatchObject({ checkIn: 'Sun, 01 Nov', checkOut: 'Thu, 05 Nov' });
+    const dated = sync(stay({ option: { ...VILLA, url } }));
+    expect([dated.starts_at, dated.ends_at]).toEqual(['2026-11-20T08:30:00.000Z', '2026-11-23T05:30:00.000Z']);
+  });
+
+  it('with no dates anywhere (no trip dates, a link without them or none): no dates on the booking, "Not set" on the voucher, no date rows; a voucher only the payer sees shows their email; the default room', () => {
+    for (const url of [undefined, 'https://www.ixigo.com/hotels/22733/details?checkinDate=32112026&checkoutDate=05112026', 'not a link']) {
+      const s = stay({ for_person_ids: ['p_rahul'], trip: { title: 'Goa 2026' }, option: { label: 'Casa Azul', refundable_until: '2026-11-18T18:29:00Z', url } });
+      const f = sync(s);
+      expect(asBooking(s, f)).toMatchObject({ ok: true });
+      expect([f.title, f.starts_at, f.ends_at, f.place, f.refundable_until]).toEqual(['Casa Azul', null, null, null, '2026-11-18T18:29:00Z']); // Go's refund date stands: no check-in to cap it at
+      expect((f.details as any[]).map((d) => d.label)).toEqual(['Room', 'Guests', 'Cancellation', 'Booking ID', 'Hotel booking no.', 'Booking']);
+      const v = f.tickets![0]!.data as HotelBookingData;
+      expect(v).toMatchObject({ checkIn: 'Not set', checkOut: 'Not set', travellers: '1 Adult', rooms: { summary: '1 x Deluxe Room' }, hotel: { name: 'Casa Azul', address: 'Casa Azul' }, primaryGuest: { name: 'RAHUL MANGLANI', email: 'rahul@example.com' } });
+      expect(v.hotel.mapUrl).toBeUndefined();
+    }
+    const none = sync(stay({ trip: { title: 'Goa 2026' }, option: { label: 'Casa Azul', refundable_until: null } }));
+    expect([(none.tickets![0]!.data as HotelBookingData).cancellation.rules.map((r: any) => r.title), (none.details as any[]).find((d) => d.label === 'Cancellation').value]).toEqual([['Non-refundable'], 'Non-refundable']);
   });
 
   it("in another time zone, a room that sleeps two for four guests, and the trip's destination as the address", () => {

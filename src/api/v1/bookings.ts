@@ -22,12 +22,12 @@ const refused = (status: number, code: string, msg: string, field: string | null
 export const routes: RouteMeta[] = [
   {
     method: 'GET', path: '/app/v1/trips/:trip/bookings', section: SECTIONS.bookings, title: 'Bookings',
-    summary: 'The Bookings tab: every booking of the trip, confirmed and cancelled, newest first, with the trip change number. passengers[] and documents[] are in a booking only for the people it covers (for_person_ids); everyone else gets the booking without those two keys. Each document carries url, a signed link valid 1 hour, minted on every read. details and return_journey are for everyone.',
-    example: { responses: [{ name: 'as a covered person', status: 200, body: { items: [BOOKING], seq: 61 } }, { name: 'as anyone else', status: 200, body: { items: [BOOKING_FOR_OTHERS], seq: 61 } }] },
+    summary: 'The Bookings tab: the trip\'s bookings the caller reads, confirmed and cancelled, newest first, with the trip change number. A booking is listed only for the people it covers (for_person_ids) and the person who paid for it: someone\'s own flight is nobody else\'s. passengers[] and documents[] are in a booking only for the people it covers; a payer it does not cover gets it without those two keys. Each document carries url, a signed link valid 1 hour, minted on every read.',
+    example: { responses: [{ name: 'as a covered person', status: 200, body: { items: [BOOKING], seq: 61 } }, { name: 'as the payer, not covered', status: 200, body: { items: [BOOKING_FOR_OTHERS], seq: 61 } }] },
   },
   {
     method: 'GET', path: '/app/v1/trips/:trip/bookings/:id', section: SECTIONS.bookings, title: 'One booking',
-    summary: 'One Booking (the ticket card redraws from this), with the same covered-people rule. 404 when it is not in this trip.',
+    summary: 'One Booking (the ticket card redraws from this), with the same covered-people rule. 404 when it is not in this trip, or the caller neither is covered by it nor paid for it.',
     example: { responses: [{ name: 'Booking', status: 200, body: BOOKING }, refused(404, 'not_found', 'booking b_nope does not exist in trip t_goa')] },
   },
   {

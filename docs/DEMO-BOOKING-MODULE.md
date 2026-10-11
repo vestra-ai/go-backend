@@ -44,7 +44,7 @@ approval, and a second tap on the card waits.
 | `option_kind` | the kind of the card the option came from: `stay`, `flight`, `train`, `bus`, `cab`, `place`, `food`, `activity`. May be missing. For a group vote whose winning option is not tied to one of Go's options cards it is always `stay` |
 | `option` | the option that was paid for, exactly as Go's card showed it (for a group vote: the vote's winning option, with the card option it came from laid over it): `title` (or `label` for a vote's option), `image_url`, `refundable_until`, `place`, `journey`, `return_journey`, `room_types`, `highlights`, and any other field Go put on it. **May be missing**, and any field inside it may be missing |
 | `people` | the covered people **and the payer**: `[{ person_id, name, email? }]`, read by `demoPay` in the same transaction. Names go on the ticket. An email is private (app contract §1.7): show it only on a file nobody but its owner sees |
-| `trip` | `{ title, destination?, dates?: { start, end } }` (dates as `YYYY-MM-DD`): a stay's check-in and check-out are the trip's dates |
+| `trip` | `{ title, destination?, dates?: { start, end } }` (dates as `YYYY-MM-DD`): a stay's check-in and check-out are the trip's dates, else the option's own (its ixigo `url`, `checkinDate`/`checkoutDate`) |
 
 Do not query the database from your module: if you need more, ask for it to be added to the source.
 
@@ -124,9 +124,11 @@ trip sees the booking without them. `details`, `journey`, `place` and the rest a
   ixigo-style e-ticket per leg, with the travellers' names, PNR, e-ticket numbers and seats. Times print at the offset Go
   sent them with (else India time). A cab gets the same booking with no ticket.
 - **A stay** (the card's kind is `stay`): `title` from the option (else its place, else `purpose`), check-in 14:00 and
-  check-out 11:00 in the place's time zone (else India) on the trip's dates (else tomorrow for three nights), detail
-  rows (Check-in, Check-out, Nights, Room from the first `room_types`, Guests, Cancellation from `refundable_until`, the
-  booking numbers, the demo row). `tickets`: one hotel voucher; its primary guest is the payer, with their email only
+  check-out 11:00 in the place's time zone (else India) on the trip's dates, else the stay's own from the option's
+  ixigo link (`checkinDate=01112026&checkoutDate=05112026`). Never made up: with neither, the booking has no
+  `starts_at`/`ends_at`, no Check-in, Check-out or Nights rows, and the voucher says "Not set" (so it never gives the
+  trip dates either). Detail rows (Check-in, Check-out, Nights, Room from the first `room_types`, Guests, Cancellation
+  from `refundable_until`, the booking numbers, the demo row). `tickets`: one hotel voucher; its primary guest is the payer, with their email only
   when the stay covers the payer alone.
 - **Anything else, or no option at all:** the thin booking as before: `title` from the option (else `purpose`), the
   journey, place and image as they are, one row ("Paid · Demo payment"), no ticket.

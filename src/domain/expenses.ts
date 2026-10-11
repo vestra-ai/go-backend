@@ -9,6 +9,7 @@ import { withTx } from '../db/pool.js';
 import { change, nextSeq } from '../db/write-change.js';
 import type { LiveEvent } from '../live/live.js';
 import { Forbidden, publishHomeAll, requireMember } from './actions.js';
+import { coverSplit } from './bookings.js';
 import { invalid, notFound } from './errors.js';
 import { expenseView, loadExpenses, type ExpenseStoredRow, type ExpenseView } from './ledger.js';
 import { postExpenseAdded, postExpenseRemoved, postSplitChanged } from './ledger-lines.js';
@@ -117,6 +118,7 @@ export async function createExpense(ctx: Ctx, tripId: string, personId: string, 
     const trip = (await db.query('select currency from trips where trip_id = $1', [tripId])).rows[0];
     const fields: ExpenseFields = { ...input, paid_by_person_id: input.paid_by_person_id ?? personId, currency: trip.currency, added_by_person_id: personId };
     await checkExpenseFields(db, tripId, fields);
+    await coverSplit(ctx, db, tripId, fields.booking_id, fields.split_person_ids, { kind: 'person', person_id: personId });
     const expense = await insertExpense(db, tripId, fields);
     const seq = await change(db, tripId, 'expense.changed', { expense, change: 'added', by: { kind: 'person', person_id: personId } });
     await moneyChanged(ctx, tripId, seq);
@@ -155,6 +157,7 @@ type Actor = { kind: 'person'; person_id: string } | { kind: 'go' };
 export async function changeExpenseSplit(ctx: Ctx, db: pg.PoolClient, tripId: string, row: ExpenseStoredRow, input: ExpenseSplitEdit, by: Actor): Promise<ExpenseView & { seq: number }> {
   const ids = [...new Set(input.split_person_ids)];
   await checkExpenseFields(db, tripId, { paid_by_person_id: null, category: row.category, split_person_ids: ids, booking_id: null });
+  await coverSplit(ctx, db, tripId, row.booking_id, ids, by);
   const updated = (await db.query<ExpenseStoredRow>('update expenses set split_person_ids = $2, note = $3 where expense_id = $1 returning *', [row.expense_id, JSON.stringify(ids), input.note ?? row.note])).rows[0]!;
   const expense = expenseView(updated);
   // by_person_id names a person only: Go's change leaves it out, as the Server leaves out every empty member.
