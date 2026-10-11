@@ -10,6 +10,7 @@ import { withTx } from '../db/pool.js';
 import { change } from '../db/write-change.js';
 import { SocketCallError, SocketTimeoutError } from '../go/go-socket.js';
 import { Forbidden, requireMember } from './actions.js';
+import { DEMO_NOT_WAITING, DEMO_PAY_ACTION, demoPay, isDemoPaid, type PayCardLike } from './demo-payment.js';
 import { invalid, notFound } from './errors.js';
 import { personForGo, visibleSql } from './mappers.js';
 import { activePeople } from './snapshot.js';
@@ -97,6 +98,19 @@ export async function cardTap(
   if (!m) throw notFound(`card ${input.card_id} is not one of Go's cards in this trip`);
   // A record card (a vote, including a person-opened poll's card on a system message) is the Server's: 422, as §4.7 says.
   if (m.author_kind !== 'go' || !GO_CARD_KINDS.has(m.kind)) throw invalid(`${m.kind} cards are handled by the Server, not Go`, 'card_id');
+  // The demo's payment (docs/GO-TEAM-DEMO-PAYMENT.md): the payer's Approve on a waiting pay card is taken as paid here
+  // and never reaches Go. A repeat of that tap, after the card lost its buttons, is answered as the first was.
+  const pay = m.card as PayCardLike;
+  const waiting = pay.state === 'waiting' && (pay.actions ?? []).some((a) => a.action_id === DEMO_PAY_ACTION); // the button is on the card
+  if (m.kind === 'pay' && input.action_id === DEMO_PAY_ACTION && pay.payer_person_id === personId && (waiting || await isDemoPaid(ctx.pool, tripId, input.card_id))) {
+    try {
+      return await demoPay(ctx, tripId, personId, input.card_id);
+    } catch (err) {
+      // The card moved on between the read above and the payment's lock (Go expired it, called the approval off), or it is booked: a refusal, like any tap.
+      if (err instanceof SocketCallError && err.code === 409) return DEMO_NOT_WAITING;
+      throw err;
+    }
+  }
   // The button must be on the card as it stands now: Go may have replaced it (paid, expired, declined) without buttons.
   // Seen on 10 Oct 2026: a tap on an expired pay card reached Go, which started a second payment for a paid stay.
   const card = m.card as { actions?: Array<{ action_id: string }> | null; suggestion?: { cta?: { action_id?: string } | null } | null };

@@ -55,6 +55,12 @@ checks against.
   payload? }`. `tap_id` is fixed per person and press, so a double tap is one tap. On a `rooms` card `option_id` carries
   the `arrangement_id`. If Go does not answer in time, refuses, or answers with something that is not a
   `CardActionResult`, the person sees "Go didn't answer. Try again."
+- **The demo's payment** (11 Oct 2026, `docs/GO-TEAM-DEMO-PAYMENT.md`): a tap on `approve` of a `pay` card in
+  `state: "waiting"` by its `payer_person_id` **never reaches you**. The Server takes the payment as done: it sets the
+  card to `state: "paid"`, `actions: null`, writes the booking (with the card's `approval_id`, now used) and its expense,
+  and sends `booking.changed`, `record.changed`, `expense.changed` (all `by: system`) and then `payment.completed`
+  (section 3.1). From then on a `replace_card` of that card must keep `state: "paid"` (else `409`), and `add_booking`
+  with that approval is `409`, as is an `add_expense` naming an approval whose booking already has its expense.
 - **`catch_up`**: system messages (section 3.3) do not count towards the 15.
 
 ## 3. Events: what Go hears
@@ -89,6 +95,7 @@ Every event is `{ event_id, trip_id, seq, occurred_at, type, data }`.
 | `booking.changed` | a booking added, updated, or cancelled (including by a passed group vote, `by: system`) | `{ booking, change: "added" \| "updated" \| "cancelled", by }` |
 | `expense.changed` | an expense added or removed; **on `GO_CONTRACT=1.1` only**, also `change: "updated"` when a person fixes its split (with `by_person_id`) | `{ expense, change, by }` |
 | `settlement.recorded` (1.1) | **a person records a payback** | `{ settlement: Settlement, by }`: `Settlement` is `{ settlement_id, from_person_id, to_person_id, amount_minor, currency, method: "upi" \| "cash" \| "bank_transfer" \| "other", note?, status: "confirmed", recorded_at, confirmed_at }` and `by` the person who recorded it (the official 1.1 shape, since 10 Oct) |
+| `payment.completed` (demo; the Server's overlay, agreed 11 Oct) | the payer tapped Approve on a waiting `pay` card and the Server took the payment as done | `{ approval_id, card_id, payer_person_id, amount_minor, currency, merchant, purpose, decision_id? \| personal?, booking_id, expense_id, method: "demo", paid_at, by }`: exactly one of `decision_id` and `personal` (the other is left out), `by` the payer. Sent after the `booking.changed`, `record.changed` and `expense.changed` it names |
 
 ### 3.2 What changed in rev 4
 

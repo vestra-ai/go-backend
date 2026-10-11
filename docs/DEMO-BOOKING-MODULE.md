@@ -1,0 +1,140 @@
+# The fake booking and ticket module: what to build and how it plugs in
+
+**For:** whoever builds the fake booking and fake ticket for the demo. **Date:** 11 Oct 2026.
+**Read with:** `docs/GO-TEAM-DEMO-PAYMENT.md` (what happens around your module).
+
+## 1. The one-paragraph picture
+
+For the demo no real payment is taken. When the payer taps **Approve** on Go's payment card, the Server marks the card
+paid and writes a booking and an expense by itself. **Your module decides what that booking looks like**: its title,
+reference, times, journey, seats, PNRs, the detail rows, and the ticket file. You write one function. The Server calls
+it, stores what you return, tells Go, and pushes it to the phones. You do not touch the database, the events, the card,
+or the app.
+
+## 2. Where you plug in
+
+One file, one function: **`src/domain/demo-booking.ts` → `demoBookingFor`**.
+
+```ts
+export function demoBookingFor(s: DemoBookingSource): DemoBookingFields | Promise<DemoBookingFields>
+```
+
+- Replace the **body** of `demoBookingFor`. Put your own code in new files (for example `src/demo/…`) and call it from
+  there.
+- Keep the two type names and the function name. You may **add optional fields** to `DemoBookingSource` or
+  `DemoBookingFields`; tell the Server owner first, because each new output field needs a line in
+  `src/domain/demo-payment.ts` to store it.
+- Do not edit `src/domain/demo-payment.ts`, `src/domain/ask-go.ts` or `src/requests/*`.
+
+It is called from `demoPay` in `src/domain/demo-payment.ts`, once per paid card, **inside the database transaction**,
+while the payment card and its approval are locked. Until you return, Go cannot update that card or book with that
+approval, and a second tap on the card waits.
+
+## 3. What you are given (`DemoBookingSource`)
+
+| Field | What it is |
+|---|---|
+| `trip_id` | the trip |
+| `approval_id` | the payment's id. Unique per payment: a good seed if you want the same fake data on a re-run |
+| `merchant` | who is paid, as on the payment card (for example `ixigo`, or `ixigo: Villa Sol, Anjuna`). Up to 120 chars |
+| `purpose` | what it is for, as on the payment card (for example `Villa Sol, 3 nights`) |
+| `amount_minor`, `currency` | the amount paid, in paise, and `INR`. **Not yours to change**: the Server stores these itself |
+| `payer_person_id` | who paid |
+| `for_person_ids` | who the booking covers. One person for their own ticket; everyone in the trip for a group stay |
+| `option_kind` | the kind of the card the option came from: `stay`, `flight`, `train`, `bus`, `cab`, `place`, `food`, `activity`. May be missing. For a group vote whose winning option is not tied to one of Go's options cards it is always `stay` |
+| `option` | the option that was paid for, exactly as Go's card showed it (for a group vote: the vote's winning option, with the card option it came from laid over it): `title` (or `label` for a vote's option), `image_url`, `refundable_until`, `place`, `journey`, `return_journey`, and any other field Go put on it. **May be missing**, and any field inside it may be missing |
+
+You get ids, not names. If you need people's names for the ticket, ask for `people: [{ person_id, name }]` to be added
+to the source; do not query the database from your module.
+
+## 4. What you return (`DemoBookingFields`)
+
+Everything is stored as you return it and reaches the app as an ordinary booking. **The limits are hard**: every
+booking is checked against the contract before it is saved, and a value over a limit makes the payer's tap fail.
+
+| Field | Required | Limits | Where the app shows it |
+|---|---|---|---|
+| `kind` | yes | one of `stay`, `flight`, `train`, `bus`, `cab`, `table`, `activity`, `other` | picks the ticket's look (boarding pass, stay pass); also sets the expense's category |
+| `title` | yes | 1–120 chars | the ticket's heading, the room line "`<title>` booked", the trip record, and the expense's name |
+| `vendor` | yes | 1–80 chars | "booked with" |
+| `ref` | yes | 1–80 chars | the booking reference. Use the `DEMO-` prefix (`demoRef()` gives `DEMO-4K7Q2M`) so nobody mistakes it for a real one |
+| `starts_at`, `ends_at` | no | ISO date-time with a zone (`2026-11-06T14:10:00Z`) | check-in / check-out, or departure / arrival; the itinerary |
+| `refundable_until` | no | ISO date-time | "free cancellation until" |
+| `journey` | no | `{ mode: flight\|train\|bus\|cab, origin: { name ≤ 80, code? ≤ 8 }, destination: { name, code? }, depart_at, arrive_at, carrier_name? ≤ 60, carrier_code? ≤ 8, number? ≤ 20 }` | the boarding pass: route, times, carrier, flight number |
+| `return_journey` | no | same shape | the return leg |
+| `place` | no | `{ name 1–120, address? ≤ 200, lat?, lng?, photo_url?, photos? ≤ 12 }` | the stay pass: where, and the map |
+| `image_url` | no | an `https://` URL | the ticket's picture |
+| `details` | no | at most 20 rows of `{ label 1–40, value 1–200 }` | the ticket's detail rows ("Baggage · 15 kg", "Room · Deluxe, 2 guests") |
+| `passengers` | no | at most 30 of `{ person_id, seat? ≤ 20, pnr? ≤ 40 }`; every `person_id` **must be one of `for_person_ids`**, each at most once | each traveller's seat and PNR |
+| `documents` | no | at most 10 of `{ name 1–200, mime, url, pages?, visibility: "covered" \| "group" }` | the ticket file the app opens (see section 5) |
+
+`null` and "left out" mean the same thing. Return only what you have.
+
+**Who sees what.** `passengers` and `documents` are shown only to the people in `for_person_ids`. Everyone else in the
+trip sees the booking without them. `details`, `journey`, `place` and the rest are shown to everyone.
+
+## 5. The ticket file
+
+- A ticket file is a **PDF or an image** (`application/pdf`, JPEG, PNG, WebP), at most 25 MB.
+- You return a **link** (`url`), not bytes. After the payment is saved, the Server downloads the file from your link
+  into its own storage; the app then opens it through the Server, never through your link. So the link must be
+  reachable from the Server (use `https`) at that moment and for a minute after. A static, pre-made file is fine.
+- The copy happens in the background. If the link is dead, the wrong type or too large, that file is skipped and the
+  booking stands without it. Nothing tells the payer.
+- `visibility: "covered"` shows the file only to the people the booking covers; `"group"` shows it to the whole trip.
+- If you do not have a file, return no `documents`. The app still draws the ticket from the booking's fields.
+
+## 6. Rules the function must keep
+
+1. **Be fast and local.** It runs while the payment card and its approval are locked. No network calls, no database, no waiting on Go: aim for
+   well under 100 ms. If you must generate a file, do it ahead of time and return its link.
+2. **Never throw for missing input.** `option`, `option_kind` and every field inside `option` can be absent. Fall back
+   to `purpose` and `merchant`. If your function throws, the payer's tap fails and nothing is booked.
+3. **Stay inside the limits in section 4.** Trim strings (`.slice(0, 120)`) rather than trusting Go's text to fit.
+4. **Do not invent people.** `passengers` only from `for_person_ids`.
+5. **Do not set money.** The amount, currency, payer and covered people are fixed by the payment.
+6. **Mark it as a demo** somewhere a person will see it: the `DEMO-` reference, or a detail row.
+
+## 7. What happens around you (so you can picture the result)
+
+1. The payer taps Approve. The Server checks the payment is theirs and still waiting.
+2. The Server calls `demoBookingFor` with what was paid for.
+3. In the same step it saves the booking (confirmed), the "booked" line of the trip record, and the expense (the
+   person alone for a ticket, split equally for a group stay), and marks the payment card paid.
+4. The room shows "`<title>` booked" and the money line. Phones are told to refresh.
+5. Go hears about the booking and the payment, and posts a **ticket card** that points at this booking. The app draws
+   that card from the booking you described: this is where your work shows up on screen.
+6. The ticket file, if you gave one, appears on the booking a moment later.
+
+## 8. What the default does today
+
+Until you replace it, `demoBookingFor` returns a thin booking: `kind` from the card's kind when that is `stay`,
+`flight`, `train`, `bus`, `cab` or `activity` (else the journey's mode, else `other`), `title` from the option (else
+`purpose`),
+`vendor` from the merchant, a `DEMO-` reference, the option's journey, place and image as they are, one detail row
+("Paid · Demo payment"), and for a journey one passenger per covered person with the reference as PNR. No seats, no
+file.
+
+## 9. How to check your work
+
+- `npx vitest run tests/demo-payment.test.ts` runs the whole flow, personal ticket and group stay, against your
+  function. Its tests assert what the default returns today: the booking's `title` (`IndiGo 6E 2134`, `Villa Sol`),
+  `kind`, `vendor`, `ref` matching `DEMO-`, the journey passed through, the expense's note and category, and the room
+  lines "`<title>` booked" and "… added `<title>` …". When your module changes any of these, update those assertions
+  in the same change.
+- Add your own tests for `demoBookingFor` directly: it is a plain function, so call it with a `DemoBookingSource` and
+  check the result. Cover a flight with a return leg, a stay, and a source with **no `option` at all**.
+- Check your output against the contract in a test, so a limit never surprises you in the demo:
+  ```ts
+  import { check } from '../src/contract/index.js';
+  expect(check('Booking', { booking_id: 'b_x', status: 'confirmed', amount_minor: 1, currency: 'INR',
+    payer_person_id: 'p_a', for_person_ids: ['p_a'], created_at: new Date().toISOString(), ...fields, documents: undefined })).toMatchObject({ ok: true });
+  ```
+- `npm test` must stay green before you hand it over.
+
+## 10. Done when
+
+- A paid flight shows a boarding pass with route, times, carrier, flight number, a seat and a PNR for each traveller.
+- A paid stay shows a stay pass with the place, check-in and check-out, and useful detail rows.
+- A payment whose option could not be found still books, with the title from `purpose`.
+- Every value is inside the limits of section 4, and the tests in section 9 pass.

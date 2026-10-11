@@ -664,6 +664,15 @@ taking a vote back are behind flags until Go confirms them (§7). "Who books for
 tap (§4.7); the Server has nothing to add. **The payment itself is not an app endpoint**: Approve on the `pay` card is a
 card action returning `open` to the vault page; the payer confirms with Face ID there, never in the app.
 
+**For the demo (11 Oct 2026) no payment is taken.** The payer's tap on `approve` of a `pay` card in `state: "waiting"`
+answers `{ "result": "done" }` at once: no `open`, no vault page. The Server marks that card `state: "paid"` with
+`actions: null` (a live `card` frame and a `message` frame, as after any replaced card), writes the confirmed booking
+(`ref` reads `DEMO-…`) and its expense, and posts the room's "booked" and money lines (`trip_changed` with `booking`,
+`record`, `expense`). A second tap answers `done` again and changes nothing. When the payment can no longer be taken (Go expired
+the card at that moment, or it is already booked) the answer is `{ "result": "refused", "toast": "This payment is no
+longer waiting." }`. Anyone else's tap, `decline`, and an
+expired card's button still go to Go.
+
 ### 4.9 Money
 
 **No approval, no disputes, no confirmation.** An expense counts from the moment it is added until it is removed. A

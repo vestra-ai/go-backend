@@ -357,35 +357,31 @@ describe('F4. From a vote to a booking (guides: "From a vote to a booking", "Mon
     expect(await strip(rahul, trip)).toContainEqual({ item_id: 'card:c_villa_pay', kind: 'card', title: 'Rahul, approve ₹54,200 for Villa Sol', cta_label: 'Approve', since: expect.any(String), target: { card_id: 'c_villa_pay', message_id: r.message_id } });
   });
 
-  it('8. Rahul taps Approve: Go answers with a vault link to open; the server passes it on and keeps nothing', async () => {
-    const url = 'https://brain.go.example/vault/pay?link=lk_0457';
-    h.go.answers.card_tap = () => ({ result: { result: 'open', url, expires_at: new Date(Date.now() + 120_000).toISOString() } });
-    const r = await api(rahul, 'POST', `/app/v1/trips/${trip}/cards/c_villa_pay/actions`, { action_id: 'approve', press_id: 'tap_0457' });
-    expect(r.status).toBe(200);
-    expect(r.body).toMatchObject({ result: 'open', url });
-    expect(JSON.stringify(await rows(h.pool, 'select * from messages where trip_id = $1', [trip]))).not.toContain('lk_0457');
-    h.go.answers.card_tap = () => ({ result: { result: 'done', toast: 'Noted. Go will reply in the room.' } });
-  });
-
-  it('9. Go records the booking with the approval: used once, booking.changed, then the decided line becomes booked, then the "booked" pill', async () => {
+  it('8. Rahul taps Approve: the demo takes the payment as done, the tap never reaches Go, and the card is paid (docs/GO-TEAM-DEMO-PAYMENT.md)', async () => {
     const [decided] = await rows(h.pool, "select line_id from record_lines where decision_id = $1 and kind = 'decided'", [villa]);
     await h.flush();
-    const mark = h.go.events.length;
-    const params = { kind: 'stay', title: 'Villa Sol, 3 nights', vendor: 'ixigo', ref: 'IXG-7Q2K9', amount_minor: 5420000, currency: 'INR', payer_person_id: rahul.id, for_person_ids: all.map((p) => p.id), decision_id: villa, approval_id: approval.approval_id };
-    const b = await go('add_booking', trip, params, 'rq_bk_1');
+    const [mark, taps] = [h.go.events.length, h.go.requests.filter((q) => q.method === 'card_tap').length];
+    const r = await api(rahul, 'POST', `/app/v1/trips/${trip}/cards/c_villa_pay/actions`, { action_id: 'approve', press_id: 'tap_0457' });
+    expect([r.status, r.body]).toEqual([200, { result: 'done' }]);
+    expect(h.go.requests.filter((q) => q.method === 'card_tap').length).toBe(taps);
+    expect((await rows(h.pool, 'select card from messages where card_id = $1', ['c_villa_pay']))[0].card).toMatchObject({ state: 'paid', actions: null });
+    const [b] = await rows(h.pool, 'select booking_id, title from bookings where trip_id = $1 and approval_id = $2', [trip, approval.approval_id]);
     expect((await rows(h.pool, 'select used_at, booking_id from spend_approvals where approval_id = $1', [approval.approval_id]))[0]).toMatchObject({ used_at: expect.any(Date), booking_id: b.booking_id });
     await h.flush();
     const list = eventsFor(trip, mark);
-    expect(list.map((e) => [e.type, e.seq])).toEqual([['booking.changed', b.seq], ['record.changed', b.seq + 1], ['message.created', b.seq + 2]]);
-    expect(list[2]!.data.message).toMatchObject({ author: { kind: 'system' }, text: 'Villa Sol, 3 nights booked' });
+    expect(list.map((e) => e.type)).toEqual(['booking.changed', 'record.changed', 'expense.changed', 'payment.completed', 'message.created', 'message.created']);
     expect(list[1]!.data).toMatchObject({ change: 'updated', by: { kind: 'system' }, line: { line_id: decided.line_id, kind: 'booked', booking_id: b.booking_id } });
-    expect(await go('add_booking', trip, params, 'rq_bk_1')).toEqual(b);
+    expect(list[3]!.data).toMatchObject({ approval_id: approval.approval_id, card_id: 'c_villa_pay', decision_id: villa, booking_id: b.booking_id, method: 'demo' });
+    expect(list[4]!.data.message).toMatchObject({ author: { kind: 'system' }, text: `${b.title} booked` });
+  });
+
+  it('9. Go does not book it again: add_booking with that approval is refused', async () => {
+    const params = { kind: 'stay', title: 'Villa Sol, 3 nights', vendor: 'ixigo', ref: 'IXG-7Q2K9', amount_minor: 5420000, currency: 'INR', payer_person_id: rahul.id, for_person_ids: all.map((p) => p.id), decision_id: villa, approval_id: approval.approval_id };
     expect(await goError('add_booking', trip, params)).toMatchObject({ code: 409 });
   });
 
-  it('10. Go adds the expense for the villa with its approval (a vault payment needs no one\'s approval)', async () => {
+  it('10. Go posts the ticket card for the Server\'s booking', async () => {
     const [b] = await rows(h.pool, 'select booking_id, approval_id from bookings where trip_id = $1', [trip]);
-    await go('add_expense', trip, { paid_by_person_id: rahul.id, amount_minor: 5420000, currency: 'INR', note: 'Villa Sol', category: 'stay', split_person_ids: all.map((p) => p.id), booking_id: b.booking_id, approval_id: b.approval_id });
     expect(await goError('post_message', trip, { card: { card_id: 'c_ticket_bad', kind: 'ticket', booking_id: 'b_nope', fallback_text: 'x' } })).toMatchObject({ code: 422 });
     await go('post_message', trip, { text: 'Booked!', card: { card_id: 'c_villa_ticket', kind: 'ticket', booking_id: b.booking_id, fallback_text: 'Villa Sol is booked' } });
   });

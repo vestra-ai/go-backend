@@ -5,6 +5,7 @@ import { withTx } from '../db/pool.js';
 import { nextSeq, emit } from '../db/write-change.js';
 import { publishHome, publishHomeAll } from '../domain/actions.js';
 import { noteCheckinSignal } from '../domain/checkin.js';
+import { isDemoPaid } from '../domain/demo-payment.js';
 import { conflict, invalid, notFound } from '../domain/errors.js';
 import { messageForGo } from '../domain/mappers.js';
 import type { MessageRow } from '../domain/mappers.js';
@@ -95,6 +96,8 @@ export const replaceCard = (ctx: Ctx) => async (p: { trip_id: string }, raw: Rec
     const card = raw.card as RawCard;
     const found = await db.query('select message_id, card from messages where trip_id = $1 and card_id = $2 and author_kind = $3 for update', [p.trip_id, card.card_id, 'go']);
     if (!found.rows[0]) throw notFound(`card ${card.card_id} is not on one of Go's messages in trip ${p.trip_id}`);
+    // A pay card the Server took as paid (the demo's payment) stays paid: Go may add to it, never expire, fail or decline it.
+    if ((card as { state?: string }).state !== 'paid' && await isDemoPaid(db, p.trip_id, card.card_id)) throw conflict(`card ${card.card_id} is paid: it can only be replaced with state "paid"`);
     const seq = await nextSeq(db, p.trip_id);
     await db.query('update messages set card = $2, updated_seq = $3 where message_id = $1', [found.rows[0].message_id, JSON.stringify(card), seq]);
     // What was kept about the old card's options (rev 5 E) is not about this card: Details asks Go afresh.

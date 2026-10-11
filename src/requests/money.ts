@@ -96,6 +96,14 @@ export const addExpense = (ctx: Ctx) => async (p: any) =>
     }
     if (p.amount_minor <= 0) throw invalid('amount_minor must be more than zero');
     assertCurrency(trip, p.currency);
+    // A payment has one expense. The demo's payment writes its own (docs/GO-TEAM-DEMO-PAYMENT.md): a second would count the cost twice.
+    if (p.approval_id) {
+      const has = await db.query(
+        'select 1 from expenses e join spend_approvals a on a.booking_id = e.booking_id where a.trip_id = $1 and a.approval_id = $2 and e.removed_at is null limit 1',
+        [p.trip_id, p.approval_id],
+      );
+      if (has.rowCount) throw conflict(`approval ${p.approval_id} already has its expense`);
+    }
     const expense = await insertExpense(db, p.trip_id, { ...p, booking_id: p.booking_id ?? null });
     const seq = await change(db, p.trip_id, 'expense.changed', { expense, change: 'added', by: { kind: 'go' } });
     await moneyChanged(ctx, p.trip_id, seq);

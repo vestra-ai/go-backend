@@ -10,6 +10,7 @@ import { hasOfficial, officialGoJson, officialMethods, simplifyNullable, validOf
 const overlay = JSON.parse(readFileSync(new URL('../contract/extensions-1.1.json', import.meta.url), 'utf8'));
 const socket = JSON.parse(readFileSync(new URL('../contract/socket.json', import.meta.url), 'utf8'));
 const CHECKIN_SCHEMAS = ['CheckinState', 'GetCheckin', 'SubmitCheckin', 'SubmitCheckinResult'];
+const DEMO_SCHEMAS = ['PaymentCompleted', 'PaymentCompletedData'];
 
 /** Valid against the official files alone, and against the Server's own check (official + overlay): the two must agree. */
 const passes = (schema: string, value: unknown) => [validOfficial(schema, value), check(schema, value).ok];
@@ -46,18 +47,23 @@ describe('the official contract and the Server\'s overlay', () => {
     expect(socket.info.version).toBe('1.3.0');
   });
 
-  it('the overlay holds only the check-in schemas and methods, none of them already in the official files', () => {
+  it('the overlay holds only the check-in schemas and methods and the demo\'s payment.completed event, none of them already in the official files', () => {
     expect(CONTRACT_EXTENSIONS_VERSION).toBe('1.3.0+server-checkin');
-    expect(Object.keys(overlay.schemas).sort()).toEqual([...CHECKIN_SCHEMAS].sort());
+    // `Event` is the one official name in the overlay: it only gains the payment.completed branch (docs/GO-TEAM-DEMO-PAYMENT.md).
+    expect(Object.keys(overlay.schemas).sort()).toEqual([...CHECKIN_SCHEMAS, ...DEMO_SCHEMAS, 'Event'].sort());
+    expect(overlay.schemas.Event).toEqual({ oneOf: [{ $ref: '#/components/schemas/PaymentCompleted' }] });
     expect(overlay.methods.map((m: any) => m.name)).toEqual(['get_checkin', 'submit_checkin']);
-    expect(CHECKIN_SCHEMAS.filter(hasOfficial)).toEqual([]);
+    expect([...CHECKIN_SCHEMAS, ...DEMO_SCHEMAS].filter(hasOfficial)).toEqual([]);
     expect(overlay.methods.filter((m: any) => officialMethods.methods.some((o: any) => o.name === m.name))).toEqual([]);
   });
 
   it('the overlay only adds: every official schema and method is exactly as Go wrote it in the Server\'s checker', () => {
     for (const [name, schema] of Object.entries(officialGoJson.components.schemas)) {
+      if (name === 'Event') continue; // checked below: the official branches, then the demo's one
       expect(validator(name).schema, name).toEqual(simplifyNullable(schema));
     }
+    const official = simplifyNullable(officialGoJson.components.schemas.Event) as { oneOf: unknown[] };
+    expect(validator('Event').schema).toEqual({ ...official, oneOf: [...official.oneOf, { $ref: '#/components/schemas/PaymentCompleted' }] });
     for (const m of officialMethods.methods) expect(METHODS[m.name], m.name).toEqual(m);
     expect(Object.keys(METHODS).sort()).toEqual([...officialMethods.methods.map((m: any) => m.name), 'get_checkin', 'submit_checkin'].sort());
   });

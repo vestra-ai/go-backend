@@ -347,9 +347,10 @@ describe('asking Go', () => {
     await goCall('post_message', { text: 'Ready to pay', card: pay({}) }, trip);
     // While the card has the button, the tap reaches Go.
     let sent = h.go.requests.length;
-    expect((await tap(rahul, { card_id: 'c_pay_tap', action_id: 'approve', press_id: 'tap_pay_1' })).status).toBe(200);
+    // (Not now: the payer's Approve on a waiting pay card is the demo's payment and stays with the Server, tests/demo-payment.test.ts.)
+    expect((await tap(rahul, { card_id: 'c_pay_tap', action_id: 'decline', press_id: 'tap_pay_1' })).status).toBe(200);
     expect(h.go.requests.length).toBe(sent + 1);
-    expect(h.go.requests.at(-1)).toMatchObject({ method: 'card_tap', params: { card_id: 'c_pay_tap', action_id: 'approve', person_id: rahul.id } });
+    expect(h.go.requests.at(-1)).toMatchObject({ method: 'card_tap', params: { card_id: 'c_pay_tap', action_id: 'decline', person_id: rahul.id } });
     // A button that was never on the card is refused too.
     sent = h.go.requests.length;
     const never = await tap(rahul, { card_id: 'c_pay_tap', action_id: 'pay_twice' });
