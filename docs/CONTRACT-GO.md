@@ -213,6 +213,12 @@ error `-32601`; params that do not match the contract with `422`, `data.code: "i
   and `payer_person_id: personal.person_id`; `amount_minor` at most the approval's, in its currency. Anything else is
   `409` (`data.code: "conflict"`) and the approval stays unused. On success the approval is marked used, as for a group
   one. A group approval cannot be used for a booking with no `decision_id`, nor a personal approval for one with a vote.
+- **`vault_link` · `display`** (1.3): the Server passes the app's `display` through. It asks for `embedded` only with
+  `start` `home` (or none); for any other page it refuses the app itself (`422`) and does not ask you.
+- **`WorkingCard.live_url`** reaches the app on the card and is written nowhere else: not in the Server's logs, and
+  blanked in its test traffic log. **You do not get it back:** the card in `message.created`, `message.edited` and
+  `read_messages` comes without `live_url`, so the link is not kept in the Server's queue of events. Everything else on
+  the card is as you sent it.
 - **`add_vote_options`** (1.3) is in the contract but the Server does not answer it yet (`-32601`, unknown method),
   and does not yet call `place_info` or `get_option_details`. An `options` card may hold up to 10 options, and
   `OptionsCard.decision_id`, `Option.url`, `WorkingCard.live_url` pass through to the app as you send them.

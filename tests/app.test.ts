@@ -396,6 +396,27 @@ describe('the You screen', () => {
     expect(h.go.requests.at(-1)).toEqual({ method: 'vault_link', params: { kind: 'vault', person_id: priya.id, start: 'add_card' } });
   });
 
+  it('opens the vault inside the app (display embedded, 1.3) for its home only; another page is refused before Go is asked', async () => {
+    for (const body of [{ display: 'embedded' }, { start: 'home', display: 'embedded' }]) {
+      expect((await api(priya, 'POST', '/app/v1/me/vault-link', body)).status).toBe(200);
+      expect(h.go.requests.at(-1)).toEqual({ method: 'vault_link', params: { kind: 'vault', person_id: priya.id, ...body } });
+    }
+    const asked = h.go.requests.length;
+    const refused = await api(priya, 'POST', '/app/v1/me/vault-link', { start: 'add_card', display: 'embedded' });
+    expect(refused.status).toBe(422);
+    expect(refused.body.error).toMatchObject({ code: 'invalid', field: 'display' });
+    expect(h.go.requests).toHaveLength(asked);
+    expect((await api(priya, 'POST', '/app/v1/me/vault-link', { display: 'popup' })).status).toBe(422);
+    // The link is never cached, and never kept for a replay: the same Idempotency-Key again asks Go for a fresh one.
+    const send = () => h.app.inject({ method: 'POST', url: '/app/v1/me/vault-link', payload: { display: 'embedded' }, headers: { authorization: `Bearer ${priya.token}`, 'idempotency-key': 'vault-key-1' } });
+    const first = await send();
+    expect(first.headers['cache-control']).toBe('no-store');
+    const before = h.go.requests.length;
+    expect((await send()).headers['idempotent-replayed']).toBeUndefined();
+    expect(h.go.requests).toHaveLength(before + 1);
+    expect((await h.pool.query(`select 1 from idempotency_keys where path = '/app/v1/me/vault-link'`)).rowCount).toBe(0);
+  });
+
   it('asks only for the signed-in person: nobody can read another person\'s page', async () => {
     await api(priya, 'GET', '/app/v1/me/go');
     expect(h.go.requests.at(-1)!.params.person_id).toBe(priya.id);

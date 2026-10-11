@@ -20,6 +20,50 @@ const until = async (ok: () => boolean, ms = 5000) => {
   }
 };
 
+describe('the traffic log and Go\'s live view link (rev 5 R7)', () => {
+  it('the handler gets the card with its live_url; the traffic log gets it blanked, wherever it sits', async () => {
+    const go = new MockGo();
+    const base = await go.listen();
+    const got: any[] = [];
+    const logged: any[] = [];
+    const socket = new GoSocket({
+      url: `${base}/v1/socket?instance=t`, secret: go.secret, log: () => {}, traffic: (e) => logged.push(e),
+      handlers: { post_message: async (p) => (got.push(p), { message_id: 'm_1', seq: 1 }) },
+    });
+    const live = 'https://live.go.example/v/abc#token=s3cret';
+    try {
+      socket.start();
+      await go.untilConnected();
+      await go.call('post_message', { request_id: 'r_live', trip_id: 't_goa', text: 'Searching', card: { card_id: 'c_w', kind: 'working', fallback_text: 'Searching', task_id: 'tk_1', title: 'Searching ixigo', state: 'running', steps: [], updated_at: '2026-10-11T06:00:00Z', live_url: live } });
+    } finally {
+      socket.stop();
+      await go.close();
+    }
+    expect(got[0].card.live_url).toBe(live);
+    expect(logged.find((e) => e.kind === 'go_request').params.card.live_url).toBe('[not logged]');
+    expect(JSON.stringify(logged)).not.toContain('s3cret');
+  });
+
+  it('the link is kept on the card for the app and nowhere else: not in the event queued for Go, nor in what Go reads back', async () => {
+    const h = await startHarness();
+    try {
+      const card = (live_url: string) => ({ card_id: 'c_live', kind: 'working', fallback_text: 'Searching', task_id: 'tk_1', title: 'Searching ixigo', state: 'running', steps: [], updated_at: '2026-10-11T06:00:00Z', live_url });
+      const posted = await h.go.call('post_message', { request_id: 'r_live_1', trip_id: 't_goa', text: 'Searching', card: card('https://live.go.example/v/abc#token=s3cret1') });
+      expect(posted.error).toBeUndefined();
+      expect((await h.go.call('replace_card', { trip_id: 't_goa', card: card('https://live.go.example/v/abc#token=s3cret2') })).error).toBeUndefined();
+      expect((await rows(h.pool, `select card->>'live_url' as url from messages where card_id = 'c_live'`))[0].url).toBe('https://live.go.example/v/abc#token=s3cret2');
+      const queued = await rows(h.pool, `select body from outbox where trip_id = 't_goa'`);
+      expect(queued.some((r: any) => JSON.stringify(r.body).includes('c_live'))).toBe(true); // the event is there, with the card
+      expect(JSON.stringify(queued)).not.toContain('s3cret');
+      const read = await h.go.call('read_messages', { trip_id: 't_goa', after_seq: 0 });
+      expect(JSON.stringify(read.result)).toContain('c_live');
+      expect(JSON.stringify(read.result)).not.toContain('s3cret');
+    } finally {
+      await h.stop();
+    }
+  });
+});
+
 describe('the socket\'s reconnect schedule (guide: "Keeping it alive")', () => {
   it('waits 1, 2, 5, 10, then 30 seconds between tries, and keeps trying every 30 seconds', async () => {
     expect(RECONNECT_BACKOFF_SECONDS).toEqual([1, 2, 5, 10, 30]);

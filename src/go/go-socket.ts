@@ -59,6 +59,19 @@ export interface TrafficEntry {
   note?: string;
 }
 
+/**
+ * A copy for the traffic log with every `live_url` blanked: the link to Go's live view of its screen carries its token,
+ * and for 15 minutes anyone holding it can watch. It reaches the app on its card and is written nowhere else.
+ */
+export function withoutLiveLinks(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutLiveLinks);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, k === 'live_url' && typeof v === 'string' ? '[not logged]' : withoutLiveLinks(v)]));
+}
+
+/** The same for a frame that could not be read as JSON-RPC, where only its text is at hand. */
+const withoutLiveLinksText = (raw: string): string => raw.replace(/("live_url"\s*:\s*")(?:[^"\\]|\\.)*/g, '$1[not logged]');
+
 export class GoSocket {
   private ws: WebSocket | null = null;
   private attempt = 0;
@@ -71,7 +84,7 @@ export class GoSocket {
   private trace(entry: TrafficEntry): void {
     if (!this.opts.traffic) return;
     try {
-      this.opts.traffic(entry);
+      this.opts.traffic(entry.params === undefined ? entry : { ...entry, params: withoutLiveLinks(entry.params) });
     } catch {
       // a broken traffic log must never break the socket
     }
@@ -157,11 +170,11 @@ export class GoSocket {
       frame = JSON.parse(raw);
       if (frame === null || typeof frame !== 'object' || Array.isArray(frame)) throw new Error('not a frame');
     } catch {
-      this.trace({ kind: 'bad_frame', note: raw.slice(0, 500) });
+      this.trace({ kind: 'bad_frame', note: withoutLiveLinksText(raw).slice(0, 500) });
       return ws.send(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'cannot read the frame' } }));
     }
     if (frame.jsonrpc !== '2.0' || (typeof frame.method !== 'string' && !('result' in frame) && !('error' in frame))) {
-      this.trace({ kind: 'bad_frame', note: raw.slice(0, 500) });
+      this.trace({ kind: 'bad_frame', note: withoutLiveLinksText(raw).slice(0, 500) });
       // Neither a request, a notification nor an answer: not a JSON-RPC frame.
       return ws.send(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'not a JSON-RPC 2.0 frame' } }));
     }

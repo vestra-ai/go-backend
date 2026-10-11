@@ -369,6 +369,8 @@ const vaultLink = {
   additionalProperties: false,
   properties: {
     start: { type: 'string', enum: ['home', 'add_card', 'add_login', 'add_documents'] },
+    // 1.3 (rev 5 R8): where the app opens the page. `embedded` is inside the app, and only for the vault's home.
+    display: { type: 'string', enum: ['sheet', 'embedded'] },
     context: {
       type: 'object',
       additionalProperties: false,
@@ -631,6 +633,7 @@ export interface CarryOverBody {
 
 export interface VaultLinkBody {
   start?: 'home' | 'add_card' | 'add_login' | 'add_documents';
+  display?: 'sheet' | 'embedded';
   context?: { trip_id: string; purpose: 'visa' };
 }
 

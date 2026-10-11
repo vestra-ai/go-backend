@@ -27,7 +27,7 @@ Asks sent to Go: `docs/GO-TEAM-REV5.md`, `docs/GO-TEAM-REV5-BUGS.md`.
 | Block | Outcome | Depends on | Status |
 |---|---|---|---|
 | B1 | Go's 1.3.0 contract files; personal spend approval in place of the ticket form; 10 options | none | done, committed |
-| B2 | C: `live_url` passes through unlogged; `POST /me/vault-link` takes `display`, embedded for home only | B1 | not started |
+| B2 | C: `live_url` passes through unlogged; `POST /me/vault-link` takes `display`, embedded for home only | B1 | done, committed |
 | B3 | E: option details on demand, cached an hour when complete | B1 | not started |
 | B4 | B: idea photos, daily refresh through `place_info`, partial answers never replace kept photos | B1 | not started |
 | B5 | A: `OptionsCard.decision_id` checked on post, `add_vote_options`, `decision.options_added` | B1 | not started |
@@ -78,6 +78,41 @@ Asks sent to Go: `docs/GO-TEAM-REV5.md`, `docs/GO-TEAM-REV5-BUGS.md`.
 
 ### Not proven
 - A real personal payment end to end against production Go and its vault.
+
+## B2 candidate
+- `POST /app/v1/me/vault-link` accepts `display` (`sheet` | `embedded`) and passes it to Go's `vault_link`. `embedded`
+  with a `start` other than `home` is refused 422 `display` before Go is asked (Go would answer 409). The route now
+  answers `cache-control: no-store` and is never kept for an Idempotency-Key replay.
+- `live_url` reaches the app on its card (stored and served as it arrived) and is written nowhere else: dropped from
+  every card that goes back to Go (`cardForGo` in `messageForGo`: the outbox's `message.created` and `message.edited`,
+  and `read_messages`), and blanked in the opt-in traffic log (`LOG_GO_TRAFFIC`), an unreadable frame's text included.
+- Docs: CONTRACT-APP and API (the vault row, the live view), CONTRACT-GO.
+
+### Evidence
+- `tsc --noEmit` clean. Full suite: 64 files, 580 tests passing (+3 cases; 6 of 50 used).
+- Mutation proofs (each restored): no home-only check → the embedded test fails; no traffic-log blanking → its test
+  fails; the card back to Go with its link → the outbox test fails; the idempotency record not cleared → the replay
+  assertion fails.
+- UI evidence: not applicable.
+
+### Reviews
+- **Opus 5.5 code review** (`claude-opus-5-5`, medium), session `602f3d83-3f85-49b4-a821-83c0eddd25ed`.
+  - Call 1 (92 s): CHANGES REQUESTED. Major: `live_url` was kept in the outbox through `message.created`. Fixed at the
+    mapper. Minor: an unreadable frame was logged unblanked. Fixed. Minor, pre-existing: the vault link was kept for an
+    Idempotency-Key replay and had no `no-store`. Fixed for this route.
+  - Call 2 (29 s): APPROVE. Minor: CONTRACT-GO did not say the card comes back without `live_url`: fixed. Minor: the
+    text blanking stopped at an escaped quote: fixed.
+  - 2 of 3 calls, 121 s of 480.
+- **Fable 5.1 final QC** (`claude-fable-5-1`, medium), session `9588a247-9815-418e-8a54-a671a564e13a`, call 1 of 3,
+  191 s of 480. Verdict: APPROVE. Minor: a vault-link answer stored under a key before this change is still replayed
+  for up to 24 hours (transitional; recorded below). Minor: this record was behind the candidate (now updated). Minor:
+  the text blanking only knows the JSON key form (accepted: test-only log, no such frame from Go).
+
+### Follow-ups, not in this block
+- The card tap route's `open` answer can carry a vault link and is still kept for replay when the app sends an
+  `Idempotency-Key` (pre-existing). Owner's decision.
+- Vault-link answers stored under a key before this change replay for up to 24 hours after deploy, then age out.
+- Outbox rows written before this change may hold a live link Go already sent; such links expire after 15 minutes.
 
 ## Storage
 - Canonical: this file; the plan. Scratch (disposable, session `dcbcd553`): the session scratchpad under

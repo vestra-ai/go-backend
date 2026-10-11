@@ -42,6 +42,16 @@ export const actorOf = (row: Pick<MessageRow, 'author_kind' | 'author_person_id'
   (row.author_kind === 'person' ? { kind: 'person', person_id: row.author_person_id! } : { kind: row.author_kind }) as unknown as Actor;
 
 /**
+ * A card as it goes back to Go, in an event or a read: without `live_url` (1.3). The link to Go's live view carries its
+ * token and is Go's own, so Go loses nothing; and an event is kept in the outbox, where the link must not be written.
+ */
+function cardForGo(card: MessageRow['card']): Message['card'] | undefined {
+  if (!card) return undefined;
+  const { live_url: _dropped, ...rest } = card as Record<string, unknown>;
+  return rest as Message['card'];
+}
+
+/**
  * A message as Go may see it. A deleted message has no text. A message from someone who paused
  * Go keeps its change number but has no words, attachments, mentions or "ask Go about this".
  */
@@ -59,7 +69,7 @@ export function messageForGo(row: MessageRow, reactions: ReactionRow[]): Message
     mentions_go: row.withheld ? false : row.mentions_go,
     mentions: row.withheld ? [] : row.mentions,
     reactions: reactions.map(reactionOf),
-    card: (row.card as Message['card']) ?? undefined,
+    card: cardForGo(row.card),
     quick_replies: row.quick_replies ?? undefined, // 1.1
     visible_to_person_ids: row.visible_to_person_ids ?? undefined, // official since 1.2: Go sees every message, and whom it is for
     withheld: row.withheld,

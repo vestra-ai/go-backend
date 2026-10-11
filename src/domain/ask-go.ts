@@ -168,9 +168,12 @@ export type VaultStart = NonNullable<VaultLinkBody['start']>;
 /** Why the vault page is opened (GO-CHANGES 2.2): the visa form for a trip. Passport data never touches the server. */
 export type VaultContext = NonNullable<VaultLinkBody['context']>;
 
-/** A short-lived link to the person's vault page, for the system browser sheet. Never kept, never put in a push. */
-export const vaultLink = (go: GoClient, personId: string, start?: VaultStart, context?: VaultContext) =>
-  askGo(go, 'vault_link', { kind: 'vault', person_id: personId, ...(start ? { start } : {}), ...(context ? { context } : {}) });
+/**
+ * A short-lived link to the person's vault page: for the system browser sheet, or with `display: "embedded"` (1.3) for a
+ * frame inside the app. Never kept, never put in a push.
+ */
+export const vaultLink = (go: GoClient, personId: string, start?: VaultStart, context?: VaultContext, display?: VaultLinkBody['display']) =>
+  askGo(go, 'vault_link', { kind: 'vault', person_id: personId, ...(start ? { start } : {}), ...(display ? { display } : {}), ...(context ? { context } : {}) });
 
 /**
  * "Forget me", in one trip or everywhere, including trips the person has left. Go deletes what it learned
