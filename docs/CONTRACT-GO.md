@@ -119,7 +119,7 @@ Every event is `{ event_id, trip_id, seq, occurred_at, type, data }`.
 ### 3.3 System messages
 
 The Server posts messages with `author: { "kind": "system" }` and text only: "Trip created · Rahul joined", "Priya
-joined", "Priya left", "Villa Sol won · 4 votes", "Villa Sol booked", the anchor of a poll a person opened (with a
+joined", "Priya left", "Villa Sol won · 4 votes" ("Villa Sol chosen" in a trip of one), "Villa Sol booked", the anchor of a poll a person opened (with a
 `vote` card), and, new in rev 4, **a line for every money movement, including the expenses Go adds**:
 
 ```

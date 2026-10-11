@@ -324,7 +324,7 @@ const castVote = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    option_index: { type: 'integer', minimum: 0, maximum: 9 },
+    option_index: { type: 'integer', minimum: 0, maximum: 19 },
     flexible: { type: 'boolean', enum: [true] },
   },
 } as const;

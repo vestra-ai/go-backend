@@ -108,6 +108,14 @@ describe('a person-opened vote, a decided vote, a booking', () => {
     expect((await pills(trip)).at(-1)!.text).toBe('Tie?'); // the anchor; no "won"
   });
 
+  it('in a trip of one the line reads "Denpasar chosen": there is nobody to win against', async () => {
+    const meher = await h.signIn('Meher');
+    const solo = (await t.api(meher, 'POST', '/app/v1/trips', { title: 'Bali' })).body.trip_id as string;
+    const d = (await t.api(meher, 'POST', `/app/v1/trips/${solo}/decisions`, { client_id: 'poll-solo', question: 'Where to?', kind: 'choice', anonymous: false, options: [{ label: 'Denpasar' }, { label: 'Ubud' }] })).body.decision.decision_id;
+    expect((await t.api(meher, 'PUT', `/app/v1/trips/${solo}/decisions/${d}/vote`, { option_index: 0 })).body.status).toBe('closed');
+    expect((await pills(solo)).at(-1)!.text).toBe('Denpasar chosen');
+  });
+
   it('"Villa Sol booked" after a booking a person adds, and after one Go adds', async () => {
     const r = await t.api(rahul, 'POST', `/app/v1/trips/${trip}/bookings`, { kind: 'stay', title: 'Villa Sol', vendor: 'ixigo', ref: 'R', amount_minor: 100, payer_person_id: rahul.id, for_person_ids: [rahul.id, priya.id] });
     expect(r.status).toBe(201);

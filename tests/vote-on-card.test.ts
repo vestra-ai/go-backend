@@ -69,6 +69,10 @@ describe('a vote on the options card, and "see more" joining it', () => {
     expect((await call('add_vote_options', { decision_id: d, options: stays(11, 10) })).error).toBeUndefined(); // 20
     expect((await call('add_vote_options', { decision_id: d, options: stays(21, 1) })).error).toMatchObject({ code: 422, data: { code: 'invalid' } });
     expect((await read('p_priya', d)).options).toHaveLength(20);
+    expect((await vote('p_priya', d, 19)).status).toBe(200); // the 20th option, one "see more" brought
+    expect((await vote('p_arjun', d, 20)).status).toBe(422); // there is no 21st
+    const twentieth = await read('p_priya', d);
+    expect([twentieth.my_vote, twentieth.tally[19]]).toEqual([{ option_index: 19 }, 1]);
     expect((await call('add_vote_options', { decision_id: 'd_nope', options: stays(1, 1) })).error).toMatchObject({ code: 404 });
     expect((await call('add_vote_options', { decision_id: d, options: [] })).error).toMatchObject({ code: 422 }); // the contract: at least one
     const other = await openVote(2);

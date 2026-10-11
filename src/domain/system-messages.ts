@@ -43,5 +43,6 @@ export async function personName(db: Db, personId: string): Promise<string> {
 export const tripCreatedText = (name: string) => `Trip created · ${name} joined`;
 export const joinedText = (name: string) => `${name} joined`;
 export const leftText = (name: string) => `${name} left`;
-export const decidedText = (label: string, votes: number) => `${label} won · ${votes} ${votes === 1 ? 'vote' : 'votes'}`;
+// A trip of one has nobody to vote with, so nothing "won": the line says what was chosen.
+export const decidedText = (label: string, votes: number, of: number) => of === 1 ? `${label} chosen` : `${label} won · ${votes} ${votes === 1 ? 'vote' : 'votes'}`;
 export const bookedText = (title: string) => `${title} booked`;
