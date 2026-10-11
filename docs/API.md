@@ -517,8 +517,9 @@ Go's in-app link `go://trips/<trip>/sheet/budget` opens the group budget editor.
 **A booking fills the trip's empty fields.** When a booking is added (Approve on Go's pay card, Go's own booking, or
 one a person adds), the trip takes from its confirmed bookings whatever it does not have yet. Nothing set is ever
 overwritten:
-- `destination`: the stay's place, else the city the outbound flight, train or bus lands in (for example "Goa" for
-  Mopa's airport GOX);
+- `destination`: a place, never the hotel: the city the outbound flight, train or bus lands in (for example "Goa"
+  for Mopa's airport GOX), else the town or state of the stay's address ("Anjuna, Goa 403509" gives "Goa"; "Manali,
+  Himachal Pradesh" gives "Manali"). With no address it stays empty;
 - `stay`: the stay's name;
 - `dates`: the stay's check-in to check-out; else, only when both a going and a return journey are booked, the going
   departure date to the return arrival date (a one-way flight sets no dates).

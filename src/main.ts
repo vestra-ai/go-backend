@@ -1,3 +1,4 @@
+import { repairStayDestinations } from './domain/trip-from-booking.js';
 import { randomBytes } from 'node:crypto';
 import { createWriteStream, mkdirSync } from 'node:fs';
 import { buildApp } from './api/app.js';
@@ -102,3 +103,6 @@ const shutdown = async () => {
 };
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
+
+// One-time (12 Oct 2026): trips whose destination was filled with a stay's hotel name get the place instead.
+void repairStayDestinations(ctx).then((n) => console.log(`trip destinations repaired: ${n}`), (err) => console.error('trip destination repair failed', err));

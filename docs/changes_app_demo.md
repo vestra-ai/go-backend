@@ -55,7 +55,8 @@ For the demo, a booking made by **Approve** on Go's pay card now looks like a re
 A person can go straight to booking a Goa flight or a stay without the group ever setting the trip's place or dates.
 After any booking (Approve on the pay card, Go's own booking, or one added by hand), the trip now takes whatever it
 **doesn't have yet** from its confirmed bookings. A value a person or Go set is never overwritten.
-- **Destination:** the stay's place, else the city the outbound flight lands in ("Goa", not the airport town "Mopa").
+- **Destination:** a place, never the hotel's name: the city the outbound flight lands in ("Goa", not the airport town
+  "Mopa"), else the town or state from the stay's address ("Anjuna, Goa" gives "Goa").
 - **Stay:** the stay's name.
 - **Dates:** the stay's check-in to check-out. From flights, only when both a going and a return flight are booked
   (going departure date to return arrival date). A one-way flight leaves the dates empty.
