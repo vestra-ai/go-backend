@@ -4,7 +4,9 @@ import { SocketCallError } from '../go/go-socket.js';
 import { closeDecision } from '../domain/voting.js';
 import { sweepUploads } from '../api/v1/uploads.js';
 import { sweepLiveTickets } from '../live/ws.js';
+import type { GoClient } from '../domain/ask-go.js';
 import { sweepIdempotency } from './idempotency.js';
+import { refreshIdeas } from './ideas.js';
 
 /** Closes every open vote whose time has run out (reason `time`). Safe to run on every instance at once. */
 export async function closeDueVotes(ctx: Ctx): Promise<number> {
@@ -22,7 +24,7 @@ export async function closeDueVotes(ctx: Ctx): Promise<number> {
   return closed;
 }
 
-export function startJobs(ctx: Ctx, log: (m: string, e?: unknown) => void = console.error, everyMs = 15_000): () => void {
+export function startJobs(ctx: Ctx, log: (m: string, e?: unknown) => void = console.error, everyMs = 15_000, go?: GoClient & { connected?: boolean }): () => void {
   const run = async () => {
     try {
       await closeDueVotes(ctx);
@@ -32,6 +34,8 @@ export function startJobs(ctx: Ctx, log: (m: string, e?: unknown) => void = cons
     await sweepIdempotency(ctx).catch((err) => log('idempotency sweep failed', err));
     await sweepUploads(ctx).catch((err) => log('uploads sweep failed', err));
     await sweepLiveTickets(ctx).catch((err) => log('live tickets sweep failed', err));
+    // One idea a round: each is asked about once a day, so the whole list is spread over the day's first minutes.
+    if (go) await refreshIdeas(ctx, go).catch((err) => log('ideas refresh failed', err));
   };
   const timer = setInterval(run, everyMs);
   return () => clearInterval(timer);

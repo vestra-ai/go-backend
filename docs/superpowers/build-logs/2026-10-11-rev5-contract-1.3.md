@@ -29,7 +29,7 @@ Asks sent to Go: `docs/GO-TEAM-REV5.md`, `docs/GO-TEAM-REV5-BUGS.md`.
 | B1 | Go's 1.3.0 contract files; personal spend approval in place of the ticket form; 10 options | none | done, committed |
 | B2 | C: `live_url` passes through unlogged; `POST /me/vault-link` takes `display`, embedded for home only | B1 | done, committed |
 | B3 | E: option details on demand, cached an hour when complete | B1 | done, committed |
-| B4 | B: idea photos, daily refresh through `place_info`, partial answers never replace kept photos | B1 | not started |
+| B4 | B: idea photos, daily refresh through `place_info`, partial answers never replace kept photos | B1 | done, committed |
 | B5 | A: `OptionsCard.decision_id` checked on post, `add_vote_options`, `decision.options_added` | B1 | not started |
 
 ## B1 candidate
@@ -157,6 +157,45 @@ Asks sent to Go: `docs/GO-TEAM-REV5.md`, `docs/GO-TEAM-REV5-BUGS.md`.
 - Rooms in a kept answer may reflect the trip's people as they were up to an hour ago.
 - Several people opening the same unkept option at once each ask Go (bounded by the per-person limit).
 - Kept rows for a deleted message stay until the trip is reset; they cannot be read.
+
+## B4 candidate
+- Migration `016_idea_photos.sql`: `ideas` gains `photos`, `best_months`, `refresh_tried_at`, `refreshed_at` (all
+  nullable; no existing row changes).
+- `src/jobs/ideas.ts` `refreshIdeas`: claims up to `max` ideas not asked about in 24 hours (marks them tried, `for
+  update skip locked`), asks Go `place_info`, keeps a whole answer. Not run while the socket is down. Started from
+  `startJobs` (one idea per 15-second round) with the Go socket passed from `main.ts`.
+- `GET /discover/ideas` adds `photos` and `best_months`; `image_url` falls back to the first photo.
+- Decision 2 of the plan (a static placeholder until Go answers): the app already keeps a fallback illustration when
+  `image_url` is absent, so nothing was added.
+- Docs: CONTRACT-APP, API, CONTRACT-GO.
+
+### Evidence
+- `tsc --noEmit` clean. Full suite: 66 files, 588 tests passing (+3 cases; 14 of 50 used).
+- Mutation proofs (each restored): partial answers kept → the "keeps the photos it has" test fails; empty photos
+  replacing kept ones → it fails; no once-a-day rule → the once-a-day test fails; asking while Go is down → it fails;
+  not handing back an ask the socket dropped under → it fails; claiming one more than asked → it fails.
+- Rule settled after review: a whole answer is Go's newest word and replaces what is kept field by field, even with
+  fewer photos; only an answer with no photo at all leaves the kept photos.
+- Migration: applies with 001 to 015 to an empty database in the suite. Not run against Supabase.
+- UI evidence: not applicable.
+
+### Reviews
+- **Opus 5.5 code review** (`claude-opus-5-5`, medium), session `9e170cdf-70df-4cb2-ad6a-0e129815df9e`, call 1 of 3,
+  98 s of 480. Verdict: APPROVE, six minors: (1) a whole answer with fewer photos replaces a fuller set: kept as the
+  rule, wording corrected; (2) `photo_url` alone yielded nothing: now a single photo; (3) the claim might exceed
+  `max` under some plans: materialized CTE and a test; (4) an oversized duration failed the update: not taken; (5) a
+  socket dropping mid-ask spent the day's try: handed back when still down at the timeout; (6) a non-Go error
+  abandoned the rest of a batch: the rest are still asked about.
+- **Fable 5.1 final QC** (`claude-fable-5-1`, medium), session `f04573e2-a33b-4b55-8571-8a0847f84a39`, call 1 of 3,
+  187 s of 480. Verdict: APPROVE, four minors: (1) a photo's `label: null` reached the app: now left out (applied
+  after the verdict, as the reviewer described; covered by the first test); (2) docs said `image_url` is the first
+  photo while a curated image wins: docs aligned; (3) the hand-back is narrower than its comment read: comment
+  corrected; (4) a failed store after a whole answer costs the day's try: as designed.
+  Unreviewed by it: `startJobs` driving the job on its timer through a real socket (type-checked only).
+
+### Follow-ups, not in this block
+- The owner may prefer "keep the larger set of photos" over "a whole answer wins".
+- Go's photo links must not expire (asked in CONTRACT-GO).
 
 ## Storage
 - Canonical: this file; the plan. Scratch (disposable, session `dcbcd553`): the session scratchpad under

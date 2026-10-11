@@ -67,7 +67,7 @@ const sender = new OutboxSender({
 sender.start();
 
 // 3. Votes that run out of time.
-const stopJobs = startJobs(ctx);
+const stopJobs = startJobs(ctx, undefined, undefined, go);
 
 // 4. The app's API.
 // Sign-in: Supabase access tokens, or our dev tokens for local testing (refused in production by loadConfig).

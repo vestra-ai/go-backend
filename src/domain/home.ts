@@ -208,6 +208,10 @@ export interface Idea {
   tag: string;
   travel: { mode: 'flight' | 'car' | 'train' | 'bus'; duration_minutes: number };
   image_url?: string;
+  /** Rev 5: up to 12 photos of the place from Go (`{ url, label? }`), once Go has answered about it. */
+  photos?: Array<{ url: string; label?: string | null }>;
+  /** The best months to go, 1 to 12, when Go knows them. */
+  best_months?: number[];
   /** What to send POST /trips as `destination_hint` when the idea is tapped. */
   destination_hint: string;
 }
@@ -220,14 +224,14 @@ export async function ideasFor(ctx: Ctx, personId: string, fromCity: string | un
   let origin = fromCity?.trim() || null;
   if (!origin) origin = (await ctx.pool.query('select from_city_default from people where person_id = $1', [personId])).rows[0]?.from_city_default ?? null;
   const rowsOf = async (city: string | null) => (await ctx.pool.query(
-    `select idea_id, name, tag, travel_mode, duration_minutes, image_url, destination_hint from ideas
+    `select idea_id, name, tag, travel_mode, duration_minutes, image_url, photos, best_months, destination_hint from ideas
       where ${city === null ? 'from_city is null' : 'lower(from_city) = lower($2)'} order by rank, idea_id limit $1`,
     city === null ? [limit] : [limit, city],
   )).rows;
   let rows = origin ? await rowsOf(origin) : [];
   if (rows.length === 0) rows = await rowsOf(null);
   return {
-    items: rows.map((r) => compact({ idea_id: r.idea_id, name: r.name, tag: r.tag, travel: { mode: r.travel_mode, duration_minutes: r.duration_minutes }, image_url: r.image_url ?? undefined, destination_hint: r.destination_hint })),
+    items: rows.map((r) => compact({ idea_id: r.idea_id, name: r.name, tag: r.tag, travel: { mode: r.travel_mode, duration_minutes: r.duration_minutes }, image_url: r.image_url ?? r.photos?.[0]?.url ?? undefined, photos: r.photos ?? undefined, best_months: r.best_months ?? undefined, destination_hint: r.destination_hint })),
     from_city: origin,
   };
 }

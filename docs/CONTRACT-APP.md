@@ -205,7 +205,7 @@ interface Owed { trip_id: Id; trip_title: string; to: PersonLite; amount_minor: 
 interface PastTripSummary { trip_id: Id; title: string; photo_url?: string; dates?: { start: string; end: string }; people_count: number; all_settled: boolean }
 /** One open item of mine on the home screen (§4.2): the trip's NeedsYouItem (§4.11), and which trip. `trip_title` is the automatic name (§4.4). */
 type HomeNeedsYouItem = NeedsYouItem & { trip_id: Id; trip_title: string };
-interface Idea { idea_id: string; name: string; tag: string; travel: { mode: "flight" | "car" | "train" | "bus"; duration_minutes: number }; image_url?: string; destination_hint: string }
+interface Idea { idea_id: string; name: string; tag: string; travel: { mode: "flight" | "car" | "train" | "bus"; duration_minutes: number }; image_url?: string; photos?: { url: string; label?: string }[]; best_months?: number[]; destination_hint: string }
 
 // ---- one trip (§4.4) --------------------------------------------------------
 interface TripView extends TripSnapshot {               // the contract's TripSnapshot as the app may see it (§1.7 applied)
@@ -419,8 +419,11 @@ am in that are not over, `past_trips` = over).
 
 `GET /discover/ideas?from_city=<name ≤ 60>&limit=<1-20, default 8>` → `{ "items": [Idea], "from_city": string | null }`
 (`private, max-age=86400`). A curated table on the Server: the rows for the city asked for (else my profile `from_city`,
-else none), falling back to a general set when the city has none. `image_url` may be absent: keep a fallback
-illustration. Tapping an idea ⇒ `POST /trips` with its `destination_hint`.
+else none), falling back to a general set when the city has none. Tapping an idea ⇒ `POST /trips` with its
+`destination_hint`. **Photos (rev 5):** once Go has answered about a place, the idea carries `photos` (up to 12 of
+`{ url, label? }`), `image_url` is the first of them unless the idea has a curated image, and `best_months` (1 to 12) and Go's `tag` and way there may
+replace the curated ones. The Server asks Go about each idea at most once a day, in the background; nobody waits on
+it. Until Go has answered, `photos` and `image_url` are absent: **keep the fallback illustration**.
 
 ### 4.3 Invites
 

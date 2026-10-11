@@ -224,8 +224,13 @@ error `-32601`; params that do not match the contract with `422`, `data.code: "i
   can see the card. `complete: false` is shown and not kept. A `409`, a timeout or an answer outside the contract
   shows the last kept answer, else the card's own `details`; a `404` drops what was kept. `replace_card` drops what was
   kept for that card, so the next open asks you again. At most 10 asks a minute per person per trip.
-- **`add_vote_options`** (1.3) is in the contract but the Server does not answer it yet (`-32601`, unknown method),
-  and does not yet call `place_info`. An `options` card may hold up to 10 options, and
+- **`place_info`** (1.3): asked by a background job, never while a person waits; about each idea of the home
+  carousel at most once every 24 hours whether or not you answered, one idea every 15 seconds, and not while the socket
+  is down. `{ name, from_city? }`: `from_city` is absent for the ideas shown when the person's city is unknown. A whole
+  answer's `place.photos` (the first 12), `tag`, `best_months` and, when a city was sent, `travel` are kept (`cab` and
+  `drive` are shown as car). `complete: false`, a refusal or an answer with no photos leaves the kept photos as they
+  were. The photo links are handed to the app as you sent them and kept until your next answer, so they must not expire.
+- **`add_vote_options`** (1.3) is in the contract but the Server does not answer it yet (`-32601`, unknown method). An `options` card may hold up to 10 options, and
   `OptionsCard.decision_id`, `Option.url`, `WorkingCard.live_url` pass through to the app as you send them.
 - **`post_message` · cards.** A card is stored exactly as sent and reaches the app unchanged, so every field below
   passes through. `mentions` and a card's `for_person_ids` put the message in those people's "needs you" list.
