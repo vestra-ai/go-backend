@@ -32,7 +32,7 @@ Not secret (set on the service):
 | `PUBLIC_BASE_URL` | the web app's public address: invite links are `<it>/invite/<code>` (production: `https://go-frontend-three.vercel.app`) |
 | `APP_ORIGINS` | the web app's exact address(es), comma-separated, no wildcard |
 | `SUPABASE_STORAGE_BUCKET` | `go-files`: the private Storage bucket (above). Default `go-files` when unset |
-| `GO_CONTRACT` | `1.0` (the default, and what Go spoke on 8 Oct 2026): a re-split expense takes its change number but sends no event, because Go 1.0's `expense.changed` knows only `added` and `removed`; Go reads the expense's state on its next `read_trip`. Set `1.1` the day Keshav's team ships `docs/GO-CHANGES.md` |
+| `GO_CONTRACT` | Go's contract version as its `/v1/health` says it (production: `1.3.0`); any 1.x from 1.1 up sends a re-split expense as `expense.changed updated`. `1.0` (the default, and what Go spoke on 8 Oct 2026): a re-split expense takes its change number but sends no event, because Go 1.0's `expense.changed` knows only `added` and `removed`; Go reads the expense's state on its next `read_trip`. Set `1.1` the day Keshav's team ships `docs/GO-CHANGES.md` |
 | `FEATURE_*` | the feature flags (below), only the ones to change from their defaults |
 
 Secret (pasted by a person in Railway → service → Variables → Raw Editor; never in git or chat):

@@ -47,10 +47,16 @@ export interface Config {
 
 export type GoContract = '1.0' | '1.1';
 
+/**
+ * GO_CONTRACT is the version Go's side speaks, as Go's /v1/health writes it ("1.3.0") or short ("1.1"). What the Server
+ * does differently depends only on 1.0 against 1.1 and later, so any 1.x from 1.1 up behaves as 1.1 (11 Oct 2026: Go asked
+ * for "1.3.0"). Anything that is not a 1.x version stops the start, so a typo never runs as the wrong contract.
+ */
 export function goContractOf(env: NodeJS.ProcessEnv = process.env): GoContract {
-  const v = env.GO_CONTRACT || '1.0';
-  if (v !== '1.0' && v !== '1.1') throw new Error(`GO_CONTRACT must be 1.0 or 1.1, not ${v}`);
-  return v;
+  const v = (env.GO_CONTRACT || '1.0').trim();
+  const m = /^1\.(\d{1,3})(?:\.\d{1,3})?$/.exec(v);
+  if (!m) throw new Error(`GO_CONTRACT must be a 1.x version such as 1.0, 1.1 or 1.3.0, not ${v}`);
+  return Number(m[1]) === 0 ? '1.0' : '1.1';
 }
 
 /**
