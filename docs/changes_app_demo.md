@@ -89,7 +89,8 @@ booking without dates as "Dates to be confirmed", not as an error.
    by Go, the people new to the split are added to the booking's `for_person_ids`, in the same change. Nobody is taken
    off, `passengers` stay as they are, and never past 30 people. You get **`trip_changed kinds: ["booking"]`** with its
    own `seq`, and `home_changed` for the people added. **Do:** on that frame, re-read the bookings: the friend now has
-   the stay and its voucher in `documents[]`.
+   the stay and its voucher in `documents[]`. The same happens when the expense is first added for a booking (a
+   `booking_id` on `POST …/expenses`, or Go's) split with people the booking does not cover.
 
 ## Pending items: only what you can act on (12 Oct)
 

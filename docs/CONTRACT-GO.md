@@ -189,7 +189,9 @@ error `-32601`; params that do not match the contract with `422`, `data.code: "i
 - **`add_expense`** always creates an expense that counts at once, split equally among `split_person_ids` (odd minor
   units go one each to the first people in joining order). `approval_id` (1.1) names the vault payment it belongs to
   and changes nothing else. **For rooms at different prices, send one `add_expense` per room**, split among that
-  room's people.
+  room's people. With a `booking_id`, anyone in the split the booking does not cover is added to its `for_person_ids`,
+  as for `update_expense` below: after `expense.changed` and the money line you hear `booking.changed`
+  `{ change: "updated", by: { kind: "go" } }`.
 - **`update_expense`** (the Server's overlay, `contract/extensions-1.1.json`, since 12 Oct 2026): a new split for an
   expense that stands, in place. **Go: use this instead of a second `add_expense` to re-split** ("Split evenly"): a
   second expense counts the cost twice.

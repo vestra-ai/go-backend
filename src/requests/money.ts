@@ -4,7 +4,7 @@ import { once } from '../db/once.js';
 import type { Db } from '../db/pool.js';
 import { change, emit, nextSeq } from '../db/write-change.js';
 import { conflict, invalid, notFound } from '../domain/errors.js';
-import { goUpdateExpense, insertExpense, moneyChanged } from '../domain/expenses.js';
+import { coverSplitPeople, goUpdateExpense, heldBooking, insertExpense, moneyChanged } from '../domain/expenses.js';
 import { postExpenseAdded } from '../domain/ledger-lines.js';
 import { bookingOf, recordLineOf, visibleSql } from '../domain/mappers.js';
 import type { BookingRow, RecordLineRow } from '../domain/mappers.js';
@@ -92,10 +92,8 @@ export const addExpense = (ctx: Ctx) => async (p: any) =>
   once(ctx.pool, p.trip_id, p.request_id, async (db) => {
     const trip = await tripOf(db, p.trip_id);
     await assertPeopleInTrip(db, p.trip_id, [p.paid_by_person_id, ...p.split_person_ids], 'paid_by_person_id/split_person_ids');
-    if (p.booking_id) {
-      const b = await db.query('select 1 from bookings where trip_id = $1 and booking_id = $2', [p.trip_id, p.booking_id]);
-      if (!b.rowCount) throw invalid(`booking_id: ${p.booking_id} is not a booking in trip ${p.trip_id}`);
-    }
+    const booking = await heldBooking(db, p.trip_id, p.booking_id);
+    if (p.booking_id && !booking) throw invalid(`booking_id: ${p.booking_id} is not a booking in trip ${p.trip_id}`);
     if (p.amount_minor <= 0) throw invalid('amount_minor must be more than zero');
     assertCurrency(trip, p.currency);
     // A payment has one expense. The demo's payment writes its own (docs/GO-TEAM-DEMO-PAYMENT.md): a second would count the cost twice.
@@ -110,6 +108,7 @@ export const addExpense = (ctx: Ctx) => async (p: any) =>
     const seq = await change(db, p.trip_id, 'expense.changed', { expense, change: 'added', by: { kind: 'go' } });
     await moneyChanged(ctx, p.trip_id, seq);
     await postExpenseAdded({ ctx, db, tripId: p.trip_id }, expense, { kind: 'go' }); // the room's line, for Go's expenses too
+    if (booking) await coverSplitPeople(ctx, db, p.trip_id, booking, p.split_person_ids, { kind: 'go' }); // its people see the booking too
     return { expense_id: expense.expense_id, seq };
   });
 

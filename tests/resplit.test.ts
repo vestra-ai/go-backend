@@ -1,7 +1,8 @@
 // 12 Oct 2026. Go's "Split evenly" used to add a second expense (Go could only add_expense), so the totals counted the
 // cost twice: Go now re-splits in place with update_expense (the Server's overlay). And a friend added to a stay's split
 // could not open its voucher: re-splitting an expense that pays for a booking now adds the new people to the booking, by a
-// person or by Go, so they see it and its files. (Who sees a booking at all is in people-bookings.test.ts.)
+// person or by Go, so they see it and its files; so does an expense first written for a booking with people it does not
+// cover (Go's add_expense, a person's expense). (Who sees a booking at all is in people-bookings.test.ts.)
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { check } from '../src/contract/index.js';
 import { settleDemoTickets } from '../src/demo/attach.js';
@@ -209,5 +210,43 @@ describe("re-splitting a booking's expense adds the new people to the booking", 
     expect((await t.api(t.as('p_rahul'), 'PATCH', `${trip}/expenses/${stay.expense_id}`, { split_person_ids: ['p_rahul', 'p_yash'] })).status).toBe(200);
     expect((await rows(h.pool, 'select for_person_ids from bookings where booking_id = $1', [stay.booking_id]))[0].for_person_ids).toEqual([...stay.covered, 'p_yash']);
     expect((await heardSince(again)).map((e) => e.type)).toEqual(['expense.changed', 'message.created']);
+  });
+});
+
+describe('an expense first written for a booking, split with people it does not cover, adds them to the booking', () => {
+  /** Go books a room for Rahul alone, with its voucher (a covered file). */
+  const rahulsRoom = async (title: string) => {
+    const booking_id = (await ok('add_booking', { kind: 'stay', title, vendor: 'ixigo', ref: 'IXG-9', amount_minor: 2000000, currency: 'INR', payer_person_id: 'p_rahul', for_person_ids: ['p_rahul'] })).booking_id as string;
+    const document_id = `doc_${booking_id}`;
+    await h.pool.query(`insert into booking_documents (document_id, booking_id, name, mime, size_bytes, visibility, path) values ($1, $2, 'Hotel voucher.pdf', 'application/pdf', 9, 'covered', $3)`, [document_id, booking_id, `bookings/t_goa/${booking_id}/voucher.pdf`]);
+    return { booking_id, document_id };
+  };
+
+  it("through Go's add_expense: the friend it is split with sees the room and opens the voucher; Go hears booking.changed updated by Go after the expense and its line", async () => {
+    const room = await rahulsRoom('Room at Villa Sol');
+    expect(await sees('p_priya', room.booking_id, room.document_id)).toEqual([false, 404, 404]);
+    const from = await mark();
+    const liveMark = h.live.events.length;
+    const added = await goAdds(['p_rahul', 'p_priya'], { booking_id: room.booking_id, category: 'stay', amount_minor: 2000000 });
+    expect((await rows(h.pool, 'select for_person_ids from bookings where booking_id = $1', [room.booking_id]))[0].for_person_ids).toEqual(['p_rahul', 'p_priya']);
+    expect(await sees('p_priya', room.booking_id, room.document_id)).toEqual([true, 200, 302]);
+    const heard = await heardSince(from);
+    expect(heard.map((e) => [e.type, e.seq])).toEqual([['expense.changed', added.seq], ['message.created', added.seq + 1], ['booking.changed', added.seq + 2]]);
+    expect(heard[2].data).toMatchObject({ change: 'updated', by: { kind: 'go' }, booking: { booking_id: room.booking_id, for_person_ids: ['p_rahul', 'p_priya'] } });
+    const live = h.live.events.slice(liveMark).map((e) => e.event as any);
+    expect(live.filter((e) => e.kind === 'trip' && e.seq === added.seq + 2)).toEqual([{ kind: 'trip', seq: added.seq + 2, kinds: ['booking'] }]);
+  });
+
+  it("through a person's expense: the same, by that person; an expense its booking already covers changes nothing", async () => {
+    const room = await rahulsRoom('Room at Casa Luz');
+    const from = await mark();
+    const own = await t.api(t.as('p_rahul'), 'POST', `${trip}/expenses`, { amount_minor: 2000000, note: 'Casa Luz', category: 'stay', split_person_ids: ['p_rahul', 'p_meher'], booking_id: room.booking_id });
+    expect([own.status, (await rows(h.pool, 'select for_person_ids from bookings where booking_id = $1', [room.booking_id]))[0].for_person_ids]).toEqual([201, ['p_rahul', 'p_meher']]);
+    expect(await sees('p_meher', room.booking_id, room.document_id)).toEqual([true, 200, 302]);
+    expect((await heardSince(from)).find((e) => e.type === 'booking.changed').data).toMatchObject({ by: { kind: 'person', person_id: 'p_rahul' }, booking: { for_person_ids: ['p_rahul', 'p_meher'] } });
+
+    const covered = await mark();
+    expect((await t.api(t.as('p_rahul'), 'POST', `${trip}/expenses`, { amount_minor: 50000, note: 'Casa Luz breakfast', category: 'food', split_person_ids: ['p_meher', 'p_rahul'], booking_id: room.booking_id })).status).toBe(201);
+    expect((await heardSince(covered)).map((e) => e.type)).toEqual(['expense.changed', 'message.created']);
   });
 });

@@ -157,8 +157,8 @@ Every non-2xx answer has this body, and every answer (2xx too) carries `X-Reques
   not exist: it is not in their list or their `TripView`, and `GET …/bookings/:id` and its documents route answer
   `404`, as for an unknown booking (since 12 Oct; a document's `visibility` no longer widens this). The trip's `stage`
   still counts every booking, the room's "<title> booked" line and the trip record still name it, and an expense
-  that pays for a booking is still in everyone's money. Re-splitting a booking's expense adds the new people to the
-  booking (§4.10).
+  that pays for a booking is still in everyone's money. Splitting a booking's expense with people it does not cover
+  (adding it, or re-splitting it) adds them to the booking (§4.10).
 - **An anonymous vote has no `votes` list**, only `voted`, `of`, `tally` (and `flexible_count`). The caller gets their own `my_vote`.
 - **When a person pauses Go, the room still sees their messages in full.** `withheld` is always `false` for the app.
 - **A private itinerary item** (`audience: "private"`) is returned only to the people in its `person_ids`.
@@ -777,7 +777,8 @@ person with `PATCH …/expenses/:id` or by Go, the people new to the split are a
 in the same change: nobody is ever taken off, `passengers` stay as they are, and never past 30 people. Live:
 `trip_changed kinds: ["booking"]` with its own `seq`, and `home_changed` for the people added. So a friend who joins
 after the stay was paid and is added to its split opens the hotel voucher. Re-splitting to fewer people leaves the
-booking as it is.
+booking as it is. The same holds when the expense is first added for a booking (`booking_id` on `POST …/expenses`, or
+Go's `add_expense`) split with people the booking does not cover: they are added after the expense and its line.
 
 **Cancelling by vote.** The Server opens a yes/no vote that is **not anonymous** and closes **24 hours** after it opens:
 question "Cancel this booking? <title>", options "Cancel: <title>" (index 0) and "Keep: <title>" (index 1; titles cut to

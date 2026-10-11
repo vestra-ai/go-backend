@@ -1,7 +1,7 @@
 // §4.9 expenses. An expense counts in the totals and the transfers from the moment it exists until it is removed: nobody
 // approves it and nobody disputes it. Whoever added it is the one who may fix its split or remove it (see `mayChange`);
-// Go may re-split any expense that stands (update_expense). Re-splitting an expense that pays for a booking adds the new
-// people to the booking, so they see it and its files.
+// Go may re-split any expense that stands (update_expense). An expense that pays for a booking, added or re-split, adds
+// the people it is split between to the booking, so they see it and its files.
 import type pg from 'pg';
 import { goContractOf, type Ctx } from '../context.js';
 import { check } from '../contract/index.js';
@@ -120,10 +120,12 @@ export async function createExpense(ctx: Ctx, tripId: string, personId: string, 
     const trip = (await db.query('select currency from trips where trip_id = $1', [tripId])).rows[0];
     const fields: ExpenseFields = { ...input, paid_by_person_id: input.paid_by_person_id ?? personId, currency: trip.currency, added_by_person_id: personId };
     await checkExpenseFields(db, tripId, fields);
+    const booking = await heldBooking(db, tripId, fields.booking_id);
     const expense = await insertExpense(db, tripId, fields);
     const seq = await change(db, tripId, 'expense.changed', { expense, change: 'added', by: { kind: 'person', person_id: personId } });
     await moneyChanged(ctx, tripId, seq);
     await postExpenseAdded({ ctx, db, tripId }, expense, { kind: 'person', person_id: personId }); // the room's line: the next change number, no event
+    if (booking) await coverSplitPeople(ctx, db, tripId, booking, fields.split_person_ids, { kind: 'person', person_id: personId });
     return { ...expense, seq };
   });
 }
@@ -153,14 +155,19 @@ export type SplitActor = { kind: 'person'; person_id: string } | { kind: 'go' };
 /** The contract's limit on a booking's `for_person_ids`. */
 const MAX_COVERED = 30;
 
+/** The booking an expense pays for, held before the change number (which locks the trip row), as everywhere else. */
+export async function heldBooking(db: Db, tripId: string, bookingId: string | null | undefined): Promise<BookingRow | undefined> {
+  return bookingId ? (await db.query<BookingRow>('select * from bookings where trip_id = $1 and booking_id = $2 for update', [tripId, bookingId])).rows[0] : undefined;
+}
+
 /**
  * The people an expense is now split between also see the booking it pays for (and its files): the new ones are added
  * to the booking's `for_person_ids`, and nobody is ever taken off it. Its passengers stay as they are (each is still one
  * of the covered people). Never past the contract's 30: anyone past it is left off the booking. Go hears
  * `booking.changed` `updated` by the same actor, and the newly covered people's homes are told.
  */
-async function coverSplitPeople(ctx: Ctx, db: Db, tripId: string, booking: BookingRow, ids: string[], by: SplitActor): Promise<void> {
-  const added = ids.filter((id) => !booking.for_person_ids.includes(id)).slice(0, Math.max(0, MAX_COVERED - booking.for_person_ids.length));
+export async function coverSplitPeople(ctx: Ctx, db: Db, tripId: string, booking: BookingRow, ids: string[], by: SplitActor): Promise<void> {
+  const added = [...new Set(ids)].filter((id) => !booking.for_person_ids.includes(id)).slice(0, Math.max(0, MAX_COVERED - booking.for_person_ids.length));
   if (added.length === 0) return;
   const updated = (await db.query<BookingRow>('update bookings set for_person_ids = $2 where booking_id = $1 returning *', [booking.booking_id, JSON.stringify([...booking.for_person_ids, ...added])])).rows[0]!;
   const seq = await change(db, tripId, 'booking.changed', { booking: bookingOf(updated), change: 'updated', by });
@@ -180,8 +187,7 @@ async function resplit(ctx: Ctx, db: pg.PoolClient, tripId: string, row: Expense
   await checkExpenseFields(db, tripId, { paid_by_person_id: null, category: row.category, split_person_ids: ids, booking_id: null });
   const note = input.note ?? row.note;
   if (unlessSame && sameIds(row.split_person_ids, ids) && note === row.note) return { expense: expenseView(row), seq: null };
-  // The booking's row is held before the change number (which locks the trip row), as everywhere else.
-  const booking = row.booking_id ? (await db.query<BookingRow>('select * from bookings where trip_id = $1 and booking_id = $2 for update', [tripId, row.booking_id])).rows[0] : undefined;
+  const booking = await heldBooking(db, tripId, row.booking_id);
   const updated = (await db.query<ExpenseStoredRow>('update expenses set split_person_ids = $2, note = $3 where expense_id = $1 returning *', [row.expense_id, JSON.stringify(ids), note])).rows[0]!;
   const expense = expenseView(updated);
   const seq = await expenseUpdated(ctx, db, tripId, { expense, change: 'updated', by, ...(by.kind === 'person' ? { by_person_id: by.person_id } : {}) });
