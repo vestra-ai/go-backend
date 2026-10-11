@@ -17,7 +17,7 @@ orchestrator and no cross-lab reviewer took part.
   `src/domain/voting.ts`); a test in `tests/system-messages.test.ts`; the app and Go docs name the new line.
 
 **Evidence.** Full suite 71 files / 616 tests passed, typecheck clean (before the last docs-only edits; rerun after
-taking main in, see the commit). Mutation proofs: cap back to 9 → the amended test fails "expected 422 to be 200";
+taking main in: 73 files, 636 passed, 1 skipped, typecheck clean). Mutation proofs: cap back to 9 → the amended test fails "expected 422 to be 200";
 `of === 1` disabled → the new test fails "Denpasar won · 1 vote". UI evidence: not applicable.
 
 **Reviews.**
