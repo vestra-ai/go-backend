@@ -144,7 +144,9 @@ describe('the outbox retry schedule (guide: "Sending events reliably")', () => {
     await until(() => got.length === 1);
     expect(got[0]).toEqual(['t_live', { kind: 'trip', seq: 7 }]);
     // A database restart or a network blip ends the listening connection: it must listen again on its own.
-    await pool.query("select pg_terminate_backend(pid) from pg_stat_activity where query = 'listen go_live'");
+    // Only this test's own database: every test file shares one Postgres, and a server under test in another file
+    // (tests/fake-go.e2e.test.ts) holds the same `listen` there.
+    await pool.query("select pg_terminate_backend(pid) from pg_stat_activity where query = 'listen go_live' and datname = current_database()");
     await new Promise((r) => setTimeout(r, 1500)); // the first wait to listen again is 1 second
     await a.publish('t_live', { kind: 'trip', seq: 8 });
     await until(() => got.length === 2, 5000);

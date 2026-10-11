@@ -22,9 +22,10 @@ type RawCard = Record<string, unknown> & { card_id: string; kind: string; fallba
 /**
  * `home_changed` for the people a card puts on (or takes off) their home's open items: the ones it names in
  * `for_person_ids`, before and after a replace. A vote or mandate card tells everyone: the open item now has its card.
+ * So does an options card that carries a vote (1.3): it is that vote's card, and "see more" moves the item to the newer one.
  */
 async function cardMovedHome(ctx: Ctx, db: import('pg').PoolClient, tripId: string, cards: Array<RawCard | null | undefined>): Promise<void> {
-  if (cards.some((c) => c?.kind === 'vote' || c?.kind === 'mandate')) return publishHomeAll(ctx, tripId, db);
+  if (cards.some((c) => c?.kind === 'vote' || c?.kind === 'mandate' || (c?.kind === 'options' && typeof c.decision_id === 'string'))) return publishHomeAll(ctx, tripId, db);
   const named = cards.flatMap((c) => (Array.isArray(c?.for_person_ids) ? c.for_person_ids : []));
   if (named.length) await publishHome(ctx, tripId, named);
 }
@@ -49,6 +50,12 @@ export const postMessage = (ctx: Ctx) => async (p: any, raw: Record<string, unkn
         if (typeof id !== 'string') continue;
         const found = await db.query(`select 1 from ${table} where trip_id = $1 and ${column} = $2`, [trip.trip_id, id]);
         if (found.rowCount === 0) throw invalid(`card.${key}: ${id} is not in trip ${trip.trip_id}`);
+      }
+      // 1.3 (rev 5 A): an options card that carries a vote shows Vote buttons, so the vote must be one people can vote in.
+      if (card.kind === 'options' && typeof card.decision_id === 'string') {
+        // The vote's row is held to the end of this post, so it cannot close between this check and the card going in.
+        const d = await db.query('select status from decisions where trip_id = $1 and decision_id = $2 for share', [trip.trip_id, card.decision_id]);
+        if (d.rows[0].status !== 'open') throw invalid(`card.decision_id: vote ${card.decision_id} is ${d.rows[0].status}, not open`);
       }
       if (card.kind === 'mandate') {
         const d = await db.query('select mandate from decisions where trip_id = $1 and decision_id = $2', [trip.trip_id, card.decision_id]);

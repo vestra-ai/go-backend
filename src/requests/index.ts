@@ -7,7 +7,7 @@ import { addRecordLine, updateRecordLine } from './record.js';
 import { postMessage, replaceCard, typing } from './messages.js';
 import { addBooking, addExpense, cancelSpendApproval, requestSpendApproval, updateBooking } from './money.js';
 import { updateTrip } from './trip.js';
-import { closeVote, openVote, setMandate } from './votes.js';
+import { addVoteOptions, closeVote, openVote, setMandate } from './votes.js';
 
 /** Every request is answered within 2 seconds. When it cannot be, Go gets 503 and tries again with the same request_id. */
 export const ANSWER_WITHIN_MS = 1800;
@@ -36,7 +36,7 @@ function addBookingWithExtras(ctx: Ctx): Handler {
   };
 }
 
-/** Go's requests (18 of 1.3's 19: add_vote_options is not built yet), each answered from the shared database. A method not in this table is answered -32601. */
+/** Go's 19 requests, each answered from the shared database. A method not in this table is answered -32601. */
 export function goRequestHandlers(ctx: Ctx, answerWithinMs = ANSWER_WITHIN_MS): Record<string, Handler> {
   const handlers: Record<string, Handler> = {
     read_trip: readTrip(ctx),
@@ -48,6 +48,7 @@ export function goRequestHandlers(ctx: Ctx, answerWithinMs = ANSWER_WITHIN_MS): 
     remove_reaction: removeReaction(ctx),
     update_trip: updateTrip(ctx),
     open_vote: openVote(ctx),
+    add_vote_options: addVoteOptions(ctx),
     close_vote: closeVote(ctx),
     set_mandate: setMandate(ctx),
     add_record_line: addRecordLine(ctx),

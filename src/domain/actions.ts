@@ -637,7 +637,7 @@ export async function needsYouIn(db: Db, tripId: string, personId: string, featu
   const votes = await db.query(
     `select d.decision_id, d.question, d.cancels_booking_id, d.closes_at, d.opened_at, d.of_count,
             (select count(*)::int from votes v where v.decision_id = d.decision_id) as voted,
-            (select m.message_id from messages m where m.trip_id = d.trip_id and m.card->>'kind' = 'vote' and m.card->>'decision_id' = d.decision_id and ${visibleSql('$2', 'm.')} order by m.seq limit 1) as message_id
+            (select m.message_id from messages m where m.trip_id = d.trip_id and m.card->>'kind' in ('vote', 'options') and m.card->>'decision_id' = d.decision_id and ${visibleSql('$2', 'm.')} order by m.seq desc limit 1) as message_id
        from decisions d
       where d.trip_id = $1 and d.status = 'open'
         and not exists (select 1 from votes v where v.decision_id = d.decision_id and v.person_id = $2)

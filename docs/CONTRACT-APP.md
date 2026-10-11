@@ -607,6 +607,19 @@ Upsert by `message_id`, place by `seq`, whichever mode brought the message.
   §7); `https://` opens the browser sheet. `listen` on a live `call` card answers `open` with Go's listen-in page.
 - Show a button only to the people in `only_for_person_ids` (absent = everyone); `per_option` puts it on every option.
 - The vault link is `POST /me/vault-link` (§4.1).
+- **Voting on the options card** (rev 5): when one of Go's `options` cards carries **`decision_id`**, the vote is on
+  the card. Draw a **Vote** button on each option, with no "Put it to a vote" step. The vote itself is the Server's
+  `Decision` (in `TripView`, or `GET /trips/:trip/decisions/:id`): the card's option with `option_id` X is the
+  decision option whose **`option_ref` is X**, and its position in `decision.options` is the `option_index` to send to
+  `PUT /trips/:trip/decisions/:id/vote`. Show the tally from `decision.tally` at that same index, and my choice from
+  `my_vote`. Re-read the decision on `trip_changed` with `kinds: ["decision"]`. The Vote button is the app's own: it is
+  not one of the card's `actions` and never goes to `…/cards/:card_id/actions`.
+  **"See more"** is the card action `more_options` (sent like any card button): Go answers `done`, adds the new options
+  to **the same vote** and posts a new message whose options card carries the same `decision_id`. The decision then
+  has more options (up to 20), the tally has grown with zeros, and votes already cast are unchanged. Both messages
+  show Vote buttons for the one vote. A "needs you" `vote` item's `target.message_id` is the newest message whose card
+  carries the vote. When the vote closes, draw the cards without Vote buttons and the result from the decision. A
+  place or stay option may carry `url` (https): show it as a small "View on ixigo" link inside the option's details.
 - **An option's Details** (rev 5): `GET /trips/:trip/cards/:card_id/options/:option_id/details`, asked when a person
   opens Details on an option of one of Go's `options` cards. Answers Go's `OptionFullDetails`: everything the card's
   own `details` has (`gallery_urls`, `caption`, `why`, `costs`, `total_minor`, `amenities`, `activities`, `facts`,

@@ -30,7 +30,7 @@ Asks sent to Go: `docs/GO-TEAM-REV5.md`, `docs/GO-TEAM-REV5-BUGS.md`.
 | B2 | C: `live_url` passes through unlogged; `POST /me/vault-link` takes `display`, embedded for home only | B1 | done, committed |
 | B3 | E: option details on demand, cached an hour when complete | B1 | done, committed |
 | B4 | B: idea photos, daily refresh through `place_info`, partial answers never replace kept photos | B1 | done, committed |
-| B5 | A: `OptionsCard.decision_id` checked on post, `add_vote_options`, `decision.options_added` | B1 | not started |
+| B5 | A: `OptionsCard.decision_id` checked on post, `add_vote_options`, `decision.options_added` | B1 | done, committed |
 
 ## B1 candidate
 - Contract: `contract/go.json`, `socket.json`, `methods.json` are byte copies of go-brain `packages/contract` at
@@ -197,7 +197,67 @@ Asks sent to Go: `docs/GO-TEAM-REV5.md`, `docs/GO-TEAM-REV5-BUGS.md`.
 - The owner may prefer "keep the larger set of photos" over "a whole answer wins".
 - Go's photo links must not expire (asked in CONTRACT-GO).
 
+## B5 candidate
+- `add_vote_options` (`src/requests/votes.ts`, registered in `src/requests/index.ts`): only an open `choice` vote of
+  the trip; at most 20 options in all; options kept raw and appended, so indexes continue and votes cast stay; emits
+  `decision.options_added`; idempotent by `request_id`; the vote's row is locked while it grows.
+- `post_message`: an `options` card carrying `decision_id` needs that vote open (422 otherwise). Other card kinds
+  are unchanged.
+- "Needs you": a `vote` item points at the newest message whose `vote` or `options` card carries the vote, and
+  everyone's home is told when such an options card is posted or replaced.
+- An added option whose `option_ref` the vote already has, or that repeats in the request, is refused 422. The
+  open-vote check on a card holds the vote's row (`for share`) until the post commits.
+- No change to the app's vote route: it already takes any index the vote has.
+- Docs: CONTRACT-APP and API (how the app draws and casts a vote on the card, "see more"), CONTRACT-GO.
+
+### The flaky end-to-end test, found and fixed here
+- `tests/fake-go.e2e.test.ts` failed in 3 of 18 full runs on this branch and 0 of 18 at `9264cbb`; 0 of 10 alone.
+- Cause: `tests/coverage.test.ts` proves the live listener reconnects by ending every backend whose query is `listen
+  go_live`, in every database of the shared test Postgres, including the end-to-end server's. The tests added to that
+  file in B2 moved the moment it fires onto the end-to-end test's message. Fixed by limiting it to
+  `current_database()`. Test-only; no product code involved.
+- After the fix: 1 failure in 47 full runs, a different cause (the end-to-end test got a 404 from `/me`: its "free
+  port" was taken by another test's server between the check and the start). Older than this branch; left as is.
+- Seen on the way, not changed: after the live listener reconnects, notices sent during the gap are not replayed to
+  open sockets. Existing behaviour; a question for the owner.
+
+### Evidence
+- `tsc --noEmit` clean. Full suite: 67 files, 592 tests passing (+4 cases; 18 of 50 used).
+- Mutation proofs (each restored): a closed vote taking options → the refusals test fails; no limit of 20 → it fails;
+  options replaced instead of appended → three tests fail; a card carrying a closed vote → its test fails; needs-you
+  ignoring options cards → its test fails; no home notice for a vote's options card → its test fails.
+- UI evidence: not applicable.
+
+### Reviews
+- **Opus 5.5 code review** (`claude-opus-5-5`, medium), session `21274969-f846-4c13-b104-af4d17035c02`.
+  - Call 1 (78 s): CHANGES REQUESTED. Major: home was not told when a vote's options card arrived (fixed). Minors:
+    `replace_card` does not apply the open-vote check (kept: a card must stay replaceable after its vote closes); the
+    check did not hold the vote's row (fixed); yes/no refused where Go's reference allows it (kept, stated in
+    CONTRACT-GO); a repeated `option_ref` (fixed).
+  - Call 2 (30 s): APPROVE. Residual, older than this block: `replace_card` checks none of the ids a card names.
+  - 2 of 3 calls, 108 s of 480.
+- **Fable 5.1 final QC** (`claude-fable-5-1`, medium), session `6c513f30-0d1e-4e59-8c98-74b228c1df74`, call 1 of 3,
+  144 s of 480. Verdict: APPROVE. Three minors, none requiring change: the `replace_card` residual; the yes/no
+  divergence from Go's simulator; the 20 limit counts the raw array while the other checks walk the checked params
+  (equal today).
+
+### Follow-ups, not in this block
+- `replace_card` checks none of the ids a card names (vote, booking, expense), for any card kind.
+- Go's guide and simulator allow `add_vote_options` on a yes/no vote; the Server answers 409.
+- After the live listener reconnects, notices from the gap are not replayed to open sockets (existing behaviour).
+- `tests/fake-go.e2e.test.ts` can still fail about once in 47 full runs on a port taken by another test.
+
+## Where the feature stands (11 Oct 2026)
+- B1 to B5 are committed on `rev5-contract-1.3`, each with an Opus code review and a Fable final review approving.
+  Not pushed, not merged, not deployed: those are the owner's decisions.
+- Assembled proof: the full suite on the final branch, 67 files and 592 tests, `tsc --noEmit` clean. 18 of the
+  feature's 50 added test cases used.
+- Not proven: anything against the real Go (a personal payment through its vault; `get_option_details`,
+  `place_info`, an embedded vault link, a live view link, `add_vote_options` from Go's own code). Migrations 015 and
+  016 have not been run against Supabase.
+- One model family ran authoring, review and final QC (the Codex outage overlay): no cross-lab check.
+
 ## Storage
 - Canonical: this file; the plan. Scratch (disposable, session `dcbcd553`): the session scratchpad under
-  `/private/tmp/claude-501/…/scratchpad` (briefs, reviewer outputs, the read-only go-brain clone). Cleanup: pending, the
-  clone is needed for B2 to B5.
+  `/private/tmp/claude-501/…/scratchpad` (briefs, reviewer outputs, the read-only go-brain clone). Cleanup: pending (left in place; the
+  session scratchpad is outside the repository).

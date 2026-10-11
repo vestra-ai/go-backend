@@ -29,6 +29,37 @@ export const openVote = (ctx: Ctx) => async (p: any, raw: Record<string, unknown
     return { decision_id: row.decision_id, seq };
   });
 
+/** How many options a vote may hold in all (contract 1.3): open_vote opens up to 10, "see more" takes it to 20. */
+export const MAX_VOTE_OPTIONS = 20;
+
+/**
+ * 1.3 (rev 5 A): "see more" adds options to the same open vote. They take the next indexes, so every vote already cast
+ * still points at the option it was cast for, and the tally grows with zeros. Only an open choice vote, and at most
+ * MAX_VOTE_OPTIONS in all. A repeat of the same request_id adds nothing and gets the same answer.
+ */
+export const addVoteOptions = (ctx: Ctx) => async (p: any, raw: Record<string, unknown>) =>
+  once(ctx.pool, p.trip_id, p.request_id, async (db) => {
+    const trip = await tripOf(db, p.trip_id);
+    // The vote's row is held while it grows: a vote cast at the same moment waits, then sees the longer list.
+    const decision = await lockDecision(db, p.trip_id, p.decision_id); // 404 when it is not this trip's
+    if (decision.status !== 'open') throw conflict(`decision ${p.decision_id} is ${decision.status}, not open`);
+    if (decision.kind !== 'choice') throw conflict('only a choice vote can take more options');
+    const added = raw.options as unknown[];
+    if (decision.options.length + added.length > MAX_VOTE_OPTIONS) throw invalid(`options: a vote has at most ${MAX_VOTE_OPTIONS} options, and this one has ${decision.options.length}`, 'options');
+    for (const [i, o] of (p.options as Array<{ currency?: string }>).entries()) assertCurrency(trip, o.currency, `options.${i}.currency`);
+    // The app matches a card's option to the vote's by option_ref, so a ref can stand for one option only.
+    const refs = new Set((decision.options as Array<{ option_ref?: string | null }>).map((o) => o.option_ref).filter(Boolean));
+    for (const [i, o] of (p.options as Array<{ option_ref?: string }>).entries()) {
+      if (o.option_ref && refs.has(o.option_ref)) throw invalid(`options.${i}.option_ref: ${o.option_ref} is already an option of this vote`, `options.${i}.option_ref`);
+      if (o.option_ref) refs.add(o.option_ref);
+    }
+    // As in open_vote, the options are kept as Go sent them (raw), appended after the ones the vote has.
+    await db.query('update decisions set options = options || $2::jsonb where decision_id = $1', [p.decision_id, JSON.stringify(added)]);
+    const seq = await change(db, p.trip_id, 'decision.options_added', { decision_id: p.decision_id, options: added, by: { kind: 'go' } });
+    await ctx.live.publish(p.trip_id, { kind: 'trip', seq, kinds: ['decision'] });
+    return { seq };
+  });
+
 export const closeVote = (ctx: Ctx) => async (p: { request_id: string; trip_id: string; decision_id: string }) =>
   once(ctx.pool, p.trip_id, p.request_id, async (db) => {
     await tripOf(db, p.trip_id);

@@ -230,7 +230,18 @@ error `-32601`; params that do not match the contract with `422`, `data.code: "i
   answer's `place.photos` (the first 12), `tag`, `best_months` and, when a city was sent, `travel` are kept (`cab` and
   `drive` are shown as car). `complete: false`, a refusal or an answer with no photos leaves the kept photos as they
   were. The photo links are handed to the app as you sent them and kept until your next answer, so they must not expire.
-- **`add_vote_options`** (1.3) is in the contract but the Server does not answer it yet (`-32601`, unknown method). An `options` card may hold up to 10 options, and
+- **`OptionsCard.decision_id`** (1.3): `post_message` with an `options` card that carries a `decision_id` is accepted
+  only when that vote is in the trip and **open**; otherwise `422`. So: `open_vote` first, then post the card. Give each
+  `DecisionOption` the card option's `option_id` as its **`option_ref`**: that is how the app matches a card option to
+  the vote's option. A `vote` or `mandate` card may still name a closed vote.
+- **`add_vote_options`** (1.3): `{ request_id, trip_id, decision_id, options: 1 to 10 DecisionOption }` → `{ seq }`. The
+  options are kept as sent and take the next indexes; votes already cast stay. Refused: `404` when the vote is not
+  this trip's; `409` when it is not open, or is not a `choice` vote; `422` when the vote would hold more than **20**
+  options (the message says how many it has), a `currency` is not the trip's, or an `option_ref` is one the vote
+  already has or appears twice in the request (send only options not shown before). Your guide and simulator allow adding to a yes/no vote; the
+  Server answers that `409`. The Server then sends
+  **`decision.options_added { decision_id, options, by: { kind: "go" } }`**. A repeat of the same `request_id` adds
+  nothing and gets the same `seq`. Then post the new message with its options card carrying the same `decision_id`. An `options` card may hold up to 10 options, and
   `OptionsCard.decision_id`, `Option.url`, `WorkingCard.live_url` pass through to the app as you send them.
 - **`post_message` · cards.** A card is stored exactly as sent and reaches the app unchanged, so every field below
   passes through. `mentions` and a card's `for_person_ids` put the message in those people's "needs you" list.

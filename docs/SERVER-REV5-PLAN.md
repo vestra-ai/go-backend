@@ -270,12 +270,12 @@ built live view, the embedded vault (the vault's home only), `place_info` and `g
 in H (`personal: { person_id, card_id, option_id }`), and added the denial reason `no_pick`. Go's vault refuses the old
 claims, so the Server's H had to follow.
 
-Order of work from here (reviewed 11 Oct):
-1. **Done on branch `rev5-contract-1.3`:** Go's 1.3.0 files; H on the personal form (the named card and option must be
-   the person's own tap on their own card; `no_pick`; the price limit is floor(price × 1.05) and an option with no
-   price fits nothing, as Go's simulator has it); F (10 options) arrives with the files.
-2. **C:** live view and vault display pass-through. Embedded is for the vault's home only: answer anything else clearly.
-3. **E**, then **B.** Both answers may say `complete: false`: show a partial answer but don't keep it, and never
-   replace a kept photo with an empty one.
-4. **A** last: Go has not built its side.
+All five steps are built on branch `rev5-contract-1.3` (11 Oct), each reviewed; the record is
+`docs/superpowers/build-logs/2026-10-11-rev5-contract-1.3.md`. Not merged or deployed yet.
+1. Go's 1.3.0 files; H on the personal form; F (10 options).
+2. C: the vault's `display` (embedded for its home only) and `live_url` kept on its card alone.
+3. E: an option's Details on demand, kept an hour, never contradicting a replaced card.
+4. B: idea photos from `place_info`, asked in the background once a day.
+5. A: the vote on the options card; `add_vote_options` and `decision.options_added`.
 
+Still to do once merged: a pass against the real Go, and migrations 015 and 016 on Supabase (they apply on deploy).
