@@ -54,8 +54,9 @@ async function attach(ctx: Ctx, tripId: string, bookingId: string, tickets: Demo
         [d.document_id, bookingId, d.name, PDF, d.size_bytes, d.pages, d.path],
       );
     }
-    const covered = (await db.query('select for_person_ids from bookings where trip_id = $1 and booking_id = $2', [tripId, bookingId])).rows[0]?.for_person_ids as string[] | undefined;
+    // The people who see the file: those the booking covers, and its payer.
+    const b = (await db.query('select for_person_ids, payer_person_id from bookings where trip_id = $1 and booking_id = $2', [tripId, bookingId])).rows[0];
     await ctx.live.publish(tripId, { kind: 'trip', seq: await nextSeq(db, tripId), kinds: ['booking'] });
-    await publishHome(ctx, tripId, covered ?? []);
+    await publishHome(ctx, tripId, b ? [...(b.for_person_ids as string[]), b.payer_person_id as string] : []);
   });
 }

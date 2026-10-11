@@ -12,7 +12,8 @@ It describes the Server as of contract rev 4 (10 Oct 2026), after the first inte
 (branch `build`, commit `de37966d`, taken 11 Oct 2026), held in this repository as `contract/go.json` (shapes), `contract/methods.json`
 (methods) and `contract/socket.json`; the signing and spend-approval test vectors are identical to Go's. The Server
 checks every frame against those files. `contract/extensions-1.1.json` (now `1.3.0+server-checkin`) adds only the two
-web check-in requests (section 2), not in Go's contract yet. `visible_to_person_ids` on `PostMessage` and `Message` was
+web check-in requests (section 2), the demo's `payment.completed` event (section 3.1) and **`update_expense`** (section
+4, since 12 Oct), none of them in Go's contract yet. `visible_to_person_ids` on `PostMessage` and `Message` was
 the Server's overlay until 1.2 made it official. Where this page and those files differ, the files are what the Server
 checks against.
 
@@ -73,7 +74,7 @@ in time: after 1 s, 5 s, 30 s, 2 min, 10 min, then every 10 min (a `429` with `r
 that long instead). It gives up after 24 hours. **Any other error answer (`422` included) marks the event failed, and
 the trip's next event goes on.** So an event Go refuses, or one the Server gave up on, is skipped: when Go sees a `seq`
 gap it cannot explain, it should `read_trip`. The only `seq` values with no event by design are a fixed split on
-`GO_CONTRACT=1.0` (section 3.2) and a `replace_card` (which moves the message's `updated_seq`).
+`GO_CONTRACT=1.0` (section 3.2; Go's own `update_expense` included) and a `replace_card` (which moves the message's `updated_seq`).
 
 Every event is `{ event_id, trip_id, seq, occurred_at, type, data }`.
 
@@ -82,7 +83,7 @@ Every event is `{ event_id, trip_id, seq, occurred_at, type, data }`.
 | `type` | Sent when | `data` (shapes in `go.json` unless marked) |
 |---|---|---|
 | `trip.created` | a person creates a trip (always `seq` 1) | the `TripSnapshot` |
-| `trip.updated` | a person or Go changes the title, destination, dates, vibe, stay, itinerary, status or **the group budget**; or, **by the system**, a new booking fills the trip's empty `destination`, `stay` or `dates` (never a value already set) | `{ by, changed: [...] }`. `changed` names the fields (`"budget"` for the budget), **not the new values**: read the trip |
+| `trip.updated` | a person or Go changes the title, destination, dates, vibe, stay, itinerary, status or **the group budget**; or, **by the system**, a new booking fills the trip's empty `destination` or `stay` (never a value already set, and never the dates: they are yours and the people's) | `{ by, changed: [...] }`. `changed` names the fields (`"budget"` for the budget), **not the new values**: read the trip |
 | `person.joined` | someone joins by invite link | `{ person }` with their join answers |
 | `person.updated` | name, photo, UPI flag (when it flips), starting city, earliest leave, what Go should know, or Pause Go changed; also after "forget me" clears a person's join answers | `{ person, changed: [...] }`, `changed` among `name`, `photo_url`, `has_upi`, `from_city`, `earliest_leave`, `know`, `go_paused` (the 1.0 enum also has `role`, which the Server does not send today) |
 | `person.left` | someone leaves, or deletes their account | `{ person_id }` |
@@ -92,8 +93,8 @@ Every event is `{ event_id, trip_id, seq, occurred_at, type, data }`.
 | `decision.opened` · `decision.voted` · `decision.closed` · `decision.cancelled` | votes | per `go.json`; an anonymous vote carries totals only; 1.1 adds `flexible` and `retracted` on `decision.voted` |
 | `mandate.set` · `mandate.confirmed` · `mandate.declined` | "Yes, book it" | per `go.json` |
 | `record.changed` | a line of the trip record | `{ line, change, by }` |
-| `booking.changed` | a booking added, updated, or cancelled (including by a passed group vote, `by: system`) | `{ booking, change: "added" \| "updated" \| "cancelled", by }` |
-| `expense.changed` | an expense added or removed; **on `GO_CONTRACT=1.1` only**, also `change: "updated"` when a person fixes its split (with `by_person_id`) | `{ expense, change, by }` |
+| `booking.changed` | a booking added, updated, or cancelled (including by a passed group vote, `by: system`); also `updated` when its expense is re-split to people it did not cover (they are added to `for_person_ids`, by the person or Go who re-split it, since 12 Oct) | `{ booking, change: "added" \| "updated" \| "cancelled", by }` |
+| `expense.changed` | an expense added or removed; **on `GO_CONTRACT=1.1` only**, also `change: "updated"` when a person fixes its split (with `by_person_id`) or Go re-splits it with `update_expense` (`by: { kind: "go" }`) | `{ expense, change, by }` |
 | `settlement.recorded` (1.1) | **a person records a payback** | `{ settlement: Settlement, by }`: `Settlement` is `{ settlement_id, from_person_id, to_person_id, amount_minor, currency, method: "upi" \| "cash" \| "bank_transfer" \| "other", note?, status: "confirmed", recorded_at, confirmed_at }` and `by` the person who recorded it (the official 1.1 shape, since 10 Oct) |
 | `payment.completed` (demo; the Server's overlay, agreed 11 Oct) | the payer tapped Approve on a waiting `pay` card and the Server took the payment as done | `{ approval_id, card_id, payer_person_id, amount_minor, currency, merchant, purpose, decision_id? \| personal?, booking_id, expense_id, method: "demo", paid_at, by }`: exactly one of `decision_id` and `personal` (the other is left out), `by` the payer. Sent after the `booking.changed`, `record.changed` and `expense.changed` it names |
 
@@ -126,6 +127,7 @@ joined", "Priya left", "Villa Sol won · 4 votes" ("Villa Sol chosen" in a trip 
 Priya added Airport cab · ₹1,700 · split 4 ways
 Go added Villa Sol · ₹54,200 · paid by Rahul · split 4 ways
 Priya changed the split of Airport cab · ₹1,700 · 3 ways
+Go changed the split of Villa Sol · ₹54,200 · 5 ways
 Priya removed Airport cab · ₹1,700
 Aarav paid Rahul ₹5,800
 ```
@@ -160,6 +162,7 @@ error `-32601`; params that do not match the contract with `422`, `data.code: "i
 | `add_record_line` · `update_record_line` | | `record.changed` |
 | `add_booking` · `update_booking` | `AddBooking` · `UpdateBooking` | `booking.changed` |
 | `add_expense` | `AddExpense` → `AddExpenseResult` | `expense.changed` `added`, then the Server's money line in the room |
+| `update_expense` (the Server's overlay, since 12 Oct) | `UpdateExpense` → `WriteResult` | `expense.changed` `updated` (on `GO_CONTRACT=1.1`), then the money line "Go changed the split of …"; `booking.changed` `updated` when the expense pays for a booking and people were added to it |
 | `request_spend_approval` | `RequestSpendApproval` → `SpendApprovalResult` | none |
 | `cancel_spend_approval` | `CancelSpendApproval` → `Ok` | none |
 
@@ -171,6 +174,9 @@ error `-32601`; params that do not match the contract with `422`, `data.code: "i
 - **`read_trip` · title.** `title` is the stored title, `"New trip"` included. The app shows a trip still called "New
   trip" as "<destination> <year>" (for example "Hampi 2026"); that name is worked out on the app's reads only, is
   never stored, and is never in `read_trip`, the snapshot or an event. To name the trip, Go sends `update_trip { title }`.
+- **`read_trip` · bookings.** Every booking of the trip, whole (`passengers`, `documents`), whoever it covers, and so are
+  the `booking.changed` events. Only the app filters: since 12 Oct a person sees a booking only when it covers them
+  or they paid for it (a friend's flight is not on their Bookings tab).
 - **A test trip that was reset.** The App team can delete a test trip and everything in it (an internal route, never
   used on real trips). Nothing more is sent about it, events not yet delivered included, and every request naming it
   answers `404 not_found`, `read_trip` too: the trip no longer exists.
@@ -184,6 +190,29 @@ error `-32601`; params that do not match the contract with `422`, `data.code: "i
   units go one each to the first people in joining order). `approval_id` (1.1) names the vault payment it belongs to
   and changes nothing else. **For rooms at different prices, send one `add_expense` per room**, split among that
   room's people.
+- **`update_expense`** (the Server's overlay, `contract/extensions-1.1.json`, since 12 Oct 2026): a new split for an
+  expense that stands, in place. **Go: use this instead of a second `add_expense` to re-split** ("Split evenly"): a
+  second expense counts the cost twice.
+  ```jsonc
+  // params (UpdateExpense)
+  { "request_id": "rq_…", "trip_id": "t_goa", "expense_id": "e_…",
+    "split_person_ids": ["p_rahul", "p_priya", "p_zoya"],   // 1 to 30 ids, each a person in the trip now (a repeated id counts once)
+    "note": "Villa Sol (3 of us)" }                          // optional, 1 to 120 characters; left out = unchanged
+  // result (WriteResult)
+  { "seq": 88 }
+  ```
+  Any expense that stands in the trip, whoever added it (Go has no "responsible person" check). The amount, payer and
+  category stay; the split is equal among the new people, as for `add_expense`. A repeat of the same `request_id` is
+  done once and gets the same answer. When the people (in any order) and the note are what they already are, nothing
+  changes: the answer is the trip's current `seq`, with no change number and no event. Otherwise the change takes its
+  `seq` and sends `expense.changed` `{ expense, change: "updated", by: { kind: "go" } }` on `GO_CONTRACT=1.1` (on `1.0`
+  the `seq` with no event, as for a person's fixed split, section 3.2); then, when the people changed, the money line
+  "Go changed the split of <note> · <amount> · N ways" (`message.created`, its own `seq`); a new note alone has no
+  line. When the expense pays for a booking (`booking_id`, as the demo payment's does), the people new to the split are
+  added to the booking's `for_person_ids` (nobody is taken off, `passengers` stay, at most 30) and you hear
+  `booking.changed` `{ change: "updated", by: { kind: "go" } }`: they now see the booking and its files in the app.
+  Refused: `404` (`not_found`) for an unknown or removed expense; `422` (`invalid`) for someone not in the trip (or who
+  left), an empty or too long list, a note over 120.
 - **`request_spend_approval`** has two forms (1.3: `RequestSpendApproval = RequestPersonalSpendApproval |
   RequestGroupSpendApproval`). A repeat of the same `request_id` gets the same answer, token included, in both. 1.2's
   ticket form (`kind: "ticket"`, `for_person_id`) is gone with 1.3: the Server answers it `422`.
@@ -341,6 +370,7 @@ A person may also enter `photos` on a new trip's destination and on a booking's 
   `for_person_ids` and each action's `only_for_person_ids` naming them. The card is visible in the room; only that
   person can act on it. Add `visible_to_person_ids` naming them (section 4) and only they see it at all.
 - **One expense per room**, as in section 4.
+- **Re-split with `update_expense`**, never with a second `add_expense` (section 4).
 - **Do not announce the expenses Go adds.** The Server posts the line in the room.
 - **Treat system messages as a record.**
 - **`go://trips/<trip>/sheet/budget`** now opens the group budget editor in the app. There is no private budget sheet.

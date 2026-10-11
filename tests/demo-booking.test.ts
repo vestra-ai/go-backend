@@ -144,15 +144,16 @@ describe('demoBookingFor: a stay', () => {
     expect(v.cancellation.rules[0]!.title).toMatch(/^Free cancellation till 19 Nov 2026/);
   });
 
-  it('without trip dates: tomorrow in the place\'s time for three nights; a voucher only the payer sees shows their email; the default room', () => {
-    const s = stay({ for_person_ids: ['p_rahul'], trip: { title: 'Goa 2026' }, option: { label: 'Casa Azul', refundable_until: null } });
+  it('without trip dates: no dates made up (12 Oct 2026: a 1-5 Nov stay was booked as 13-16 Oct); the nights from Go\'s purpose; the payer\'s email on their own voucher; the default room', () => {
+    const s = stay({ for_person_ids: ['p_rahul'], purpose: 'Munnar: 4 nights (₹15,557 a night)', trip: { title: 'Munnar 2026' }, option: { label: 'Casa Azul', refundable_until: null } });
     const f = sync(s);
     expect(asBooking(s, f)).toMatchObject({ ok: true });
-    expect([f.title, f.starts_at, f.ends_at, f.place]).toEqual(['Casa Azul', '2026-10-14T08:30:00.000Z', '2026-10-17T05:30:00.000Z', null]);
+    expect([f.title, f.starts_at, f.ends_at, f.place]).toEqual(['Casa Azul', null, null, null]);
     const v = f.tickets![0]!.data as HotelBookingData;
-    expect(v).toMatchObject({ checkIn: 'Wed, 14 Oct', checkOut: 'Sat, 17 Oct', travellers: '1 Adult', rooms: { summary: '1 x Deluxe Room' }, hotel: { name: 'Casa Azul', address: 'Casa Azul' }, primaryGuest: { name: 'RAHUL MANGLANI', email: 'rahul@example.com' } });
+    expect(v).toMatchObject({ checkIn: 'To be confirmed', checkOut: '4 nights, dates to be confirmed', travellers: '1 Adult', rooms: { summary: '1 x Deluxe Room' }, hotel: { name: 'Casa Azul', address: 'Casa Azul' }, primaryGuest: { name: 'RAHUL MANGLANI', email: 'rahul@example.com' } });
     expect([v.hotel.mapUrl, v.cancellation.rules.map((r) => r.title)]).toEqual([undefined, ['Non-refundable']]);
-    expect((f.details as any[]).find((d) => d.label === 'Cancellation').value).toBe('Non-refundable');
+    const rows = Object.fromEntries((f.details as any[]).map((d) => [d.label, d.value]));
+    expect([rows.Dates, rows.Nights, rows['Check-in'], rows.Cancellation]).toEqual(['To be confirmed', '4', undefined, 'Non-refundable']);
   });
 
   it("in another time zone, a room that sleeps two for four guests, and the trip's destination as the address", () => {

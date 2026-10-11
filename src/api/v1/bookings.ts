@@ -1,5 +1,5 @@
-// §4.10: the bookings tab and the ticket viewer. Reading bookings (with the covered-people rule for passengers and
-// documents), opening a ticket file, bookings people add themselves, their edits, and the group vote to cancel one.
+// §4.10: the bookings tab and the ticket viewer. Reading bookings (each only for the people it covers and its payer),
+// opening a ticket file, bookings people add themselves, their edits, and the group vote to cancel one.
 import type { FastifyInstance } from 'fastify';
 import type { Ctx } from '../../context.js';
 import { documentLink, getBooking, listBookings } from '../../domain/bookings.js';
@@ -16,28 +16,27 @@ const BOOKING = {
   passengers: [{ person_id: 'p_rahul', seat: '14A', pnr: 'K7QX2M' }, { person_id: 'p_arjun', seat: '14B', pnr: 'K7QX2M' }],
   documents: [{ document_id: 'doc_01JA', name: '6E5313-K7QX2M.pdf', mime: 'application/pdf', size_bytes: 184233, pages: 2, visibility: 'covered', url: 'https://<ref>.supabase.co/storage/v1/object/sign/go-files/bookings/t_goa/b_01JA/doc_01JA.pdf?token=…' }],
 };
-const { passengers: _p, documents: _d, ...BOOKING_FOR_OTHERS } = BOOKING;
 const refused = (status: number, code: string, msg: string, field: string | null = null) => ({ name: code, status, body: { error: { code, message: msg, field, retry_after_seconds: null, request_id: 'req_01JA7Q3V8Z' } } });
 
 export const routes: RouteMeta[] = [
   {
     method: 'GET', path: '/app/v1/trips/:trip/bookings', section: SECTIONS.bookings, title: 'Bookings',
-    summary: 'The Bookings tab: every booking of the trip, confirmed and cancelled, newest first, with the trip change number. passengers[] and documents[] are in a booking only for the people it covers (for_person_ids); everyone else gets the booking without those two keys. Each document carries url, a signed link valid 1 hour, minted on every read. details and return_journey are for everyone.',
-    example: { responses: [{ name: 'as a covered person', status: 200, body: { items: [BOOKING], seq: 61 } }, { name: 'as anyone else', status: 200, body: { items: [BOOKING_FOR_OTHERS], seq: 61 } }] },
+    summary: 'The Bookings tab: the bookings of the trip that are yours to see, confirmed and cancelled, newest first, with the trip change number. A booking is sent only to the people it covers (for_person_ids) and to its payer, whole (passengers[], documents[]); everyone else does not get it at all. Each document carries url, a signed link valid 1 hour, minted on every read.',
+    example: { responses: [{ name: 'as a covered person or the payer', status: 200, body: { items: [BOOKING], seq: 61 } }, { name: 'as anyone else', status: 200, body: { items: [], seq: 61 } }] },
   },
   {
     method: 'GET', path: '/app/v1/trips/:trip/bookings/:id', section: SECTIONS.bookings, title: 'One booking',
-    summary: 'One Booking (the ticket card redraws from this), with the same covered-people rule. 404 when it is not in this trip.',
+    summary: 'One Booking (the ticket card redraws from this), for the people it covers and its payer. 404 when it is not in this trip, or is not yours to see (the same answer, so ids cannot be probed).',
     example: { responses: [{ name: 'Booking', status: 200, body: BOOKING }, refused(404, 'not_found', 'booking b_nope does not exist in trip t_goa')] },
   },
   {
     method: 'GET', path: '/app/v1/trips/:trip/bookings/:id/documents/:document_id', section: SECTIONS.bookings, title: 'Open a ticket file',
-    summary: 'The ticket PDF for the viewer, Save and Share: 302 to a signed link valid 10 minutes (Cache-Control: private, no-store). Only for the people the booking covers, or anyone in the trip when the document is marked group-visible (403 otherwise); 404 for a document that is not on this booking.',
-    example: { responses: [{ name: 'Redirect', status: 302 }, refused(403, 'forbidden', 'this ticket is for the people the booking covers'), refused(404, 'not_found', 'document doc_x is not on booking b_01JA')] },
+    summary: 'The ticket PDF for the viewer, Save and Share: 302 to a signed link valid 10 minutes (Cache-Control: private, no-store). Only for the people the booking covers and its payer; 404 for anyone else (as for an unknown booking), and for a document that is not on this booking.',
+    example: { responses: [{ name: 'Redirect', status: 302 }, { ...refused(404, 'not_found', 'booking b_01JA does not exist in trip t_goa'), name: 'not yours to see' }, refused(404, 'not_found', 'document doc_x is not on booking b_01JA')] },
   },
   {
     method: 'POST', path: '/app/v1/trips/:trip/bookings', section: SECTIONS.bookings, title: 'Add a booking',
-    summary: 'A member records a booking made outside Go: kind, title, vendor, ref, amount_minor, payer_person_id, for_person_ids, and optionally refundable_until, starts_at, ends_at, journey, return_journey, details [{ label, value }], passengers [{ person_id (one of for_person_ids), seat?, pnr? }], place, image_url, decision_id (a closed vote it fulfils). Stored confirmed in the trip\'s currency, no expense; answers 201 Booking as you see it (the covered-people rule applies; documents [] for now) plus seq. Go hears booking.changed added by you, then the booked record line. Strict body; send an Idempotency-Key so a retry is safe.',
+    summary: 'A member records a booking made outside Go: kind, title, vendor, ref, amount_minor, payer_person_id, for_person_ids, and optionally refundable_until, starts_at, ends_at, journey, return_journey, details [{ label, value }], passengers [{ person_id (one of for_person_ids), seat?, pnr? }], place, image_url, decision_id (a closed vote it fulfils). Stored confirmed in the trip\'s currency, no expense; answers 201 Booking as you see it (whole when it covers you or you are the payer, else without passengers and documents; documents [] for now) plus seq. Go hears booking.changed added by you, then the booked record line. Strict body; send an Idempotency-Key so a retry is safe.',
     example: { body: { kind: 'flight', title: 'BLR → GOX · 6E 5313', vendor: 'ixigo', ref: 'K7QX2M', amount_minor: 1184000, payer_person_id: 'p_rahul', for_person_ids: ['p_rahul', 'p_arjun'], journey: JOURNEY, details: [{ label: 'Baggage', value: '15 kg' }], passengers: [{ person_id: 'p_rahul', seat: '14A', pnr: 'K7QX2M' }] }, responses: [{ name: 'Added', status: 201, body: { ...BOOKING, added_by_person_id: 'p_rahul', passengers: [{ person_id: 'p_rahul', seat: '14A', pnr: 'K7QX2M' }], documents: [], seq: 62 } }, refused(422, 'invalid', 'passengers[0].person_id must be one of for_person_ids', 'passengers[0].person_id')] },
   },
   {

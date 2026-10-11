@@ -4,7 +4,7 @@ import { once } from '../db/once.js';
 import type { Db } from '../db/pool.js';
 import { change, emit, nextSeq } from '../db/write-change.js';
 import { conflict, invalid, notFound } from '../domain/errors.js';
-import { insertExpense, moneyChanged } from '../domain/expenses.js';
+import { goUpdateExpense, insertExpense, moneyChanged } from '../domain/expenses.js';
 import { postExpenseAdded } from '../domain/ledger-lines.js';
 import { bookingOf, recordLineOf, visibleSql } from '../domain/mappers.js';
 import type { BookingRow, RecordLineRow } from '../domain/mappers.js';
@@ -111,6 +111,19 @@ export const addExpense = (ctx: Ctx) => async (p: any) =>
     await moneyChanged(ctx, p.trip_id, seq);
     await postExpenseAdded({ ctx, db, tripId: p.trip_id }, expense, { kind: 'go' }); // the room's line, for Go's expenses too
     return { expense_id: expense.expense_id, seq };
+  });
+
+/**
+ * Go re-splits an expense in place (the Server's overlay, `update_expense`): what Go sends in place of a second
+ * add_expense, which would count the cost twice. Any expense that stands in the trip; the room gets "Go changed the
+ * split of …", and the booking it pays for gains the new people. The same people and note again change nothing and
+ * answer the trip's change number as it is.
+ */
+export const updateExpense = (ctx: Ctx) => async (p: any) =>
+  once(ctx.pool, p.trip_id, p.request_id, async (db) => {
+    await tripOf(db, p.trip_id);
+    const { seq } = await goUpdateExpense(ctx, db, p.trip_id, p.expense_id, { split_person_ids: p.split_person_ids, note: p.note });
+    return { seq: seq ?? (await tripOf(db, p.trip_id)).seq };
   });
 
 /**

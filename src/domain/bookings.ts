@@ -1,6 +1,7 @@
-// §4.10 Bookings as the app reads them, and the ticket files behind them. Two rules live here. The covered-people rule
-// (app contract §1.7): `passengers[]` and `documents[]` are returned only to the people in
-// `for_person_ids`; everyone else gets the booking without those two keys. Go's own reads keep everything. And the
+// §4.10 Bookings as the app reads them, and the ticket files behind them. Two rules live here. Who sees a booking (app
+// contract §1.7): an app read sends a booking only to the people in its `for_person_ids` and to its payer, whole
+// (passengers, documents); to anyone else it does not exist (a single booking or its file answers 404, as for an
+// unknown one). Go's own reads keep every booking, and the trip's stage counts them all. And the
 // files: when Go's add_booking names documents, each `url` is fetched once, the file is kept in Storage under our own
 // path, and the app only ever gets short signed links, never the stored link: each document it sees carries `url`
 // (valid an hour, minted on every read), and GET …/documents/:document_id answers a fresh one.
@@ -8,7 +9,6 @@ import type { Ctx } from '../context.js';
 import type { Db } from '../db/pool.js';
 import { IMAGE, MAX_UPLOAD_BYTES, extensionFor } from '../api/v1/uploads.js';
 import { DOWNLOAD_TTL_SECONDS, type Storage } from '../storage/storage.js';
-import { Forbidden } from './actions.js';
 import { notFound } from './errors.js';
 import { bookingOf, compact, type BookingRow } from './mappers.js';
 import type { Booking } from './types.js';
@@ -34,21 +34,30 @@ export async function documentsOf(db: Db, bookingIds: string[]): Promise<Map<str
   return out;
 }
 
-/** The covered-people rule: the booking whole for someone in `for_person_ids`, without `passengers` and `documents` for anyone else. */
+/** Who sees a booking in the app: the people it covers, and its payer (they paid for it). A friend's flight is not yours to see. */
+export const seesBooking = (booking: Pick<Booking, 'for_person_ids' | 'payer_person_id'>, personId: string): boolean =>
+  booking.for_person_ids.includes(personId) || booking.payer_person_id === personId;
+
+/**
+ * The booking as one person gets it: whole for someone who sees it (`seesBooking`), without `passengers` and `documents`
+ * otherwise. Reads never send the second kind (they leave the booking out); only the answer to the person who just added
+ * a booking for others can be one.
+ */
 export function bookingForApp(booking: Booking, documents: BookingDocumentRow[], viewerId: string): BookingForApp {
   const { passengers, ...rest } = booking as Booking & { passengers?: unknown };
-  if (!booking.for_person_ids.includes(viewerId)) return rest as BookingForApp;
+  if (!seesBooking(booking, viewerId)) return rest as BookingForApp;
   return compact({ ...booking, passengers, documents: documents.map(documentOf) }) as BookingForApp;
 }
 
 /**
- * The trip's bookings as this person may see them, inside the caller's transaction (TripView and the list share it),
- * and where each document they see is stored, by document id: `linkDocuments` signs them once the read is over.
+ * The trip's bookings this person sees (the others are left out), inside the caller's transaction (TripView and the list
+ * share it), and where each of their documents is stored, by document id: `linkDocuments` signs them once the read is over.
  */
 export async function bookingsForPerson(db: Db, bookings: Booking[], personId: string): Promise<{ items: BookingForApp[]; paths: Map<string, string> }> {
-  const docs = await documentsOf(db, bookings.map((b) => b.booking_id));
-  const paths = new Map(bookings.filter((b) => b.for_person_ids.includes(personId)).flatMap((b) => (docs.get(b.booking_id) ?? []).map((d) => [d.document_id, d.path] as const)));
-  return { items: bookings.map((b) => bookingForApp(b, docs.get(b.booking_id) ?? [], personId)), paths };
+  const theirs = bookings.filter((b) => seesBooking(b, personId));
+  const docs = await documentsOf(db, theirs.map((b) => b.booking_id));
+  const paths = new Map(theirs.flatMap((b) => (docs.get(b.booking_id) ?? []).map((d) => [d.document_id, d.path] as const)));
+  return { items: theirs.map((b) => bookingForApp(b, docs.get(b.booking_id) ?? [], personId)), paths };
 }
 
 /**
@@ -89,7 +98,7 @@ async function readOnly<T>(ctx: Ctx, work: (db: Db) => Promise<T>): Promise<T> {
   }
 }
 
-/** GET /trips/:trip/bookings: every booking, confirmed and cancelled, newest first, with the trip's change number. */
+/** GET /trips/:trip/bookings: the bookings the person sees, confirmed and cancelled, newest first, with the trip's change number. */
 export async function listBookings(ctx: Ctx, tripId: string, personId: string): Promise<{ items: BookingForApp[]; seq: number }> {
   const { items, paths, seq } = await readOnly(ctx, async (db) => {
     const seq = (await db.query('select seq from trips where trip_id = $1', [tripId])).rows[0]?.seq as number | undefined;
@@ -100,28 +109,28 @@ export async function listBookings(ctx: Ctx, tripId: string, personId: string): 
   return { items: await linkDocuments(ctx.storage, items, paths), seq };
 }
 
-async function bookingRow(db: Db, tripId: string, bookingId: string): Promise<BookingRow> {
+/** The booking, for someone who sees it: 404 for anyone else, worded as for an unknown booking, so ids cannot be probed. */
+async function bookingRow(db: Db, tripId: string, bookingId: string, personId: string): Promise<BookingRow> {
   const row = (await db.query<BookingRow>('select * from bookings where trip_id = $1 and booking_id = $2', [tripId, bookingId])).rows[0];
-  if (!row) throw notFound(`booking ${bookingId} does not exist in trip ${tripId}`);
+  if (!row || !seesBooking(row, personId)) throw notFound(`booking ${bookingId} does not exist in trip ${tripId}`);
   return row;
 }
 
-/** GET /trips/:trip/bookings/:id. */
+/** GET /trips/:trip/bookings/:id: 404 for a booking the person does not see. */
 export async function getBooking(ctx: Ctx, tripId: string, personId: string, bookingId: string): Promise<BookingForApp> {
-  const row = await bookingRow(ctx.pool, tripId, bookingId);
+  const row = await bookingRow(ctx.pool, tripId, bookingId, personId);
   const { items, paths } = await bookingsForPerson(ctx.pool, [bookingOf(row)], personId);
   return (await linkDocuments(ctx.storage, items, paths))[0]!;
 }
 
 /**
- * GET …/bookings/:id/documents/:document_id: a signed link valid ten minutes, for a covered person, or for anyone in
- * the trip when the document is group-visible. 403 otherwise, 404 for a document that is not on this booking.
+ * GET …/bookings/:id/documents/:document_id: a signed link valid ten minutes, for someone who sees the booking (a covered
+ * person or the payer), whatever the document's `visibility`. 404 for anyone else, as for a document that is not on it.
  */
 export async function documentLink(ctx: Ctx, tripId: string, personId: string, bookingId: string, documentId: string): Promise<string> {
-  const booking = await bookingRow(ctx.pool, tripId, bookingId);
+  await bookingRow(ctx.pool, tripId, bookingId, personId);
   const doc = (await ctx.pool.query<BookingDocumentRow>('select * from booking_documents where booking_id = $1 and document_id = $2', [bookingId, documentId])).rows[0];
   if (!doc) throw notFound(`document ${documentId} is not on booking ${bookingId}`);
-  if (!booking.for_person_ids.includes(personId) && doc.visibility !== 'group') throw new Forbidden('this ticket is for the people the booking covers');
   return ctx.storage.signDownload(doc.path, DOCUMENT_LINK_TTL_SECONDS);
 }
 

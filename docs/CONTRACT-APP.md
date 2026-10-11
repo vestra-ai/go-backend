@@ -151,9 +151,14 @@ Every non-2xx answer has this body, and every answer (2xx too) carries `X-Reques
   link the caller asks for, §4.9).
 - **Travelling from is shared with the group.** Every member's `Person.from_city` and `earliest_leave` are returned to
   every member of the trip. The profile's default city in `Me` is the caller's own.
-- **Per-person booking data.** `Booking.passengers[]` and `Booking.documents[]` are returned only to the people in
-  `for_person_ids`; everyone else sees the booking without those two keys. A ticket file opens only for a covered
-  person (or anyone in the trip when the document is `visibility: "group"`).
+- **A booking is only for the people it covers and its payer.** Every app read that returns bookings (the bookings
+  list, one booking, `TripView.bookings`) sends a booking only to the people in its `for_person_ids` and to its
+  `payer_person_id`, and to them whole: `passengers[]` and `documents[]` included. To anyone else in the trip it does
+  not exist: it is not in their list or their `TripView`, and `GET …/bookings/:id` and its documents route answer
+  `404`, as for an unknown booking (since 12 Oct; a document's `visibility` no longer widens this). The trip's `stage`
+  still counts every booking, the room's "<title> booked" line and the trip record still name it, and an expense
+  that pays for a booking is still in everyone's money. Re-splitting a booking's expense adds the new people to the
+  booking (§4.10).
 - **An anonymous vote has no `votes` list**, only `voted`, `of`, `tally` (and `flexible_count`). The caller gets their own `my_vote`.
 - **When a person pauses Go, the room still sees their messages in full.** `withheld` is always `false` for the app.
 - **A private itinerary item** (`audience: "private"`) is returned only to the people in its `person_ids`.
@@ -258,8 +263,8 @@ interface MoneyView extends Money {                     // contract Money: curre
 // Booking (contract) gains details?, return_journey?, passengers? (1.1) and, in app reads, documents?:
 type BookingForApp = Booking & {
   details?: Array<{ label: string; value: string }>; return_journey?: Journey;
-  passengers?: Array<{ person_id: Id; seat?: string; pnr?: string }>;           // covered people only
-  documents?: Array<{ document_id: Id; name: string; mime: string; size_bytes: number; pages?: number; visibility: "covered" | "group"; url?: string }>;   // covered people only; url: a signed link valid 1 hour, fresh on every read (§4.10)
+  passengers?: Array<{ person_id: Id; seat?: string; pnr?: string }>;           // a booking reaches only its covered people and its payer (§1.7), whole
+  documents?: Array<{ document_id: Id; name: string; mime: string; size_bytes: number; pages?: number; visibility: "covered" | "group"; url?: string }>;   // url: a signed link valid 1 hour, fresh on every read (§4.10)
   added_by_person_id?: Id;
 };
 // Message (contract) gains quick_replies? ([{ label, text? }], Go's chips) and, on an upload-backed attachment, upload_id; a voice note is a file attachment with duration_s.
@@ -470,14 +475,16 @@ Go's in-app link `go://trips/<trip>/sheet/budget` opens the group budget editor.
 one a person adds), the trip takes from its confirmed bookings whatever it does not have yet. Nothing set is ever
 overwritten:
 - `destination`: a place, never the hotel: the city the outbound flight, train or bus lands in (for example "Goa"
-  for Mopa's airport GOX), else the town or state of the stay's address ("Anjuna, Goa 403509" gives "Goa"; "Manali,
-  Himachal Pradesh" gives "Manali"). With no address it stays empty;
+  for Mopa's airport GOX), else the town or state of the stay's address ("Anjuna, Goa 403509" gives "Goa"). With no
+  address it stays empty;
 - `stay`: the stay's name;
-- `dates`: the stay's check-in to check-out; else, only when both a going and a return journey are booked, the going
-  departure date to the return arrival date (a one-way flight sets no dates).
+- **never the dates** (12 Oct 2026): the trip's dates are set by Go and the people only.
 
-It arrives as `trip_changed kinds:["trip"]` (and `home_changed` when the place or dates moved): re-read the trip. The
-automatic name then follows ("Goa 2026").
+It arrives as `trip_changed kinds:["trip"]` (and `home_changed` when the place moved): re-read the trip.
+
+**A demo stay booking takes the trip's dates.** Check-in and check-out are the trip's own `dates` (14:00 / 11:00 local
+time). When the trip has no dates, the booking has no `starts_at`/`ends_at`, the voucher reads "To be confirmed", and a
+detail row says so (the number of nights still shows when Go's payment names it). Dates are never made up.
 
 **The automatic name.** A trip whose stored `title` is still exactly `"New trip"` and which has a destination with a
 name is shown as `"<destination.name> <year>"`, for example `"Hampi 2026"`: the year of `dates.start` when dates are
@@ -579,7 +586,7 @@ Upsert by `message_id`, place by `seq`, whichever mode brought the message.
   | Movement | Text | `ledger` (app reads only) |
   |---|---|---|
   | an expense is added | `Priya added Airport cab · ₹1,700 · split 4 ways`; `· paid by Kabir` before the split when the payer is someone else; `Go added Villa Sol · ₹54,200 · paid by Rahul · split 4 ways` when Go added it | `{ kind: "expense_added", expense_id }` |
-  | a split is fixed (the people changed) | `Priya changed the split of Airport cab · ₹1,700 · 3 ways` | `{ kind: "expense_changed", expense_id }` |
+  | a split is fixed (the people changed) | `Priya changed the split of Airport cab · ₹1,700 · 3 ways`; `Go changed the split of …` when Go re-split it | `{ kind: "expense_changed", expense_id }` |
   | an expense is removed | `Priya removed Airport cab · ₹1,700` | `{ kind: "expense_removed", expense_id }` |
   | a payback is recorded | `Aarav paid Rahul ₹5,800` | `{ kind: "payback", settlement_id }` |
 
@@ -698,7 +705,7 @@ added an expense fixes its split or removes it.
 | `GET /trips/:trip/transactions` | member | `?filter=all \| booking \| payback \| mine` (default `all`) `&limit=1-100` (default 50) `&before=<cursor>` | `{ "items": [Transaction], "total_count", "next_cursor": string \| null }`, newest first. `total_count` counts **all** rows whatever the filter (the "All 7" chip) | 422 `filter` (the old `pending` and `disputed` included), `limit`, `before` (not a cursor from this list) | — |
 | `GET /trips/:trip/expenses` | member | — | `{ "items": [Expense], "seq" }`, newest first: every expense that stands | 422 `status` (the old `?status=` filter is gone; any non-empty value is refused) | — |
 | `POST /trips/:trip/expenses` | any member | `{ "amount_minor" (≥ 1), "note" (1-120), "category": stay \| food \| getting_around \| activities \| other, "split_person_ids" (1-30, in the trip), "booking_id"? (this trip's), "paid_by_person_id"? (default: you) }` (strict). **To split with people chosen by @-mention, send their ids as `split_person_ids`** | `201 Expense` + `seq`. In the trip's currency, split equally (odd minor units go one each to the first people in joining order). It counts at once | 422 | `expense.changed` `change: "added"`, then the room's line (§4.6). Live: `trip_changed kinds: ["settlement","expense"]`, `message` |
-| `PATCH /trips/:trip/expenses/:id` | **the person responsible** (below) | `{ "split_person_ids" (1-30, in the trip now), "note"? (1-120) }` ("Fix split") | `200 Expense` + `seq` | 403; 404; 422 | `expense.changed` `change: "updated"` on `GO_CONTRACT=1.1`; on `1.0` (today) a change number and no event: Go reads the expense on its next `read_trip`. The room's line when the people changed |
+| `PATCH /trips/:trip/expenses/:id` | **the person responsible** (below) | `{ "split_person_ids" (1-30, in the trip now), "note"? (1-120) }` ("Fix split") | `200 Expense` + `seq` | 403; 404; 422 | `expense.changed` `change: "updated"` on `GO_CONTRACT=1.1`; on `1.0` (today) a change number and no event: Go reads the expense on its next `read_trip`. The room's line when the people changed. When the expense pays for a booking (`booking_id`), the people new to the split are added to the booking (§4.10): `booking.changed` `change: "updated"` by you, Live `trip_changed kinds: ["booking"]` and `home_changed` for them |
 | `DELETE /trips/:trip/expenses/:id` | the person responsible | — | `200 { "seq" }` | 403; 404 not in this trip or already removed | `expense.changed` `change: "removed"`, then the room's line |
 | `POST /trips/:trip/settlements` | any member | `{ "to_person_id" (another member), "amount_minor" (≥ 1), "currency" (the trip's), "method": upi \| cash \| bank_transfer \| other, "note"? (1-120) }` ("Record a payment") | `201 { "settlement": Settlement, "transfers": [Transfer], "seq" }`. It counts at once and for good: the transfer shrinks | 422 `to_person_id` (yourself, or not in the trip), `currency` | `settlement.recorded` in the same transaction, then the room's line. Live: `trip_changed kinds: ["settlement","expense"]`, `message` |
 | `POST /trips/:trip/transfers/pay-link` | the one who owes | `{ "to_person_id", "amount_minor" (≥ 1; the app prefills what is owed) }` | `{ "upi_uri": "upi://pay?pa=…&pn=…&am=1700.00&cu=INR&tn=…", "expires_at" (+10 min, advisory: the Server keeps nothing) }`. The link carries the payee's UPI id: a convenience, not a privacy measure | 409 payee not in the trip or has no UPI id (`has_upi: false`: offer Record a payment instead); 422 `to_person_id` when you do not owe them right now | nothing |
@@ -732,10 +739,10 @@ or `confirmations`; `Settlement` has no `status` or `responded_at`; `Transaction
 
 | Method & path | Who | Request | Answer | Errors | Go hears / live |
 |---|---|---|---|---|---|
-| `GET /trips/:trip/bookings` | member | — | `{ "items": [Booking], "seq" }`: every booking, `confirmed` and `cancelled`, newest first. `passengers[]` and `documents[]` only in bookings that cover you, each document with its `url` (a signed link valid 1 hour); `details` and `return_journey` for everyone | | — |
-| `GET /trips/:trip/bookings/:id` | member | — | `Booking` (same rule) | 404 not in this trip | — |
-| `GET /trips/:trip/bookings/:id/documents/:document_id` | a **covered person**, or anyone in the trip when the document is `visibility: "group"` | — | `302` to a **signed link valid 10 minutes** (`private, no-store`). Render the PDF client-side from it; "Share to the group" is a normal message with the file attached | 403 not covered; 404 booking not in the trip, or document not on this booking | — |
-| `POST /trips/:trip/bookings` | any member | `AddBooking` (below), strict | `201 Booking` as you see it (the covered-people rule above; `documents: []` for now) plus `seq`. Stored `confirmed`, in the trip's currency, with you as `added_by_person_id`; **no expense** is created | 422 | `booking.changed` `change: "added"` by you, then `record.changed` (the **booked** line: a decided line of the vote it names becomes booked, else a new line), then the system message "<title> booked". Live: `trip_changed kinds: ["booking","record"]` |
+| `GET /trips/:trip/bookings` | member | — | `{ "items": [Booking], "seq" }`: the bookings that are **yours to see** (they cover you, or you paid for them; §1.7), `confirmed` and `cancelled`, newest first, each whole: `passengers[]`, `details`, `return_journey`, and `documents[]` each with its `url` (a signed link valid 1 hour). A friend's own flight is not in your list | | — |
+| `GET /trips/:trip/bookings/:id` | a covered person or the payer | — | `Booking` (whole) | 404 not in this trip, or not yours to see (the same answer, so ids cannot be probed) | — |
+| `GET /trips/:trip/bookings/:id/documents/:document_id` | a **covered person** or the **payer** | — | `302` to a **signed link valid 10 minutes** (`private, no-store`). Render the PDF client-side from it; "Share to the group" is a normal message with the file attached | 404 booking not in the trip or not yours to see, or document not on this booking | — |
+| `POST /trips/:trip/bookings` | any member | `AddBooking` (below), strict | `201 Booking` as you see it (whole when it covers you or you are its payer, else without `passengers` and `documents`, and it will not be in your later reads; `documents: []` for now) plus `seq`. Stored `confirmed`, in the trip's currency, with you as `added_by_person_id`; **no expense** is created | 422 | `booking.changed` `change: "added"` by you, then `record.changed` (the **booked** line: a decided line of the vote it names becomes booked, else a new line), then the system message "<title> booked". Live: `trip_changed kinds: ["booking","record"]` |
 | `PATCH /trips/:trip/bookings/:id` | any member, any booking | any of `ref` (1-80), `refundable_until`, `starts_at`, `ends_at` (ISO; `null` clears a time); strict; at least one field | `{ "seq" }`, or `{ "seq": null }` when nothing differed | 404; 409 the booking is cancelled; 422 ends before starts | `booking.changed` `change: "updated"`. Live: `trip_changed kinds: ["booking"]` |
 | `POST /trips/:trip/bookings/:id/cancel-vote` | any member | `{}` (strict; send an `Idempotency-Key`) | `201 { "decision_id", "seq" }` | 404; 409 already cancelled, **paid through the vault**, or a cancellation vote is already open (the message names it) | `decision.opened` by you; the system message carrying the vote card. Live: `message`, `trip_changed kinds: ["decision"]` |
 | `GET /trips/:trip/itinerary` | member | `?scope=everyone` (default) \| `me` | `{ "days": [Day], "seq" }`. `days: []` is "No plan yet" | 422 `scope` | — |
@@ -753,7 +760,7 @@ vote). Render `image_url`/`logo_url` only when they are `http(s)` links.
 **Documents.** When Go's `add_booking` names `documents[]` (1.1), the Server copies each file from Go's link into its own
 storage in the background (PDF or image, ≤ 25 MB; a file that cannot be copied is skipped and logged) and serves it only
 through short signed links, never Go's link. A booking added by a person has no documents. Each document in a read (the
-bookings list, one booking, `TripView.bookings`) carries **`url`**: a signed link to the file, **valid 1 hour**, minted on
+bookings list, one booking, `TripView.bookings`, for the people who see the booking) carries **`url`**: a signed link to the file, **valid 1 hour**, minted on
 that read. Open or download it directly; when it has run out, read the booking again for a fresh one (the documents route
 above still works as a stable link). A document may arrive without `url` if Storage could not sign it at that moment: use
 the documents route.
@@ -762,7 +769,15 @@ the documents route.
 a moment after the tap: a **PDF e-ticket** for each leg of a flight, train or bus, or a **PDF hotel voucher** for a stay
 (ixigo-style, marked DEMO, `visibility: "covered"`). The booking itself is answered at once, without the file; when the
 file lands the Server sends **`trip_changed kinds:["booking"]`** with a new `seq` (and `home_changed` to the covered
-people): read the booking again to get `documents[]`. If the Server cannot render, the booking stays without a file.
+people and the payer): read the booking again to get `documents[]`. If the Server cannot render, the booking stays without a file.
+
+**Re-splitting a booking's expense adds the new people to the booking, so they see it and its files** (since 12 Oct).
+When an expense that pays for a booking (`Expense.booking_id`; the demo payment's expense does) is re-split, by its
+person with `PATCH …/expenses/:id` or by Go, the people new to the split are added to the booking's `for_person_ids`
+in the same change: nobody is ever taken off, `passengers` stay as they are, and never past 30 people. Live:
+`trip_changed kinds: ["booking"]` with its own `seq`, and `home_changed` for the people added. So a friend who joins
+after the stay was paid and is added to its split opens the hotel voucher. Re-splitting to fewer people leaves the
+booking as it is.
 
 **Cancelling by vote.** The Server opens a yes/no vote that is **not anonymous** and closes **24 hours** after it opens:
 question "Cancel this booking? <title>", options "Cancel: <title>" (index 0) and "Keep: <title>" (index 1; titles cut to
@@ -789,7 +804,7 @@ booking that covers you is **reworded from the booking**: "BLR → GOX · 6E 531
 |---|---|---|---|---|
 | `vote` | each open vote I have not voted in | the question / "closes in 1 hour" (or "2 of 5 voted") / "Vote" | `decision_id`, `message_id` of the vote card when there is one, `cancels_booking_id` on a cancellation vote | I vote, or it closes or is cancelled |
 | `mandate` | the payer, while the mandate is unanswered | "Yes, book it? Villa Sol, up to ₹55,000" / the question / "Yes, book it" | `decision_id`, `card_id`, `message_id` | I answer (a new mandate shows it again) |
-| `card` | the people in a Go card's `for_person_ids`, when the card has something to press (an action, or a checklist suggestion's `cta`); a notice with no buttons is information, never an item | the card's `fallback_text` / its `title` / its first action's label (else the `cta`'s) | `card_id`, `message_id` | Go removes me with `replace_card` |
+| `card` | the people in a Go card's `for_person_ids`, when the card has something **they** can press (an action that has no `only_for_person_ids` or names them, or a checklist suggestion's `cta`); a notice with no buttons is information, never an item; a `rooms` card stops being an item once the trip has a confirmed stay (it ends at payment) | the card's `fallback_text` / its `title` / its first action's label (else the `cta`'s) | `card_id`, `message_id` | Go removes me with `replace_card` |
 | `record_line` | the people in an `open`, `active` line's `person_ids` | the line's text / "due 2026-11-01" | `line_id` | the line is done, undone, agreed or doing |
 | `settle_up` | each net transfer where I owe | "Settle up with Rahul" / "₹5,800 left of your share" / "Record" | `transfer { to_person_id, amount_minor, currency }` | the transfer is gone (a settlement recorded) |
 | `checkin` | each confirmed flight covering me whose cached check-in state is open (`features.checkin`) | "Web check-in is open" / "6E 5313 · Fri 6 Nov · closes 19:40" / "Check in now" | `booking_id` | the check-in is done or closed |
@@ -925,7 +940,7 @@ the day Go ships that item. Where Go may send extra fields, the Server passes th
 **Passed through with no flag** (each appears only once Go sends it): option `details`; `return_journey`,
 `price_oneway_minor`, `price_round_minor`, `option_kind: "cab"`, `card_tap.payload`; `quick_replies`; `go://` links;
 `location` attachments and `duration_s`; `Booking.details`, `passengers`, `documents`, `return_journey` (the Server
-stores Go's documents and applies the covered-people rule); `ItineraryItem.person_ids`, `audience`, `Day.image_url` (the
+stores Go's documents and sends each booking only to its covered people and payer); `ItineraryItem.person_ids`, `audience`, `Day.image_url` (the
 Server filters `private` items and builds `scope=me`); the `checklist` card; `recording_url`, `duration_s`, `listen`;
 `Place.timezone`.
 

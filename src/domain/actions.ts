@@ -654,12 +654,20 @@ export async function needsYouIn(db: Db, tripId: string, personId: string, featu
       order by d.closed_at, d.decision_id`,
     [tripId, personId],
   );
-  // Only a card with something to press: a notice naming them with no buttons ("Go forgot you in this trip") is information, not a to-do.
+  // Only a card with something THIS person can press: a notice with no buttons ("Go forgot you in this trip") is information,
+  // and a button kept for others (`only_for_person_ids`) is not theirs (12 Oct 2026: a rooms card sat in "Pending on you"
+  // and its popup said "no longer waiting on you"). A `rooms` card ends at payment: once the trip has a confirmed stay,
+  // a rooms card Go left behind is no longer anyone's to-do.
   const cards = await db.query(
     `select message_id, card->>'card_id' as card_id, card->>'fallback_text' as text, card->>'title' as title,
-            coalesce(card->'actions'->0->>'label', card->'suggestion'->'cta'->>'label') as cta, sent_at from messages
+            coalesce((select a->>'label' from jsonb_array_elements(case when jsonb_typeof(card->'actions') = 'array' then card->'actions' else '[]'::jsonb end) a
+                       where a->'only_for_person_ids' is null or jsonb_typeof(a->'only_for_person_ids') <> 'array' or a->'only_for_person_ids' ? $2 limit 1),
+                     card->'suggestion'->'cta'->>'label') as cta, sent_at from messages
       where trip_id = $1 and author_kind = 'go' and card->'for_person_ids' ? $2 and ${visibleSql('$2')}
-        and ((jsonb_typeof(card->'actions') = 'array' and card->'actions' <> '[]'::jsonb) or card->'suggestion'->'cta'->>'action_id' is not null)
+        and (exists (select 1 from jsonb_array_elements(case when jsonb_typeof(card->'actions') = 'array' then card->'actions' else '[]'::jsonb end) a
+                      where a->'only_for_person_ids' is null or jsonb_typeof(a->'only_for_person_ids') <> 'array' or a->'only_for_person_ids' ? $2)
+             or card->'suggestion'->'cta'->>'action_id' is not null)
+        and not (card->>'kind' = 'rooms' and exists (select 1 from bookings b where b.trip_id = messages.trip_id and b.kind = 'stay' and b.status = 'confirmed'))
       order by seq`,
     [tripId, personId],
   );

@@ -1,6 +1,6 @@
 // The contract is Go's official 1.3.0 (contract/go.json, socket.json, methods.json, from vestra-ai/go-brain
-// packages/contract). The Server's overlay (contract/extensions-1.1.json) holds only its web check-in additions, laid over
-// the official files additively: every official schema and method is exactly as Go wrote it, and anything outside the
+// packages/contract). The Server's overlay (contract/extensions-1.1.json) holds only its web check-in additions, the demo's
+// payment.completed event and Go's update_expense, laid over the official files additively: every official schema and method is exactly as Go wrote it, and anything outside the
 // contract is still refused. `visible_to_person_ids` on PostMessage and Message is official since 1.2.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -11,6 +11,8 @@ const overlay = JSON.parse(readFileSync(new URL('../contract/extensions-1.1.json
 const socket = JSON.parse(readFileSync(new URL('../contract/socket.json', import.meta.url), 'utf8'));
 const CHECKIN_SCHEMAS = ['CheckinState', 'GetCheckin', 'SubmitCheckin', 'SubmitCheckinResult'];
 const DEMO_SCHEMAS = ['PaymentCompleted', 'PaymentCompletedData'];
+const EXPENSE_SCHEMAS = ['UpdateExpense'];
+const OVERLAY_METHODS = ['get_checkin', 'submit_checkin', 'update_expense'];
 
 /** Valid against the official files alone, and against the Server's own check (official + overlay): the two must agree. */
 const passes = (schema: string, value: unknown) => [validOfficial(schema, value), check(schema, value).ok];
@@ -47,13 +49,13 @@ describe('the official contract and the Server\'s overlay', () => {
     expect(socket.info.version).toBe('1.3.0');
   });
 
-  it('the overlay holds only the check-in schemas and methods and the demo\'s payment.completed event, none of them already in the official files', () => {
+  it('the overlay holds only the check-in schemas and methods, the demo\'s payment.completed event and update_expense, none of them already in the official files', () => {
     expect(CONTRACT_EXTENSIONS_VERSION).toBe('1.3.0+server-checkin');
     // `Event` is the one official name in the overlay: it only gains the payment.completed branch (docs/GO-TEAM-DEMO-PAYMENT.md).
-    expect(Object.keys(overlay.schemas).sort()).toEqual([...CHECKIN_SCHEMAS, ...DEMO_SCHEMAS, 'Event'].sort());
+    expect(Object.keys(overlay.schemas).sort()).toEqual([...CHECKIN_SCHEMAS, ...DEMO_SCHEMAS, ...EXPENSE_SCHEMAS, 'Event'].sort());
     expect(overlay.schemas.Event).toEqual({ oneOf: [{ $ref: '#/components/schemas/PaymentCompleted' }] });
-    expect(overlay.methods.map((m: any) => m.name)).toEqual(['get_checkin', 'submit_checkin']);
-    expect([...CHECKIN_SCHEMAS, ...DEMO_SCHEMAS].filter(hasOfficial)).toEqual([]);
+    expect(overlay.methods.map((m: any) => m.name)).toEqual(OVERLAY_METHODS);
+    expect([...CHECKIN_SCHEMAS, ...DEMO_SCHEMAS, ...EXPENSE_SCHEMAS].filter(hasOfficial)).toEqual([]);
     expect(overlay.methods.filter((m: any) => officialMethods.methods.some((o: any) => o.name === m.name))).toEqual([]);
   });
 
@@ -65,7 +67,7 @@ describe('the official contract and the Server\'s overlay', () => {
     const official = simplifyNullable(officialGoJson.components.schemas.Event) as { oneOf: unknown[] };
     expect(validator('Event').schema).toEqual({ ...official, oneOf: [...official.oneOf, { $ref: '#/components/schemas/PaymentCompleted' }] });
     for (const m of officialMethods.methods) expect(METHODS[m.name], m.name).toEqual(m);
-    expect(Object.keys(METHODS).sort()).toEqual([...officialMethods.methods.map((m: any) => m.name), 'get_checkin', 'submit_checkin'].sort());
+    expect(Object.keys(METHODS).sort()).toEqual([...officialMethods.methods.map((m: any) => m.name), ...OVERLAY_METHODS].sort());
   });
 
   it('the check-in requests are known to the Server and not to the official files', () => {
@@ -77,6 +79,20 @@ describe('the official contract and the Server\'s overlay', () => {
     expect(check('CheckinState', { status: 'open', seat: '14A', seat_map: { rows: [] } })).toMatchObject({ ok: true });
     expect(check('CheckinState', { status: 'boarding' })).toMatchObject({ ok: false });
     expect(() => validOfficial('CheckinState', { status: 'open' })).toThrow(/no schema CheckinState/);
+  });
+
+  it('update_expense is known to the Server and not to the official files: 1 to 30 ids, a note of 1 to 120, answered with WriteResult', () => {
+    const p = { request_id: 'r', trip_id: 't', expense_id: 'e', split_person_ids: ['p_a', 'p_b'] };
+    expect(METHODS.update_expense).toMatchObject({ direction: 'to_server', params: 'UpdateExpense', result: 'WriteResult', answer_within_seconds: 2, sends_event: 'expense.changed' });
+    expect(parseParams('update_expense', p)).toMatchObject({ ok: true });
+    expect(parseParams('update_expense', { ...p, note: 'Villa Sol (5 of us)', split_person_ids: Array.from({ length: 30 }, (_, i) => `p_${i}`) })).toMatchObject({ ok: true });
+    expect(parseParams('update_expense', { ...p, split_person_ids: [] })).toMatchObject({ ok: false, message: expect.stringContaining('split_person_ids') });
+    expect(parseParams('update_expense', { ...p, split_person_ids: Array.from({ length: 31 }, (_, i) => `p_${i}`) })).toMatchObject({ ok: false });
+    expect(parseParams('update_expense', { ...p, note: 'x'.repeat(121) })).toMatchObject({ ok: false, message: expect.stringContaining('note') });
+    expect(parseParams('update_expense', { ...p, note: '' })).toMatchObject({ ok: false });
+    const { expense_id: _e, ...noExpense } = p;
+    expect(parseParams('update_expense', noExpense)).toMatchObject({ ok: false, message: 'expense_id is required' });
+    expect(() => validOfficial('UpdateExpense', p)).toThrow(/no schema UpdateExpense/);
   });
 });
 

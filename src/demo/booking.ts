@@ -152,10 +152,12 @@ export function stayBooking(s: DemoBookingSource, o: DemoOption, now: Date): Dem
   const bookingId = f.stayBookingId();
   const hotelNumber = f.hotelBookingNumber();
 
-  // The trip's dates when it has them; else tomorrow for three nights.
-  let [checkIn, checkOut] = [when.dateParts(s.trip?.dates?.start), when.dateParts(s.trip?.dates?.end)];
-  if (!checkIn || !checkOut || when.daysBetween(checkIn, checkOut) < 1) [checkIn, checkOut] = [when.dateParts(when.dayIn(now, tz, 1))!, when.dateParts(when.dayIn(now, tz, 4))!];
-  const nights = when.daysBetween(checkIn, checkOut);
+  // The trip's own dates, or none: never made up (12 Oct 2026: a 1-5 Nov stay was booked as "tomorrow for three nights",
+  // and the trip and Go then followed those wrong dates). The nights come from Go's own purpose ("Munnar: 4 nights").
+  const [inDay, outDay] = [when.dateParts(s.trip?.dates?.start), when.dateParts(s.trip?.dates?.end)];
+  const dated = inDay && outDay && when.daysBetween(inDay, outDay) >= 1 ? { checkIn: inDay, checkOut: outDay } : undefined;
+  const purposeNights = Number(/(\d{1,2})\s*nights?\b/i.exec(s.purpose)?.[1]);
+  const nights = dated ? when.daysBetween(dated.checkIn, dated.checkOut) : purposeNights > 0 ? purposeNights : undefined;
 
   const guests = Math.max(1, s.for_person_ids.length);
   const room = Array.isArray(o.room_types) ? o.room_types[0] : undefined;
@@ -167,8 +169,8 @@ export function stayBooking(s: DemoBookingSource, o: DemoOption, now: Date): Dem
   const payer = (s.people ?? []).find((p) => p.person_id === s.payer_person_id);
   // An email is shown only on a voucher nobody else sees (app contract §1.7: no other person's email).
   const solo = s.for_person_ids.length === 1 && s.for_person_ids[0] === s.payer_person_id;
-  // Free cancellation never runs past check-in: Go's date is capped at a day before it.
-  const checkInAt = Date.parse(when.zonedIso(checkIn, 14, 0, tz));
+  // Free cancellation never runs past check-in (when the dates are known): Go's date is capped at a day before it.
+  const checkInAt = dated ? Date.parse(when.zonedIso(dated.checkIn, 14, 0, tz)) : Infinity;
   const refundMs = text(o.refundable_until) ? Date.parse(o.refundable_until!) : NaN;
   const refundableUntil = Number.isNaN(refundMs) ? undefined : refundMs <= checkInAt - 86_400_000 ? o.refundable_until! : new Date(checkInAt - 86_400_000).toISOString();
   const until = refundableUntil && Date.parse(refundableUntil) > now.getTime() ? when.longTime(when.wallOf(refundableUntil, tz)) : undefined;
@@ -192,8 +194,8 @@ export function stayBooking(s: DemoBookingSource, o: DemoOption, now: Date): Dem
       ...(lat !== undefined && lng !== undefined ? { mapUrl: `https://maps.google.com/?q=${lat},${lng}` } : {}),
     },
     status: 'Booking Confirmed · Demo',
-    checkIn: when.stayDay(checkIn),
-    checkOut: when.stayDay(checkOut),
+    checkIn: dated ? when.stayDay(dated.checkIn) : 'To be confirmed',
+    checkOut: dated ? when.stayDay(dated.checkOut) : nights ? `${plural(nights, 'night')}, dates to be confirmed` : 'To be confirmed',
     primaryGuest: { name: (text(payer?.name) ?? 'Guest').toUpperCase(), ...(solo && text(payer?.email) ? { email: payer!.email! } : {}) },
     travellers,
     rooms: { summary: rooms, ...(inclusions ? { inclusions } : {}) },
@@ -203,9 +205,8 @@ export function stayBooking(s: DemoBookingSource, o: DemoOption, now: Date): Dem
   };
 
   const details: Row[] = [
-    row('Check-in', `${data.checkIn} · 14:00`),
-    row('Check-out', `${data.checkOut} · 11:00`),
-    row('Nights', String(nights)),
+    ...(dated ? [row('Check-in', `${data.checkIn} · 14:00`), row('Check-out', `${data.checkOut} · 11:00`)] : [row('Dates', 'To be confirmed')]),
+    ...(nights ? [row('Nights', String(nights))] : []),
     row('Room', rooms),
     row('Guests', travellers),
     row('Cancellation', until ? `Free cancellation until ${until}` : 'Non-refundable'),
@@ -216,7 +217,7 @@ export function stayBooking(s: DemoBookingSource, o: DemoOption, now: Date): Dem
   return {
     kind: 'stay', title: name, vendor: s.merchant.slice(0, 80), ref,
     refundable_until: until ? refundableUntil! : null,
-    starts_at: when.zonedIso(checkIn, 14, 0, tz), ends_at: when.zonedIso(checkOut, 11, 0, tz),
+    starts_at: dated ? when.zonedIso(dated.checkIn, 14, 0, tz) : null, ends_at: dated ? when.zonedIso(dated.checkOut, 11, 0, tz) : null,
     journey: null, return_journey: null, place: text(place.name) ? o.place : null, image_url: o.image_url ?? null,
     details, passengers: null,
     tickets: [{ kind: 'stay', name: `Hotel voucher ${name.slice(0, 180)}.pdf`, data }],

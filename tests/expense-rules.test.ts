@@ -105,6 +105,16 @@ describe('with a Go that speaks contract 1.0', () => {
     expect(old.go.events.find((x) => x.type === 'settlement.recorded')!.data).toMatchObject({ settlement: { from_person_id: 'p_arjun', to_person_id: 'p_priya', amount_minor: 10000, status: 'confirmed' }, by: { kind: 'person', person_id: 'p_arjun' } });
     expect(old.go.refused).toEqual([]);
   });
+
+  it("Go's update_expense is gated the same way: the re-split takes its change number with no event, and its room line still goes", async () => {
+    const added = (await old.go.call('add_expense', { request_id: 'rq_old_add', trip_id: 't_goa', paid_by_person_id: 'p_kabir', amount_minor: 40000, currency: 'INR', note: 'Boat', category: 'activities', split_person_ids: ['p_kabir', 'p_arjun'] })).result;
+    await old.flush();
+    const from = old.go.events.length;
+    const r = (await old.go.call('update_expense', { request_id: 'rq_old_fix', trip_id: 't_goa', expense_id: added.expense_id, split_person_ids: ['p_kabir', 'p_arjun', 'p_meher'] })).result;
+    await old.flush();
+    const sent = old.go.events.slice(from).map((x) => [x.type, x.seq, (x.data as any).message?.text]);
+    expect(sent).toEqual([['message.created', r.seq + 1, 'Go changed the split of Boat · ₹400 · 3 ways']]); // nothing at r.seq
+  });
 });
 
 describe('what is gone', () => {

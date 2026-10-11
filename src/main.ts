@@ -1,4 +1,4 @@
-import { repairStayDestinations } from './domain/trip-from-booking.js';
+import { repairStayDestinations, repairSystemDates } from './domain/trip-from-booking.js';
 import { randomBytes } from 'node:crypto';
 import { createWriteStream, mkdirSync } from 'node:fs';
 import { buildApp } from './api/app.js';
@@ -106,3 +106,5 @@ process.on('SIGINT', shutdown);
 
 // One-time (12 Oct 2026): trips whose destination was filled with a stay's hotel name get the place instead.
 void repairStayDestinations(ctx).then((n) => console.log(`trip destinations repaired: ${n}`), (err) => console.error('trip destination repair failed', err));
+// One-time (12 Oct 2026): dates the system set on a trip from a booking are cleared, so Go sets the right ones.
+void repairSystemDates(ctx).then((n) => console.log(`trip dates set by the system cleared: ${n}`), (err) => console.error('trip dates repair failed', err));

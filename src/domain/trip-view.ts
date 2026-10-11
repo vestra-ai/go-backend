@@ -1,8 +1,8 @@
 // §4.4 GET /trips/:trip: the trip as the app may see it (contract §2 TripView). The snapshot Go reads, plus `stage`, the
 // caller's own corner (`me`), the chat button's numbers, the "needs you" count and what the caller may do, all from one
 // repeatable-read transaction so `seq` matches every number. Two app-only touches that Go never receives: a cancellation
-// vote carries `cancels_booking_id`, and a booking's `passengers` and `documents` are there only for the people it covers
-// (§1.7). Everyone in the trip sees where each person travels from and when they can leave (rev 4 §5.2). And the title
+// vote carries `cancels_booking_id`, and `bookings` holds only the ones the caller sees (the people each covers and its
+// payer, §1.7), while `stage` still counts every booking of the trip. Everyone in the trip sees where each person travels from and when they can leave (rev 4 §5.2). And the title
 // is the automatic name (src/domain/trip-title.ts) while the stored one is still "New trip".
 import type pg from 'pg';
 import { nowOf, type Ctx } from '../context.js';

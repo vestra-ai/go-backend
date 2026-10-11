@@ -184,8 +184,9 @@ describe('updating a booking', () => {
   });
 });
 
-describe('reading bookings (the covered-people rule)', () => {
-  it('lists every booking newest first with seq, and gives passengers only to the people the booking covers; everyone else gets the booking without passengers or documents; one booking reads the same way; 404 for another trip\'s', async () => {
+describe('reading bookings (only for the people a booking covers and its payer)', () => {
+  it('lists the bookings I see newest first with seq, whole (passengers, documents); a booking that neither covers me nor was paid by me is not in my list, and reads as unknown (404); the payer sees it whole; TripView matches the list; the stage and Go\'s read count every booking', async () => {
+    // Arjun and Meher fly; Rahul paid; Priya, Kabir are neither.
     const r = await add(booking({ kind: 'flight', title: 'Covered read', journey, for_person_ids: ['p_arjun', 'p_meher'], passengers: [{ person_id: 'p_arjun', seat: '14A' }, { person_id: 'p_meher', seat: '14B' }] }));
     const bid = r.body.booking_id as string;
     const seq = (await rows(h.pool, `select seq from trips where trip_id = 't_goa'`))[0].seq;
@@ -195,16 +196,46 @@ describe('reading bookings (the covered-people rule)', () => {
     const ordered = covered.body.items.map((b: any) => b.created_at);
     expect(ordered).toEqual([...ordered].sort().reverse()); // newest first
     const mine = covered.body.items.find((b: any) => b.booking_id === bid);
-    const theirs = other.body.items.find((b: any) => b.booking_id === bid);
-    expect([mine.passengers, mine.documents, 'passengers' in theirs, 'documents' in theirs, theirs.journey]).toEqual([[{ person_id: 'p_arjun', seat: '14A' }, { person_id: 'p_meher', seat: '14B' }], [], false, false, journey]);
+    expect([mine.passengers, mine.documents, mine.journey]).toEqual([[{ person_id: 'p_arjun', seat: '14A' }, { person_id: 'p_meher', seat: '14B' }], [], journey]);
+    expect([other.status, other.body.seq, other.body.items.some((b: any) => b.booking_id === bid)]).toEqual([200, seq, false]);
+    // Every booking in anyone's list covers them or was paid by them.
+    for (const who of EVERYONE) {
+      const items = (await list(t.as(who))).body.items as any[];
+      expect(items.every((b) => b.for_person_ids.includes(who) || b.payer_person_id === who), who).toBe(true);
+    }
+    // One booking: whole for a covered person and for the payer; 404 for anyone else, worded as for an unknown booking.
     expect((await one(bid)).body.passengers).toHaveLength(2);
-    expect('passengers' in (await one(bid, t.as('p_priya'))).body).toBe(false);
-    // The trip read applies the same rule; Go's read does not.
-    const view = (who: string) => t.api(t.as(who), 'GET', '/app/v1/trips/t_goa').then((x) => x.body.bookings.find((b: any) => b.booking_id === bid));
-    expect([(await view('p_arjun')).passengers.length, 'passengers' in (await view('p_priya')), (await h.go.call('read_trip', { trip_id: 't_goa' })).result.bookings.find((b: any) => b.booking_id === bid).passengers.length]).toEqual([2, false, 2]);
+    const payer = (await one(bid, t.as('p_rahul'))).body;
+    expect([payer.passengers.length, payer.documents]).toEqual([2, []]);
+    const unseen = await one(bid, t.as('p_priya'));
+    expect([...refusal(unseen), unseen.body.error.message]).toEqual([404, 'not_found', `booking ${bid} does not exist in trip t_goa`]);
+    // The trip read sends the same bookings as the list, and the same stage to everyone; Go's read keeps every booking.
+    const view = async (who: string) => (await t.api(t.as(who), 'GET', '/app/v1/trips/t_goa')).body;
+    for (const who of ['p_arjun', 'p_priya', 'p_rahul']) {
+      const [v, l] = [await view(who), (await list(t.as(who))).body.items as any[]];
+      expect(v.bookings.map((b: any) => b.booking_id).sort(), who).toEqual(l.map((b) => b.booking_id).sort());
+    }
+    expect([(await view('p_arjun')).bookings.find((b: any) => b.booking_id === bid).passengers.length, (await view('p_priya')).bookings.some((b: any) => b.booking_id === bid)]).toEqual([2, false]);
+    expect((await view('p_priya')).stage).toEqual((await view('p_arjun')).stage);
+    expect((await h.go.call('read_trip', { trip_id: 't_goa' })).result.bookings.find((b: any) => b.booking_id === bid).passengers.length).toBe(2);
     expect(refusal(await one('b_elsewhere'))).toEqual([404, 'not_found']);
     expect(refusal(await list(t.as('p_stranger')))).toEqual([403, 'forbidden']);
     expect(refusal(await list(null))).toEqual([401, 'unauthorized']);
+  });
+
+  it('the stage counts every confirmed booking of the trip, also for someone who sees none of them', async () => {
+    await seedTrip(h.pool, 't_stage', [{ id: 'p_sa', name: 'Sa', role: 'organizer' }, { id: 'p_sb', name: 'Sb' }]);
+    await h.pool.query(`update trips set destination = '{"name":"Goa"}' where trip_id = 't_stage'`);
+    const stage = async (who: string) => (await t.api(t.as(who), 'GET', '/app/v1/trips/t_stage')).body;
+    const before = await stage('p_sb');
+    const flight = { request_id: 'rq_stage_1', trip_id: 't_stage', kind: 'flight', title: 'Sa flies', vendor: 'ixigo', ref: 'K1', amount_minor: 100, currency: 'INR', payer_person_id: 'p_sa', for_person_ids: ['p_sa'] };
+    const stay = { ...flight, request_id: 'rq_stage_2', kind: 'stay', title: 'Sa sleeps' };
+    expect((await h.go.call('add_booking', flight)).error).toBeUndefined();
+    expect((await h.go.call('add_booking', stay)).error).toBeUndefined();
+    const [sa, sb] = [await stage('p_sa'), await stage('p_sb')];
+    expect([sb.bookings, sa.bookings.length]).toEqual([[], 2]); // Sb sees neither booking
+    expect(sb.stage).toEqual(sa.stage); // and the trip's stage is the same for both, counting both bookings
+    expect(sb.stage).not.toEqual(before.stage);
   });
 });
 
@@ -233,18 +264,18 @@ describe('documents Go sends with add_booking', () => {
     expect((await h.go.call('add_booking', params)).result).toEqual(r.result);
     await settleDocumentCopies();
     expect((await rows(h.pool, 'select count(*)::int as n from booking_documents where booking_id = $1', [bid]))[0].n).toBe(2);
-    // Covered people see the documents (the facts, and a signed link to our copy); the rest of the trip sees neither documents nor passengers.
+    // Covered people see the documents (the facts, and a signed link to our copy); the rest of the trip does not get the booking.
     const rahul = (await one(bid, t.as('p_rahul'))).body;
-    const priya = (await one(bid, t.as('p_priya'))).body;
     const signed = expect.stringContaining('https://go.example/_dev/storage/');
-    expect([rahul.documents, rahul.passengers, rahul.details, 'documents' in priya, 'passengers' in priya, priya.details]).toEqual([
+    expect([rahul.documents, rahul.passengers, rahul.details]).toEqual([
       [{ document_id: 'doc_pdf', name: '6E5313-K7QX2M.pdf', mime: 'application/pdf', size_bytes: 15, pages: 2, visibility: 'covered', url: signed }, { document_id: 'doc_png', name: 'voucher.png', mime: 'image/png', size_bytes: 3, visibility: 'group', url: signed }],
-      [{ person_id: 'p_rahul', seat: '14A', pnr: 'K7QX2M' }], [{ label: 'PNR', value: 'K7QX2M' }], false, false, [{ label: 'PNR', value: 'K7QX2M' }],
+      [{ person_id: 'p_rahul', seat: '14A', pnr: 'K7QX2M' }], [{ label: 'PNR', value: 'K7QX2M' }],
     ]);
+    expect(refusal(await one(bid, t.as('p_priya')))).toEqual([404, 'not_found']);
     expect(JSON.stringify(rahul)).not.toContain(filesBase);
   });
 
-  it('GET …/documents/:document_id answers 302 to a signed link valid 10 minutes for a covered person, 403 for anyone else unless the document is group-visible, 404 for an unknown document', async () => {
+  it('GET …/documents/:document_id answers 302 to a signed link valid 10 minutes for a covered person and for the payer, 404 for anyone else (group-visible or not, as for an unknown booking), 404 for an unknown document', async () => {
     const r = await doc(bid, 'doc_pdf', t.as('p_rahul'));
     expect([r.status, r.headers['cache-control'], String(r.headers.location).includes('/_dev/storage/')]).toEqual([302, 'private, no-store', true]);
     const fetched = await h.app.inject({ method: 'GET', url: new URL(String(r.headers.location)).pathname });
@@ -252,11 +283,30 @@ describe('documents Go sends with add_booking', () => {
     h.storage.now = () => Date.now() + 11 * 60_000; // eleven minutes on, the link is dead
     expect((await h.app.inject({ method: 'GET', url: new URL(String(r.headers.location)).pathname })).statusCode).toBe(403);
     h.storage.now = () => Date.now();
-    expect(refusal(await doc(bid, 'doc_pdf', t.as('p_priya')))).toEqual([403, 'forbidden']); // not covered
-    expect((await doc(bid, 'doc_png', t.as('p_priya'))).status).toBe(302); // group-visible
+    expect((await doc(bid, 'doc_pdf', t.as('p_arjun'))).status).toBe(302); // covered
+    const unseen = await doc(bid, 'doc_pdf', t.as('p_priya')); // neither covered nor the payer
+    expect([...refusal(unseen), unseen.body.error.message]).toEqual([404, 'not_found', `booking ${bid} does not exist in trip t_goa`]);
+    expect(refusal(await doc(bid, 'doc_png', t.as('p_priya')))).toEqual([404, 'not_found']); // group-visible, on a booking she does not see
     expect(refusal(await doc(bid, 'doc_dead', t.as('p_rahul')))).toEqual([404, 'not_found']); // never copied
     expect(refusal(await doc('b_elsewhere', 'doc_pdf', t.as('p_rahul')))).toEqual([404, 'not_found']);
     expect(refusal(await doc(bid, 'doc_pdf', t.as('p_stranger')))).toEqual([403, 'forbidden']);
     expect(refusal(await doc(bid, 'doc_pdf', null))).toEqual([401, 'unauthorized']);
+  });
+
+  it('the payer who is not on the booking sees it whole and opens its files; the people it covers do too; nobody else gets it', async () => {
+    const params = goBooking({ payer_person_id: 'p_meher', for_person_ids: ['p_kabir'], passengers: [{ person_id: 'p_kabir', seat: '3C' }], documents: [{ document_id: 'doc_paid', name: 'kabir.pdf', mime: 'application/pdf', size_bytes: 15, visibility: 'covered', url: `${filesBase}/ticket.pdf` }] });
+    const paid = (await h.go.call('add_booking', params)).result.booking_id as string;
+    await settleDocumentCopies();
+    for (const who of ['p_meher', 'p_kabir']) {
+      const b = (await one(paid, t.as(who))).body;
+      expect([b.passengers, b.documents.map((d: any) => [d.document_id, typeof d.url])], who).toEqual([[{ person_id: 'p_kabir', seat: '3C' }], [['doc_paid', 'string']]]);
+      expect((await doc(paid, 'doc_paid', t.as(who))).status, who).toBe(302);
+      expect((await list(t.as(who))).body.items.some((x: any) => x.booking_id === paid), who).toBe(true);
+    }
+    for (const who of ['p_rahul', 'p_priya', 'p_arjun']) {
+      expect(refusal(await one(paid, t.as(who))), who).toEqual([404, 'not_found']);
+      expect(refusal(await doc(paid, 'doc_paid', t.as(who))), who).toEqual([404, 'not_found']);
+      expect((await list(t.as(who))).body.items.some((x: any) => x.booking_id === paid), who).toBe(false);
+    }
   });
 });

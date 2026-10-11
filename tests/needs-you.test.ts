@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closesIn } from '../src/domain/actions.js';
 import { appApi } from './helpers/app-api.js';
 import { rows, startHarness, type Harness } from './helpers/harness.js';
+import { seedTrip } from './helpers/seed.js';
 
 let h: Harness;
 let t: ReturnType<typeof appApi>;
@@ -95,5 +96,24 @@ describe('the shape', () => {
     expect((await ofKind('p_priya', 'settle_up'))[0]).toMatchObject({ item_id: 'settle:p_kabir', subtitle: '₹1,800 left of your share' });
     await t.api(t.as('p_priya'), 'POST', '/app/v1/trips/t_goa/expenses', { paid_by_person_id: 'p_priya', amount_minor: 180000, note: 'Cab back', category: 'getting_around', split_person_ids: ['p_kabir'] });
     expect(await ofKind('p_priya', 'settle_up')).toEqual([]);
+  });
+});
+
+// Found in the app (12 Oct 2026): a rooms card sat in "Pending on you" while its popup said "no longer waiting on you".
+describe('a Go card is pending only when this person can press something on it', () => {
+  it('a button kept for someone else is not mine; a rooms card stops counting once the trip has a confirmed stay', async () => {
+    const ids = async (who: string) => (await strip(who)).items.filter((i) => i.kind === 'card').map((i) => i.target.card_id);
+    await h.go.call('post_message', { request_id: 'rq_ny_only', trip_id: 't_goa', text: 'Pay?', card: { card_id: 'c_ny_only', kind: 'notice', fallback_text: 'Your seat', title: 'Seat', body: 'x', tone: 'info', for_person_ids: ['p_meher', 'p_kabir'], actions: [{ action_id: 'pick', label: 'Pick', style: 'primary', only_for_person_ids: ['p_kabir'] }] } });
+    expect([(await ids('p_kabir')).includes('c_ny_only'), (await ids('p_meher')).includes('c_ny_only')]).toEqual([true, false]);
+
+    const rooms = { card_id: 'c_ny_rooms', kind: 'rooms', fallback_text: 'Pick how you split the rooms', title: 'Rooms at Villa Sol', option_id: 'opt_villa', for_person_ids: ['p_meher'],
+      arrangements: [{ arrangement_id: 'ar_1', label: '1 Deluxe', rooms: [{ room_type_id: 'rt_1', label: 'Deluxe', person_ids: ['p_meher'], price_minor: 100 }], total_minor: 100, per_person: [{ person_id: 'p_meher', amount_minor: 100 }] }],
+      actions: [{ action_id: 'pick', label: 'Choose', style: 'primary', per_option: true }] };
+    await seedTrip(h.pool, 't_ny_rooms'); // a trip with no stay booked yet
+    const roomIds = async () => (await t.api(t.as('p_meher'), 'GET', '/app/v1/trips/t_ny_rooms/needs-you')).body.items.filter((i: any) => i.kind === 'card').map((i: any) => i.target.card_id);
+    expect((await h.go.call('post_message', { request_id: 'rq_ny_rooms', trip_id: 't_ny_rooms', text: 'Rooms?', card: rooms })).error).toBeUndefined();
+    expect(await roomIds()).toContain('c_ny_rooms');
+    await h.go.call('add_booking', { request_id: 'rq_ny_stay', trip_id: 't_ny_rooms', kind: 'stay', title: 'Villa Sol', vendor: 'ixigo', ref: 'IXG-NY', amount_minor: 100, currency: 'INR', payer_person_id: 'p_rahul', for_person_ids: ['p_rahul', 'p_meher'] });
+    expect(await roomIds()).not.toContain('c_ny_rooms'); // the stay is paid: the rooms card is over
   });
 });

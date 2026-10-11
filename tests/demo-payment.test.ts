@@ -122,7 +122,7 @@ describe("the demo's payment", () => {
     expect(cards.body.items.map((i: any) => i.card.card_id)).toContain(pay);
   });
 
-  it("the booking module's ticket file is copied into the Server's storage after the payment and shows on the booking for the people it covers", async () => {
+  it("the booking module's ticket file is copied into the Server's storage after the payment and shows on the booking for the people it covers; nobody else gets the booking", async () => {
     const { pay, approval_id } = await personalPayCard('p_priya', 'f');
     const spy = vi.spyOn(demoBooking, 'demoBookingFor').mockImplementationOnce(async (s) => ({
       kind: 'flight', title: 'IndiGo 6E 2134', vendor: 'ixigo', ref: 'DEMO-TICKET', passengers: [{ person_id: s.for_person_ids[0]!, seat: '14A', pnr: 'DEMO-TICKET' }],
@@ -137,10 +137,10 @@ describe("the demo's payment", () => {
     expect(docs).toEqual([{ name: 'Boarding pass.pdf', mime: 'application/pdf', visibility: 'covered' }]);
     const mine = (await t.api(t.as('p_priya'), 'GET', '/app/v1/trips/t_goa/bookings')).body.items.find((b: any) => b.booking_id === booking.booking_id);
     const theirs = (await t.api(t.as('p_arjun'), 'GET', '/app/v1/trips/t_goa/bookings')).body.items.find((b: any) => b.booking_id === booking.booking_id);
-    expect([mine.documents.length, theirs.documents, theirs.passengers]).toEqual([1, undefined, undefined]);
+    expect([mine.documents.length, theirs]).toEqual([1, undefined]); // Priya's own ticket is not on Arjun's Bookings tab
   });
 
-  it("the demo module's ticket PDF is rendered after the payment, kept in storage, and reaches the covered person with a signed link; others get none", async () => {
+  it("the demo module's ticket PDF is rendered after the payment, kept in storage, and reaches the covered person with a signed link; others get neither the booking nor the file", async () => {
     const { pay, approval_id } = await personalPayCard('p_meher', 'k');
     const rendered: string[] = [];
     setPdfRenderer(async (html) => {
@@ -164,7 +164,7 @@ describe("the demo's payment", () => {
       expect(landed.map((e) => e.seq)).toEqual([Number(trip.seq)]);
       expect(live.filter((e) => e.kind === 'home' && e.person_id === 'p_meher').length).toBeGreaterThanOrEqual(2);
 
-      // Meher gets the document with a link valid an hour, in the list, the booking and the trip; Rahul gets no documents.
+      // Meher gets the document with a link valid an hour, in the list, the booking and the trip; Rahul gets no booking at all.
       const mine = (await t.api(t.as('p_meher'), 'GET', '/app/v1/trips/t_goa/bookings')).body.items.find((b: any) => b.booking_id === booking.booking_id);
       expect(mine.documents).toEqual([{ document_id: docs[0].document_id, name: 'E-ticket BLR-GOX.pdf', mime: 'application/pdf', size_bytes: 17, pages: 1, visibility: 'covered', url: expect.stringContaining('/_dev/storage/') }]);
       const fetched = await h.app.inject({ method: 'GET', url: new URL(mine.documents[0].url).pathname });
@@ -179,8 +179,9 @@ describe("the demo's payment", () => {
       expect([one.documents[0].url, inTrip.documents[0].url]).toEqual([expect.stringContaining('/_dev/storage/'), expect.stringContaining('/_dev/storage/')]);
       expect(one.documents[0].url).not.toBe(mine.documents[0].url); // minted on every read
       const theirs = (await t.api(t.as('p_rahul'), 'GET', '/app/v1/trips/t_goa/bookings')).body.items.find((b: any) => b.booking_id === booking.booking_id);
-      expect([theirs.documents, theirs.passengers, theirs.details.length > 0]).toEqual([undefined, undefined, true]);
+      expect(theirs).toBeUndefined();
       expect((await t.api(t.as('p_meher'), 'GET', `/app/v1/trips/t_goa/bookings/${booking.booking_id}/documents/${docs[0].document_id}`)).status).toBe(302);
+      expect((await t.api(t.as('p_rahul'), 'GET', `/app/v1/trips/t_goa/bookings/${booking.booking_id}/documents/${docs[0].document_id}`)).status).toBe(404);
 
       // A render that fails is logged and skipped: the booking stands without a file.
       const failing = await personalPayCard('p_priya', 'l');

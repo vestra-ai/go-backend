@@ -31,8 +31,10 @@ export async function postExpenseAdded(tx: Tx, e: ExpenseView, by: { kind: 'pers
   await postSystemMessage(tx.ctx, tx.db, tx.tripId, addedText(who, e, payer), undefined, { kind: 'expense_added', expense_id: e.expense_id });
 }
 
-export async function postSplitChanged(tx: Tx, e: ExpenseView, personId: string): Promise<void> {
-  await postSystemMessage(tx.ctx, tx.db, tx.tripId, splitChangedText(await personName(tx.db, personId), e), undefined, { kind: 'expense_changed', expense_id: e.expense_id });
+/** "Priya changed the split of Airport cab · ₹1,700 · 3 ways"; "Go changed the split of …" when Go re-split it (update_expense). */
+export async function postSplitChanged(tx: Tx, e: ExpenseView, by: { kind: 'person'; person_id: string } | { kind: 'go' }): Promise<void> {
+  const who = by.kind === 'go' ? 'Go' : await personName(tx.db, by.person_id);
+  await postSystemMessage(tx.ctx, tx.db, tx.tripId, splitChangedText(who, e), undefined, { kind: 'expense_changed', expense_id: e.expense_id });
 }
 
 export async function postExpenseRemoved(tx: Tx, e: ExpenseView, personId: string): Promise<void> {

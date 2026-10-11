@@ -1,7 +1,7 @@
 // A booking settles part of the trip (11 Oct 2026): the trip takes its empty destination, stay and dates from its
 // confirmed bookings. Never a value someone set; dates from flights only with both a going and a return journey.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { fillsFromBookings, placeFromAddress, repairStayDestinations } from '../src/domain/trip-from-booking.js';
+import { fillsFromBookings, placeFromAddress, repairStayDestinations, repairSystemDates } from '../src/domain/trip-from-booking.js';
 import { appApi } from './helpers/app-api.js';
 import { rows, startHarness, type Harness } from './helpers/harness.js';
 
@@ -14,7 +14,7 @@ const BACK = leg('GOX', 'BLR', '2026-11-10T10:00:00+05:30', '2026-11-10T11:25:00
 
 describe('fillsFromBookings', () => {
   it('a stay alone: its place, its name and its check-in to check-out', () => {
-    expect(fillsFromBookings(EMPTY, [VILLA as any])).toEqual({ destination: { name: 'Goa' }, stay: 'Villa Sol, Anjuna', dates: { start: '2026-11-06', end: '2026-11-09' } }); // the place, never the hotel's name
+    expect(fillsFromBookings(EMPTY, [VILLA as any])).toEqual({ destination: { name: 'Goa' }, stay: 'Villa Sol, Anjuna' }); // the place, never the hotel's name; never the dates
   });
 
   it('the place from a stay\'s address: its town, or the state people travel to; nothing when there is no address', () => {
@@ -30,15 +30,13 @@ describe('fillsFromBookings', () => {
     expect(fillsFromBookings(EMPTY, [flight(OUT) as any])).toEqual({ destination: { name: 'Goa' } });
   });
 
-  it('going and return flights, in one booking or two: the going departure date to the return arrival date', () => {
-    const want = { destination: { name: 'Goa' }, dates: { start: '2026-11-06', end: '2026-11-10' } };
-    expect(fillsFromBookings(EMPTY, [flight(OUT, BACK) as any])).toEqual(want);
-    expect(fillsFromBookings(EMPTY, [flight(OUT) as any, flight(BACK) as any])).toEqual(want);
+  it('never the dates (12 Oct 2026: they are Go\'s and the people\'s to set), not even from going and return flights', () => {
+    expect(fillsFromBookings(EMPTY, [flight(OUT, BACK) as any])).toEqual({ destination: { name: 'Goa' } });
+    expect(fillsFromBookings(EMPTY, [flight(OUT) as any, flight(BACK) as any, VILLA as any])).toEqual({ destination: { name: 'Goa' }, stay: 'Villa Sol, Anjuna' });
   });
 
-  it('never a field the trip already has; a stay\'s dates win over flights when both are booked', () => {
+  it('never a field the trip already has', () => {
     expect(fillsFromBookings({ destination: { name: 'Hampi' }, stay: 'My homestay', dates_start: '2026-12-01' }, [VILLA as any, flight(OUT, BACK) as any])).toEqual({});
-    expect(fillsFromBookings(EMPTY, [flight(OUT, BACK) as any, VILLA as any]).dates).toEqual({ start: '2026-11-06', end: '2026-11-09' });
   });
 });
 
@@ -85,6 +83,31 @@ describe('repairStayDestinations', () => {
     expect(await repairStayDestinations(h.ctx)).toBe(0);
     await h.pool.query("update trips set destination = $1 where trip_id = 't_goa'", [JSON.stringify({ name: 'Hampi' })]); // a person's own value
     expect(await repairStayDestinations(h.ctx)).toBe(0);
+  });
+});
+
+// The one-time dates repair (12 Oct 2026): dates the system set on a trip are cleared, so Go sets the right ones.
+describe('repairSystemDates', () => {
+  let h: Harness;
+  beforeAll(async () => (h = await startHarness()));
+  afterAll(() => h.stop());
+
+  it('clears dates whose newest change was the system\'s; leaves dates a person or Go set after it; a second run does nothing', async () => {
+    const t = appApi(h);
+    // As before the fix: the system filled the trip's dates (its trip.updated naming dates is in the outbox).
+    await h.pool.query("update trips set dates_start = null, dates_end = null where trip_id = 't_goa'");
+    await h.pool.query('begin');
+    await h.pool.query("update trips set dates_start = '2026-10-13', dates_end = '2026-10-16' where trip_id = 't_goa'");
+    await h.pool.query('commit');
+    const { change } = await import('../src/db/write-change.js');
+    const c = await h.pool.connect();
+    try { await c.query('begin'); await change(c, 't_goa', 'trip.updated', { by: { kind: 'system' }, changed: ['dates'] }); await c.query('commit'); } finally { c.release(); }
+    expect(await repairSystemDates(h.ctx)).toBe(1);
+    expect((await rows(h.pool, "select dates_start, dates_end from trips where trip_id = 't_goa'"))[0]).toEqual({ dates_start: null, dates_end: null });
+    expect(await repairSystemDates(h.ctx)).toBe(0);
+    expect((await t.api(t.as('p_rahul'), 'PATCH', '/app/v1/trips/t_goa', { dates: { start: '2026-11-01', end: '2026-11-05' } })).status).toBe(200); // a person sets them
+    expect(await repairSystemDates(h.ctx)).toBe(0);
+    expect((await rows(h.pool, "select dates_start::text as s from trips where trip_id = 't_goa'"))[0].s).toBe('2026-11-01');
   });
 });
 

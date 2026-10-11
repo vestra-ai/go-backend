@@ -1,5 +1,8 @@
 // §4.9 expenses. An expense counts in the totals and the transfers from the moment it exists until it is removed: nobody
-// approves it and nobody disputes it. Whoever added it is the one who may fix its split or remove it (see `mayChange`).
+// approves it and nobody disputes it. Whoever added it is the one who may fix its split or remove it (see `mayChange`);
+// Go may re-split any expense that stands (update_expense). Re-splitting an expense that pays for a booking adds the new
+// people to the booking, so they see it and its files.
+import type pg from 'pg';
 import { goContractOf, type Ctx } from '../context.js';
 import { check } from '../contract/index.js';
 import { newId } from '../db/ids.js';
@@ -7,10 +10,11 @@ import type { Db } from '../db/pool.js';
 import { withTx } from '../db/pool.js';
 import { change, nextSeq } from '../db/write-change.js';
 import type { LiveEvent } from '../live/live.js';
-import { Forbidden, publishHomeAll, requireMember } from './actions.js';
+import { Forbidden, publishHome, publishHomeAll, requireMember } from './actions.js';
 import { invalid, notFound } from './errors.js';
 import { expenseView, loadExpenses, type ExpenseStoredRow, type ExpenseView } from './ledger.js';
 import { postExpenseAdded, postExpenseRemoved, postSplitChanged } from './ledger-lines.js';
+import { bookingOf, type BookingRow } from './mappers.js';
 import { readOnly } from './money-view.js';
 
 /**
@@ -18,7 +22,7 @@ import { readOnly } from './money-view.js';
  * on 8 Oct 2026). On GO_CONTRACT=1.0 the change takes its number with no event, and Go sees the new split on its next
  * read_trip; on 1.1 (docs/GO-CHANGES.md B4) the event is sent.
  */
-async function expenseUpdated(ctx: Ctx, db: Db, tripId: string, data: { expense: ExpenseView; change: 'updated'; by: { kind: 'person'; person_id: string }; by_person_id: string }): Promise<number> {
+async function expenseUpdated(ctx: Ctx, db: Db, tripId: string, data: { expense: ExpenseView; change: 'updated'; by: SplitActor; by_person_id?: string }): Promise<number> {
   return goContractOf(ctx) === '1.1' ? change(db, tripId, 'expense.changed', data) : nextSeq(db, tripId);
 }
 
@@ -143,22 +147,70 @@ export interface ExpenseSplitEdit {
   note?: string;
 }
 
+/** Who re-splits an expense: a person (the "Fix split" route) or Go (update_expense). */
+export type SplitActor = { kind: 'person'; person_id: string } | { kind: 'go' };
+
+/** The contract's limit on a booking's `for_person_ids`. */
+const MAX_COVERED = 30;
+
+/**
+ * The people an expense is now split between also see the booking it pays for (and its files): the new ones are added
+ * to the booking's `for_person_ids`, and nobody is ever taken off it. Its passengers stay as they are (each is still one
+ * of the covered people). Never past the contract's 30: anyone past it is left off the booking. Go hears
+ * `booking.changed` `updated` by the same actor, and the newly covered people's homes are told.
+ */
+async function coverSplitPeople(ctx: Ctx, db: Db, tripId: string, booking: BookingRow, ids: string[], by: SplitActor): Promise<void> {
+  const added = ids.filter((id) => !booking.for_person_ids.includes(id)).slice(0, Math.max(0, MAX_COVERED - booking.for_person_ids.length));
+  if (added.length === 0) return;
+  const updated = (await db.query<BookingRow>('update bookings set for_person_ids = $2 where booking_id = $1 returning *', [booking.booking_id, JSON.stringify([...booking.for_person_ids, ...added])])).rows[0]!;
+  const seq = await change(db, tripId, 'booking.changed', { booking: bookingOf(updated), change: 'updated', by });
+  await ctx.live.publish(tripId, { kind: 'trip', seq, kinds: ['booking'] });
+  await publishHome(ctx, tripId, added); // the booking is now on their Bookings tab
+}
+
+/**
+ * The new split, and a new note if given, of an expense already held (`lockExpense`), by a person or by Go. In order:
+ * the expense's change (`expense.changed` `updated`, sent on contract 1.1 only), the money notices, the room's line when
+ * the split itself moved (a new note alone is not a money movement), then the booking it pays for gains the new people.
+ * `unlessSame`: when neither the people nor the note differ, nothing is written and the answer is `seq: null` (Go's
+ * update_expense); the person route always takes a change number, as it always has.
+ */
+async function resplit(ctx: Ctx, db: pg.PoolClient, tripId: string, row: ExpenseStoredRow, by: SplitActor, input: ExpenseSplitEdit, unlessSame: boolean): Promise<{ expense: ExpenseView; seq: number | null }> {
+  const ids = [...new Set(input.split_person_ids)];
+  await checkExpenseFields(db, tripId, { paid_by_person_id: null, category: row.category, split_person_ids: ids, booking_id: null });
+  const note = input.note ?? row.note;
+  if (unlessSame && sameIds(row.split_person_ids, ids) && note === row.note) return { expense: expenseView(row), seq: null };
+  // The booking's row is held before the change number (which locks the trip row), as everywhere else.
+  const booking = row.booking_id ? (await db.query<BookingRow>('select * from bookings where trip_id = $1 and booking_id = $2 for update', [tripId, row.booking_id])).rows[0] : undefined;
+  const updated = (await db.query<ExpenseStoredRow>('update expenses set split_person_ids = $2, note = $3 where expense_id = $1 returning *', [row.expense_id, JSON.stringify(ids), note])).rows[0]!;
+  const expense = expenseView(updated);
+  const seq = await expenseUpdated(ctx, db, tripId, { expense, change: 'updated', by, ...(by.kind === 'person' ? { by_person_id: by.person_id } : {}) });
+  await moneyChanged(ctx, tripId, seq);
+  if (!sameIds(row.split_person_ids, ids)) await postSplitChanged({ ctx, db, tripId }, expense, by);
+  if (booking) await coverSplitPeople(ctx, db, tripId, booking, ids, by);
+  return { expense, seq };
+}
+
 /** "Fix split" (see `mayChange`): the new split, and a new note if given. Go hears `expense.changed` with change `updated` on contract 1.1. */
 export async function updateExpenseSplit(ctx: Ctx, tripId: string, personId: string, expenseId: string, input: ExpenseSplitEdit): Promise<ExpenseView & { seq: number }> {
   return withTx(ctx.pool, async (db) => {
     const member = await requireMember(db, tripId, personId);
     const row = await lockExpense(db, tripId, expenseId);
     await mayChange(db, tripId, row, personId, member.role, 'change');
-    const ids = [...new Set(input.split_person_ids)];
-    await checkExpenseFields(db, tripId, { paid_by_person_id: null, category: row.category, split_person_ids: ids, booking_id: null });
-    const updated = (await db.query<ExpenseStoredRow>('update expenses set split_person_ids = $2, note = $3 where expense_id = $1 returning *', [expenseId, JSON.stringify(ids), input.note ?? row.note])).rows[0]!;
-    const expense = expenseView(updated);
-    const seq = await expenseUpdated(ctx, db, tripId, { expense, change: 'updated', by: { kind: 'person', person_id: personId }, by_person_id: personId });
-    await moneyChanged(ctx, tripId, seq);
-    // The room's line, only when the split itself moved (a new note alone is not a money movement).
-    if (!sameIds(row.split_person_ids, ids)) await postSplitChanged({ ctx, db, tripId }, expense, personId);
-    return { ...expense, seq };
+    const { expense, seq } = await resplit(ctx, db, tripId, row, { kind: 'person', person_id: personId }, input, false);
+    return { ...expense, seq: seq! };
   });
+}
+
+/**
+ * Go's update_expense (the Server's overlay): Go re-splits any expense that stands in the trip, inside the caller's
+ * transaction (Go's `once`), in place of a second add_expense. 404 for an unknown or removed expense, 422 for someone
+ * not in the trip. `seq: null` when the people and the note are what they were: no change number, no event.
+ */
+export async function goUpdateExpense(ctx: Ctx, db: pg.PoolClient, tripId: string, expenseId: string, input: ExpenseSplitEdit): Promise<{ seq: number | null }> {
+  const row = await lockExpense(db, tripId, expenseId);
+  const { seq } = await resplit(ctx, db, tripId, row, { kind: 'go' }, input, true);
+  return { seq };
 }
 
 /** GET …/expenses: the expenses that stand, newest first, at one change number. */
