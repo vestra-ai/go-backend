@@ -6,6 +6,12 @@ export interface Config {
   goSigningSecret: string;
   goSpendPrivateKey: string;
   instance: string;
+  /**
+   * This deployment's one name to Go (GO_SERVER_NAME, e.g. go-server-prod): the same on every instance and across
+   * restarts and deploys, different for staging and production. Go keeps a trip with the Server of this name, so a
+   * redeploy (a new instance name) does not strand its trips, and a person's ixigo login with it. Absent: not sent.
+   */
+  serverName?: string;
   port: number;
   appOrigins: string[];
   /** Postgres connections per instance. The outbox uses at most a third of them, so Go's requests always find one. */
@@ -94,6 +100,7 @@ export function loadConfig(): Config {
     goSpendPrivateKey: pem(need('GO_SPEND_PRIVATE_KEY')),
     // The host name too: in containers every process can be pid 1, and each instance needs its own name.
     instance: process.env.INSTANCE_NAME ?? `${hostname()}-${process.pid}`,
+    serverName: serverNameOf(),
     port: Number(process.env.PORT ?? 8080),
     appOrigins: (process.env.APP_ORIGINS ?? '').split(',').map((o) => o.trim().replace(/\/+$/, '')).filter((o) => o && o !== '*' && o !== 'null'),
     dbPoolMax: Math.max(4, Number(process.env.DB_POOL_MAX ?? 30)),
@@ -127,7 +134,18 @@ function authConfig(): Pick<Config, 'authMode' | 'supabaseUrl' | 'supabaseJwtSec
   return { authMode, supabaseUrl, supabaseJwtSecret: process.env.SUPABASE_JWT_SECRET || undefined };
 }
 
-/** GO_URL is Go's https:// base URL; the socket is the same host with wss:// and /v1/socket?instance=<name>. */
-export function socketUrl(goUrl: string, instance: string): string {
-  return `${goUrl.replace(/^http/, 'ws')}/v1/socket?instance=${encodeURIComponent(instance)}`;
+/** GO_SERVER_NAME, checked: Go takes letters, digits and ._:@- only (its guide, "The socket"). Empty means none. */
+export function serverNameOf(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const name = env.GO_SERVER_NAME?.trim();
+  if (!name) return undefined;
+  if (!/^[A-Za-z0-9._:@-]{1,64}$/.test(name)) throw new Error('GO_SERVER_NAME must be 1 to 64 letters, digits or . _ : @ -');
+  return name;
+}
+
+/**
+ * GO_URL is Go's https:// base URL; the socket is the same host with wss:// and /v1/socket?instance=<name>, plus
+ * &server=<the deployment's name> when there is one. `instance` names this process; `server` names the deployment.
+ */
+export function socketUrl(goUrl: string, instance: string, serverName?: string): string {
+  return `${goUrl.replace(/^http/, 'ws')}/v1/socket?instance=${encodeURIComponent(instance)}${serverName ? `&server=${encodeURIComponent(serverName)}` : ''}`;
 }

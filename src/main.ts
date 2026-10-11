@@ -37,6 +37,8 @@ const ctx: Ctx = {
   features: config.features,
   goContract: config.goContract,
 };
+// Go keeps a trip with the Server of this name: without one, a redeploy strands the trips made before it.
+console.log(config.serverName ? `go server name: ${config.serverName}` : 'go server name: none (set GO_SERVER_NAME: without it a redeploy strands older trips on Go)');
 console.log(`go contract: ${config.goContract}${config.goContract === '1.0' ? ' (a re-split expense is not sent as an event; Go reads it)' : ''}`);
 
 // 1. The socket to Go, with a fresh signature on every connect. Any instance can answer any of Go's requests.
@@ -48,7 +50,7 @@ if (process.env.LOG_GO_TRAFFIC === '1') {
   traffic = (e) => out.write(`${JSON.stringify({ at: new Date().toISOString(), instance: config.instance, ...e })}\n`);
 }
 const go = new GoSocket({
-  url: socketUrl(config.goUrl, config.instance),
+  url: socketUrl(config.goUrl, config.instance, config.serverName),
   secret: config.goSigningSecret,
   handlers: goRequestHandlers(ctx),
   log: (m) => console.log(`[go] ${m}`),

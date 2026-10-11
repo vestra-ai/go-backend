@@ -257,6 +257,30 @@ Asks sent to Go: `docs/GO-TEAM-REV5.md`, `docs/GO-TEAM-REV5-BUGS.md`.
   016 have not been run against Supabase.
 - One model family ran authoring, review and final QC (the Codex outage overlay): no cross-lab check.
 
+## After the release: the deployment's name on the socket (branch `go-server-name`)
+- What happened: the rev 5 deploy succeeded at 07:24Z on 11 Oct. The Server's socket instance (the container's
+  hostname) changed and the Server sent no `server` name, so Go, which kept each trip with the instance that first
+  spoke for it, could not reply in any older trip until its team patched Go (go-brain `4bb4e8fc`, prod 13:16 IST).
+  Go's guide ("The socket", Good to know) asks for the name; this Server never sent it.
+- Go's asks (11 Oct, 13:30 IST): add `?server=go-server-prod` to the socket URL; no Server redeploys during the demo.
+- Candidate: optional `GO_SERVER_NAME`, checked (Go's characters, 64 at most), appended as `&server=`; a start-up
+  line; `tests/config.test.ts`, an assertion in `tests/fake-go.e2e.test.ts`, the unset case pinned in
+  `tests/main.e2e.test.ts`; DEPLOY, CONTRACT-GO, `.env.example`.
+- Evidence: `tsc --noEmit` clean; 68 files, 595 tests passing (+3 cases; 21 of 50). Mutation proof (restored): the name
+  not passed to the address → the end-to-end assertion fails. UI: not applicable.
+- **Opus 5.5 code review**, session `abad3ab3-e9b9-41b2-8adf-978630e11c9b`, call 1 of 3, 94 s of 300: APPROVE. Four
+  minors: DEPLOY should say what the first named deploy does (added); a shared default name in `.env.example`
+  (per-developer placeholder); the unset end-to-end case inherited the shell's environment (pinned); only a log line
+  when unset in production (kept).
+- **Fable 5.1 final QC**, session `437fd97b-019e-4d52-b977-73da6f2b5fb3`, call 1 of 3, 99 s of 300: APPROVE; agrees
+  with the reading of Go's side. Minors: the login prediction is unexercised on both sides; nothing but prose keeps
+  staging's name different; the name is printed at start (not a secret).
+- Both reviewers' reading of Go: on the first named connect, a trip follows the name from its next event; a quiet
+  trip stays out of Go's reach until then (as after any deploy before); an organizer likely logs in to ixigo once
+  more on their next new trip. After that, deploys change neither.
+- **Not merged, not deployed.** Going live takes a merge to `main` and `GO_SERVER_NAME=go-server-prod` on Railway;
+  both redeploy the Server, which Go's team asked us not to do during the demo. The owner decides when.
+
 ## Storage
 - Canonical: this file; the plan. Scratch (disposable, session `dcbcd553`): the session scratchpad under
   `/private/tmp/claude-501/…/scratchpad` (briefs, reviewer outputs, the read-only go-brain clone). Cleanup: pending (left in place; the

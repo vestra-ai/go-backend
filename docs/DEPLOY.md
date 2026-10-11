@@ -25,6 +25,7 @@ Not secret (set on the service):
 |---|---|
 | `NODE_ENV` | `production`: Supabase sign-in is required, and dev tokens are refused |
 | `GO_URL` | `https://brain-production-6b68.up.railway.app` |
+| `GO_SERVER_NAME` | `go-server-prod`: this deployment's one name to Go, sent as `&server=` on the socket. The same on every instance and across deploys; never the same as staging's. Without it Go keeps a trip with one instance, and a redeploy strands every trip made before it (seen on 11 Oct 2026, 07:24Z) and people's ixigo logins. **On the first deploy that sets it:** a trip follows this name from its next message or other event (a quiet trip stays out of Go's reach until someone acts in it, as after any deploy before), and an organizer logs in to ixigo once more on their next new trip; after that, deploys change neither |
 | `SUPABASE_URL` | `https://rbltcfpcqkefazsonzbb.supabase.co` |
 | `DATABASE_CA_CERT` | `certs/prod-ca-2021.crt` |
 | `DB_POOL_MAX` | `10` |
@@ -60,6 +61,7 @@ Left out on purpose:
 - `STORAGE`: `supabase` follows from `SUPABASE_SECRET_KEY`; `memory` is for laptops and tests.
 - `AUTH_MODE`: `supabase` follows from `SUPABASE_URL`.
 - `INSTANCE_NAME`: the default, `<hostname>-<pid>`, is unique per container, so two copies during a redeploy never clash.
+  It changes on every deploy, which is why `GO_SERVER_NAME` above must be set.
 - `LOG_GO_TRAFFIC`: it writes to a local file, and the container's disk is not kept.
 - `APP_SESSION_SECRET`: only used by dev sign-in, which does not exist in production.
 

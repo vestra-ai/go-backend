@@ -32,6 +32,7 @@ beforeAll(async () => {
       GO_SIGNING_SECRET: go.secret,
       GO_SPEND_PRIVATE_KEY: spend.private_key_pem.replace(/\n/g, '\\n'), // a one-line env value
       INSTANCE_NAME: 'e2e-1',
+      GO_SERVER_NAME: '', // none, whatever the shell running the tests has set: the address is then as it always was
       PORT: String(port),
       APP_SESSION_SECRET: 'e2e-secret',
       AUTH_MODE: 'supabase',

@@ -26,7 +26,7 @@ checks against.
 
 | | |
 |---|---|
-| Transport | One WebSocket, opened **by the Server** to Go at `/v1/socket?instance=<name>`. Frames are JSON-RPC 2.0, at most 1 MiB each. |
+| Transport | One WebSocket, opened **by the Server** to Go at `/v1/socket?instance=<name>&server=<deployment>`: `instance` names the process and changes on every deploy; `server` is the deployment's one name (`GO_SERVER_NAME`, production `go-server-prod`), the same on every instance and deploy. Frames are JSON-RPC 2.0, at most 1 MiB each. |
 | Signature | Header `x-go-signature: t=<unix seconds>,v1=<hex>` on the upgrade, where `v1 = HMAC-SHA256(secret, "<t>\n" + "GET\n" + "<target>\n")` with an empty body. **`<target>` is the path with its query string, exactly as sent** (`/v1/socket?instance=…`), not the path alone. A fresh signature on every connect; Go accepts each once. |
 | Keep-alive | The Server pings every 20 s and closes a socket idle for 40 s. It reconnects after 1, 2, 5, 10, then every 30 s. |
 | Both directions | The Server sends requests to Go (section 2) and Go sends requests to the Server (section 4) over the same socket. Every request is checked against the contract before it is acted on; one that does not match is answered with error `422`, `data.code: "invalid"`. |

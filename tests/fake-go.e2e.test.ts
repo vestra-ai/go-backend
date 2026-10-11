@@ -38,6 +38,7 @@ beforeAll(async () => {
       GO_SIGNING_SECRET: go.secret,
       GO_SPEND_PRIVATE_KEY: spend.private_key_pem.replace(/\n/g, '\\n'),
       INSTANCE_NAME: 'e2e-fake',
+      GO_SERVER_NAME: 'go-server-e2e',
       PORT: String(port),
       APP_SESSION_SECRET: 'e2e-secret',
       AUTH_MODE: 'supabase',
@@ -52,6 +53,11 @@ beforeAll(async () => {
     await new Promise((r) => setTimeout(r, 100));
   }
   await go.untilConnected(10000);
+});
+
+it('the socket names the process and the deployment, and Go accepts the signature over both', () => {
+  expect(go.targets).toEqual(['/v1/socket?instance=e2e-fake&server=go-server-e2e']);
+  expect(go.refused).toEqual([]);
 });
 
 afterAll(async () => {
