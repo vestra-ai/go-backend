@@ -144,6 +144,23 @@ describe('demoBookingFor: a stay', () => {
     expect(v.cancellation.rules[0]!.title).toMatch(/^Free cancellation till 19 Nov 2026/);
   });
 
+  it('without trip dates: the dates of the stay that was paid for, from its ixigo link (checkinDate/checkoutDate, day first); the trip\'s own dates win over it; a bad link is no dates', () => {
+    const link = 'https://www.ixigo.com/hotels/1384544/details?locationId=1366415&checkinDate=01112026&checkoutDate=05112026&adultCount=2';
+    const fromLink = sync(stay({ purpose: 'Munnar: 4 nights', trip: { title: 'Munnar 2026' }, option: { label: 'Mountree Munnar', url: link } }));
+    expect([fromLink.starts_at, fromLink.ends_at]).toEqual(['2026-11-01T08:30:00.000Z', '2026-11-05T05:30:00.000Z']); // 1 Nov 14:00 to 5 Nov 11:00 IST
+    const v = fromLink.tickets![0]!.data as HotelBookingData;
+    expect([v.checkIn, v.checkOut]).toEqual(['Sun, 01 Nov', 'Thu, 05 Nov']);
+    expect(Object.fromEntries((fromLink.details as any[]).map((d) => [d.label, d.value])).Nights).toBe('4');
+
+    const tripWins = sync(stay({ trip: { title: 'Goa', dates: { start: '2026-11-20', end: '2026-11-23' } }, option: { label: 'Villa Sol', url: link } }));
+    expect(tripWins.starts_at).toBe('2026-11-20T08:30:00.000Z');
+
+    for (const url of ['not a url', 'https://www.ixigo.com/hotels/1?checkinDate=2026-11-01&checkoutDate=05112026', 'https://www.ixigo.com/hotels/1?checkinDate=05112026&checkoutDate=01112026', null]) {
+      const f = sync(stay({ trip: { title: 'Munnar 2026' }, option: { label: 'Mountree Munnar', url } }));
+      expect([f.starts_at, f.ends_at]).toEqual([null, null]); // nothing usable: no dates, never made up
+    }
+  });
+
   it('without trip dates: no dates made up (12 Oct 2026: a 1-5 Nov stay was booked as 13-16 Oct); the nights from Go\'s purpose; the payer\'s email on their own voucher; the default room', () => {
     const s = stay({ for_person_ids: ['p_rahul'], purpose: 'Munnar: 4 nights (₹15,557 a night)', trip: { title: 'Munnar 2026' }, option: { label: 'Casa Azul', refundable_until: null } });
     const f = sync(s);

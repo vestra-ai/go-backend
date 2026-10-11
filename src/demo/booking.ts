@@ -141,6 +141,23 @@ export function journeyBooking(s: DemoBookingSource, o: DemoOption, kind: string
   };
 }
 
+type Day = NonNullable<ReturnType<typeof when.dateParts>>;
+
+/** A stay's own check-in and check-out, from the ixigo link Go sent with the option (`checkinDate=01112026`, day first). */
+function linkDates(url: unknown): [Day?, Day?] {
+  let q: URLSearchParams;
+  try {
+    q = new URL(String(url)).searchParams;
+  } catch {
+    return [];
+  }
+  const day = (v: string | null): Day | undefined => {
+    const m = /^(\d{2})(\d{2})(\d{4})$/.exec(v ?? '');
+    return m ? when.dateParts(`${m[3]}-${m[2]}-${m[1]}`) : undefined;
+  };
+  return [day(q.get('checkinDate')), day(q.get('checkoutDate'))];
+}
+
 /** A stay, from the option (its name, place, first room type, refund date) and the trip's dates: one hotel voucher. */
 export function stayBooking(s: DemoBookingSource, o: DemoOption, now: Date): DemoBookingFields {
   const place = asPlace(o.place);
@@ -152,10 +169,11 @@ export function stayBooking(s: DemoBookingSource, o: DemoOption, now: Date): Dem
   const bookingId = f.stayBookingId();
   const hotelNumber = f.hotelBookingNumber();
 
-  // The trip's own dates, or none: never made up (12 Oct 2026: a 1-5 Nov stay was booked as "tomorrow for three nights",
-  // and the trip and Go then followed those wrong dates). The nights come from Go's own purpose ("Munnar: 4 nights").
-  const [inDay, outDay] = [when.dateParts(s.trip?.dates?.start), when.dateParts(s.trip?.dates?.end)];
-  const dated = inDay && outDay && when.daysBetween(inDay, outDay) >= 1 ? { checkIn: inDay, checkOut: outDay } : undefined;
+  // The trip's own dates, else the dates of the stay that was paid for (its ixigo link), else none: never made up
+  // (12 Oct 2026: a 1-5 Nov stay was booked as "tomorrow for three nights", and the trip and Go then followed those wrong
+  // dates). With no dates at all the nights come from Go's own purpose ("Munnar: 4 nights").
+  const span = (a?: Day, b?: Day) => (a && b && when.daysBetween(a, b) >= 1 ? { checkIn: a, checkOut: b } : undefined);
+  const dated = span(when.dateParts(s.trip?.dates?.start), when.dateParts(s.trip?.dates?.end)) ?? span(...linkDates(o.url));
   const purposeNights = Number(/(\d{1,2})\s*nights?\b/i.exec(s.purpose)?.[1]);
   const nights = dated ? when.daysBetween(dated.checkIn, dated.checkOut) : purposeNights > 0 ? purposeNights : undefined;
 

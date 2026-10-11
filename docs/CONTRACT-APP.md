@@ -483,7 +483,7 @@ overwritten:
 It arrives as `trip_changed kinds:["trip"]` (and `home_changed` when the place moved): re-read the trip.
 
 **A demo stay booking takes the trip's dates.** Check-in and check-out are the trip's own `dates` (14:00 / 11:00 local
-time). When the trip has no dates, the booking has no `starts_at`/`ends_at`, the voucher reads "To be confirmed", and a
+time), else the dates of the stay that was paid for (from its ixigo link). When neither exists, the booking has no `starts_at`/`ends_at`, the voucher reads "To be confirmed", and a
 detail row says so (the number of nights still shows when Go's payment names it). Dates are never made up.
 
 **The automatic name.** A trip whose stored `title` is still exactly `"New trip"` and which has a destination with a

@@ -63,7 +63,7 @@ yet** from its confirmed bookings. A value a person or Go set is never overwritt
 **Do:** nothing new beyond the usual. It arrives as `trip_changed kinds:["trip"]` (plus `home_changed` when the place
 changed): re-read the trip.
 
-**A demo stay with no trip dates** has no check-in or check-out: `starts_at`/`ends_at` are absent, the voucher PDF reads
+**A demo stay with no trip dates** takes the dates of the stay that was paid for (from its ixigo link). With neither, it has no check-in or check-out: `starts_at`/`ends_at` are absent, the voucher PDF reads
 "To be confirmed", and the booking has a "Dates · To be confirmed" row (plus "Nights" when known). **Do:** draw a stay
 booking without dates as "Dates to be confirmed", not as an error.
 

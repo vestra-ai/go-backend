@@ -13,6 +13,8 @@ export interface DemoOption {
   title?: string; label?: string; image_url?: string | null; refundable_until?: string | null; place?: unknown;
   journey?: JourneyLike | null; return_journey?: JourneyLike | null;
   room_types?: Array<{ label?: string; sleeps?: number }> | null; highlights?: string[] | null;
+  /** The option's ixigo page (contract 1.3): a stay's link carries its check-in and check-out (checkinDate, checkoutDate). */
+  url?: string | null;
 }
 
 export interface DemoBookingSource {
