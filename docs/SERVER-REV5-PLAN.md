@@ -1,5 +1,7 @@
 # Rev 5: what the Server team builds
 
+> **Record (11 Oct 2026).** The rev 5 work split and the decisions taken. The items are implemented; for the current design see [`../ARCHITECTURE.md`](../ARCHITECTURE.md).
+
 Companion to `docs/GO-TEAM-REV5.md` (11 Oct 2026). The work is split three ways: ours, Go's, and the App team's.
 
 ## Who does what

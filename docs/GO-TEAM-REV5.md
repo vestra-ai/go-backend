@@ -1,5 +1,7 @@
 # For Go's team: rev 5, richer choices in the chat
 
+> **Record (11 Oct 2026).** The rev 5 asks. Go shipped them as contract 1.3.0, and the Server implements them (see [`CONTRACT-GO.md`](CONTRACT-GO.md) and [`../ARCHITECTURE.md`](../ARCHITECTURE.md)).
+
 **From:** the Server team. **Date:** 11 Oct 2026. **Please reply by:** the reply table at the end.
 
 The App team wants the room to feel like a shop window: photo-led cards for places and stays, up to 10 choices with

@@ -1,5 +1,7 @@
 # Testing against the real Go
 
+> **Guide and early record.** The method (traffic log, `pnpm inspect`) is current. The results below are from the first rounds (10 Oct 2026). Later rounds against production Go on contract 1.3.0 ran full multi-person trips with every event accepted. The contract is now Go's 1.3.0 ([`CONTRACT-GO.md`](CONTRACT-GO.md)).
+
 The real Go: `https://brain-production-6b68.up.railway.app` (socket `wss://…/v1/socket`). Contract unchanged
 (`llms-full.txt` sha256 `1788035c…`, `go.json`, `socket.json`, `methods.json` identical to `contract/`).
 

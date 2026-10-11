@@ -4,7 +4,7 @@
 
 This is the one contract the app builds against. It describes **exactly what the deployed Server does today**, and is
 written from the code (`src/api/v1/*.ts`, `src/api/bodies.ts`, `src/domain/*`). Appendix C lists the same routes as the
-code's route metadata, which a test counts (70).
+code's route metadata, which a test counts (71).
 
 **What changed from rev 3** (agreed by the App and Server teams on 10 Oct 2026; this revision removes routes and fields,
 so it is not additive):

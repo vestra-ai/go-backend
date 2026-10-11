@@ -1,6 +1,6 @@
 // §5.3 (rev 4): money shows in the room. Every money movement, whoever makes it (Go included), gets a system message
-// in the same transaction as the change: a centred pill with the amount, not unread, no event to Go, its own change
-// number. The app-only `ledger` member names the movement and the row, so the app can draw it and open it.
+// in the same transaction as the change: a centred pill with the amount, not unread, its own change number, sent to Go
+// as `message.created` (a record Go never answers). The app-only `ledger` member names the movement and the row, so the app can draw it and open it.
 import type pg from 'pg';
 import type { Ctx } from '../context.js';
 import { formatMoney } from './actions.js';

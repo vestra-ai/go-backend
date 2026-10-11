@@ -34,6 +34,8 @@ Not secret (set on the service):
 | `SUPABASE_STORAGE_BUCKET` | `go-files`: the private Storage bucket (above). Default `go-files` when unset |
 | `GO_CONTRACT` | Go's contract version as its `/v1/health` says it (production: `1.3.0`); any 1.x from 1.1 up sends a re-split expense as `expense.changed updated`. `1.0` (the default, and what Go spoke on 8 Oct 2026): a re-split expense takes its change number but sends no event, because Go 1.0's `expense.changed` knows only `added` and `removed`; Go reads the expense's state on its next `read_trip`. Set `1.1` the day Keshav's team ships `docs/GO-CHANGES.md` |
 | `FEATURE_*` | the feature flags (below), only the ones to change from their defaults |
+| `RAILPACK_DEPLOY_APT_PACKAGES` | `chromium fonts-noto-core fonts-noto-color-emoji fonts-liberation`: Railpack installs Chromium and fonts (₹ ★ ✓) in the image, for the demo's ticket PDFs |
+| `PUPPETEER_EXECUTABLE_PATH` | `/usr/bin/chromium`: the browser that renders e-tickets and hotel vouchers. The start-up log proves it: `ticket pdfs: ok: chromium /usr/bin/chromium, a test PDF in … ms`. If it says `FAILED`, bookings still work but come without PDF files |
 
 Secret (pasted by a person in Railway → service → Variables → Raw Editor; never in git or chat):
 

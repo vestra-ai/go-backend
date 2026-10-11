@@ -4,7 +4,7 @@
 back, and the rules. How to run the Server, test tooling and the Server's dealings with Go are not here.
 
 It describes the Server as of contract rev 4 (10 Oct 2026).
-Appendix C lists every route: 70.
+Appendix C lists every route: 71.
 
 **What changed from rev 3** (agreed by the App and Server teams on 10 Oct 2026; this revision removes routes and fields,
 so it is not additive):

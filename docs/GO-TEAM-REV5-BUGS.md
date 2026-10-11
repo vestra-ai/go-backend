@@ -1,5 +1,7 @@
 # For Go's team: two flight-card bugs from the app (11 Oct 2026)
 
+> **Record (11 Oct 2026).** Bugs reported to Go's team. The personal ticket approval is now part of contract 1.2 and implemented by the Server.
+
 Separate from the rev 5 asks. Seen in the app on production, trip "New trip": Bengaluru and Delhi to Srinagar, 30 Dec.
 
 ## G1. A fallback link card instead of flight options

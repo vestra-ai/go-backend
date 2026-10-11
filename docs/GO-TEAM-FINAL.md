@@ -1,5 +1,7 @@
 # For Go's team: final contract check before launch
 
+> **Record (10 Oct 2026).** The pre-launch check against production Go. Most items were since fixed by Go (contract 1.2–1.3). The current contract is [`CONTRACT-GO.md`](CONTRACT-GO.md).
+
 **From:** the Server team. **Date:** 10 Oct 2026. **Please reply by:** filling in the reply table at the end.
 
 This is the last round. We connected our Server to **production Go** (`brain-production-6b68`) and ran full 4-person

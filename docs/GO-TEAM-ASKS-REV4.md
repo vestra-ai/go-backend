@@ -1,5 +1,7 @@
 # For Go's team: what changes on the Server, and what we ask of Go
 
+> **Record (10 Oct 2026).** The rev 4 asks sent to Go's team. The current contract is [`CONTRACT-GO.md`](CONTRACT-GO.md); see [`README.md`](README.md).
+
 **From:** the Server team. **Date:** 10 Oct 2026. **Status:** built on the Server (contract rev 4). Everything in A and in B1 to B7 is in place and does
 nothing until Go sends it; **B8 (check-in payments) is not built** and waits for your answer.
 Field and event names below are proposals; tell us what you would rather call them and we will follow.

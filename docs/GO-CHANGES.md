@@ -1,5 +1,7 @@
 # Server ↔ Go: changes the app needs (proposal for contract 1.1)
 
+> **Record (8 Oct 2026).** The first proposal for contract 1.1, kept for the history. Most of it later shipped in Go's contract 1.1–1.3. The current contract is [`CONTRACT-GO.md`](CONTRACT-GO.md); see [`README.md`](README.md).
+
 **Draft for Keshav's team, 8 Oct 2026.** Everything in `llms-full.txt` (1.0.0) stays as it is; this page lists only
 what is **new**. Every change is additive (an optional field, a new enum value, a new action id, a new card kind, or a
 new request), so a reader of 1.0.0 keeps working. Each item says why a screen needs it, the exact shape, what our
