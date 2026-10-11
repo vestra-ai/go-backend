@@ -46,7 +46,7 @@ describe('needs_you on the home screen', () => {
     await go('set_mandate', { trip_id: 't_goa', decision_id: ids.stay, choice_index: 0, cap_minor: 5500000, currency: 'INR', refundable_only: true, payer_person_id: 'p_priya' });
     ids.mandateMsg = (await go('post_message', { trip_id: 't_goa', text: 'Priya?', card: { card_id: 'c_hny_mandate', kind: 'mandate', decision_id: ids.stay, fallback_text: 'Yes, book Villa Sol?' } })).message_id;
     // t_hampi: a card for Priya.
-    ids.cardMsg = (await go('post_message', { trip_id: 't_hampi', text: 'Bus?', card: { card_id: 'c_hny_bus', kind: 'notice', fallback_text: 'Bus from Bengaluru', title: 'Fri night', body: 'x', tone: 'heads_up', for_person_ids: ['p_priya'] } })).message_id;
+    ids.cardMsg = (await go('post_message', { trip_id: 't_hampi', text: 'Bus?', card: { card_id: 'c_hny_bus', kind: 'notice', fallback_text: 'Bus from Bengaluru', title: 'Fri night', body: 'x', tone: 'heads_up', for_person_ids: ['p_priya'], actions: [{ action_id: 'book', label: 'Book', style: 'primary' }] } })).message_id;
     // t_goa: Priya owes Rahul half a dinner.
     await t.api(t.as('p_rahul'), 'POST', '/app/v1/trips/t_goa/expenses', { paid_by_person_id: 'p_rahul', amount_minor: 200000, note: 'Dinner', category: 'food', split_person_ids: ['p_rahul', 'p_priya'] });
     // Record lines: due 8 Nov (Goa), due 7 Nov (Hampi), and one with no due date.

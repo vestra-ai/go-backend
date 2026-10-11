@@ -2,12 +2,11 @@
 // documents), opening a ticket file, bookings people add themselves, their edits, and the group vote to cancel one.
 import type { FastifyInstance } from 'fastify';
 import type { Ctx } from '../../context.js';
-import { requireMember } from '../../domain/actions.js';
 import { documentLink, getBooking, listBookings } from '../../domain/bookings.js';
 import { addPersonBooking, proposeCancelBooking, updatePersonBooking } from '../../domain/votes-bookings.js';
 import { checkAddBooking, checkCancelVote, checkUpdateBooking } from '../bodies.js';
 import { SECTIONS, type RouteMeta } from './meta.js';
-import { atLeastOneField, inTrip, type TripRequest, type V1Deps } from './shared.js';
+import { atLeastOneField, inTrip, memberFirst, type TripRequest, type V1Deps } from './shared.js';
 
 const JOURNEY = { mode: 'flight', origin: { name: 'Bengaluru', code: 'BLR' }, destination: { name: 'Mopa', code: 'GOX' }, depart_at: '2026-11-06T19:40:00+05:30', arrive_at: '2026-11-06T21:55:00+05:30', carrier_name: 'IndiGo', carrier_code: '6E', number: '5313' };
 const BOOKING = {
@@ -56,10 +55,9 @@ export const routes: RouteMeta[] = [
 export function register(app: FastifyInstance, ctx: Ctx, _deps: V1Deps): void {
   app.get('/app/v1/trips/:trip/bookings', inTrip(ctx, (_req, trip, me) => listBookings(ctx, trip, me)));
   app.get('/app/v1/trips/:trip/bookings/:id', inTrip(ctx, (req, trip, me) => getBooking(ctx, trip, me, req.params.id!)));
-  // A redirect, not a JSON answer: the member check and the link are done here rather than through inTrip.
-  app.get('/app/v1/trips/:trip/bookings/:id/documents/:document_id', async (req, reply) => {
+  // A redirect, not a JSON answer: the link is made here rather than through inTrip.
+  app.get('/app/v1/trips/:trip/bookings/:id/documents/:document_id', { preValidation: memberFirst(ctx) }, async (req, reply) => {
     const r = req as TripRequest;
-    await requireMember(ctx.pool, r.params.trip, r.personId);
     const url = await documentLink(ctx, r.params.trip, r.personId, r.params.id!, r.params.document_id!);
     reply.header('cache-control', 'private, no-store');
     return reply.redirect(url, 302);

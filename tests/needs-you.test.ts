@@ -69,8 +69,11 @@ describe('the shape', () => {
     const m = (await h.go.call('post_message', { request_id: 'rq_ny_c1', trip_id: 't_goa', text: 'Cab?', card: { card_id: 'c_ny_cab', kind: 'notice', fallback_text: 'Airport cab to Villa Sol', title: 'Fri 9:55 pm · with Arjun', body: 'x', tone: 'heads_up', for_person_ids: ['p_rahul', 'p_arjun'], actions: [{ action_id: 'book', label: 'Book ₹1,600', style: 'primary' }] } })).result;
     expect(await ofKind('p_arjun', 'card')).toEqual([{ item_id: 'card:c_ny_cab', kind: 'card', title: 'Airport cab to Villa Sol', subtitle: 'Fri 9:55 pm · with Arjun', cta_label: 'Book ₹1,600', since: ISO, target: { card_id: 'c_ny_cab', message_id: m.message_id } }]);
     expect(await ofKind('p_priya', 'card')).toEqual([]);
-    await h.go.call('replace_card', { trip_id: 't_goa', card: { card_id: 'c_ny_cab', kind: 'notice', fallback_text: 'Booked', title: 'Booked', body: 'x', tone: 'heads_up', for_person_ids: ['p_rahul'] } });
+    await h.go.call('replace_card', { trip_id: 't_goa', card: { card_id: 'c_ny_cab', kind: 'notice', fallback_text: 'Booked', title: 'Booked', body: 'x', tone: 'heads_up', for_person_ids: ['p_rahul'], actions: [{ action_id: 'pay', label: 'Pay', style: 'primary' }] } });
     expect([(await ofKind('p_arjun', 'card')).length, (await ofKind('p_rahul', 'card')).map((x) => x.title)]).toEqual([0, ['Booked']]);
+    // Still naming Rahul, but nothing left to press: information, not a to-do.
+    await h.go.call('replace_card', { trip_id: 't_goa', card: { card_id: 'c_ny_cab', kind: 'notice', fallback_text: 'Booked', title: 'Booked', body: 'x', tone: 'heads_up', for_person_ids: ['p_rahul'], actions: [] } });
+    expect(await ofKind('p_rahul', 'card')).toEqual([]);
     await h.go.call('replace_card', { trip_id: 't_goa', card: { card_id: 'c_ny_cab', kind: 'notice', fallback_text: 'Booked', title: 'Booked', body: 'x', tone: 'heads_up' } });
   });
 

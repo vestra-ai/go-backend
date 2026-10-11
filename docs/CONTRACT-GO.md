@@ -80,7 +80,7 @@ Every event is `{ event_id, trip_id, seq, occurred_at, type, data }`.
 | `person.joined` | someone joins by invite link | `{ person }` with their join answers |
 | `person.updated` | name, photo, UPI flag (when it flips), starting city, earliest leave, what Go should know, or Pause Go changed; also after "forget me" clears a person's join answers | `{ person, changed: [...] }`, `changed` among `name`, `photo_url`, `has_upi`, `from_city`, `earliest_leave`, `know`, `go_paused` (the 1.0 enum also has `role`, which the Server does not send today) |
 | `person.left` | someone leaves, or deletes their account | `{ person_id }` |
-| `message.created` · `message.edited` | a person's message, or Go's own | `{ message }`. From someone who paused Go: `withheld: true`, no text, attachments or mentions |
+| `message.created` · `message.edited` | a person's message, or Go's own; a system line (section 3.3) is `message.created`, and `message.edited` only when an account deletion rewrites a name out of it | `{ message }`. From someone who paused Go: `withheld: true`, no text, attachments or mentions |
 | `message.deleted` | a person deletes their message | `{ message_id }` |
 | `reaction.added` · `reaction.removed` | a reaction | per `go.json` |
 | `decision.opened` · `decision.voted` · `decision.closed` · `decision.cancelled` | votes | per `go.json`; an anonymous vote carries totals only; 1.1 adds `flexible` and `retracted` on `decision.voted` |
@@ -127,7 +127,10 @@ Each takes a `seq` (the one right after the change it describes), appears in `re
 sent to Go as `message.created`** with `author: { "kind": "system" }` and the text (the poll's anchor also carries its
 `vote` card), so Go never has to re-read the trip for one of them (Go's ask). They are a record: Go never answers,
 thanks or reacts to them. On an account deletion the "… left" line, like the events around it, names the person
-"Former member": Go has just forgotten them.
+"Former member": Go has just forgotten them. The earlier lines that named them ("Priya joined", "Aarav paid Priya
+₹5,800") are rewritten to "Former member" at the same moment, each as its own change: a `message.edited` with
+`author: { "kind": "system" }`, the same `message_id` and the new text, so your copy loses the name too. (Not when
+someone else who is or was in the trip has the same name: those lines stay as they are.)
 
 ## 4. What Go may ask of the Server
 
@@ -250,7 +253,9 @@ error `-32601`; params that do not match the contract with `422`, `data.code: "i
   nothing and gets the same `seq`. Then post the new message with its options card carrying the same `decision_id`. An `options` card may hold up to 10 options, and
   `OptionsCard.decision_id`, `Option.url`, `WorkingCard.live_url` pass through to the app as you send them.
 - **`post_message` · cards.** A card is stored exactly as sent and reaches the app unchanged, so every field below
-  passes through. `mentions` and a card's `for_person_ids` put the message in those people's "needs you" list.
+  passes through. `mentions` and a card's `for_person_ids` put the message in those people's "needs you" list; for a card, only
+  when it has something to press (an action, or a suggestion's `cta`). A notice with no buttons naming someone ("ixigo
+  login skipped") is shown in the room but never waits in their list.
 - **`post_message` · `visible_to_person_ids`** (official since 1.2, optional): a message only some people can see. 1 to 30
   ids (a repeated id is stored once), each a person in the trip now (otherwise `422`, `data.code: "invalid"`, nothing stored); left out or
   `null` means everyone, as before. Only those people see the message in the app: in the room, live, in "needs you",

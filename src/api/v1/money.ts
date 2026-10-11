@@ -10,7 +10,7 @@ import { FILTERS, PAGE_LIMIT_DEFAULT, PAGE_LIMIT_MAX, listTransactions, type Fil
 import { payLinkFor } from '../../domain/transfers.js';
 import { checkAddExpense, checkPatchExpense, checkPayLink, checkRecordSettlement } from '../bodies.js';
 import { SECTIONS, type RouteMeta } from './meta.js';
-import { inTrip, type V1Deps } from './shared.js';
+import { inTrip, memberFirst, type V1Deps } from './shared.js';
 
 const ERR = (code: string, message: string, field: string | null = null, retry: number | null = null) => ({ error: { code, message, field, retry_after_seconds: retry, request_id: 'a1b2c3d4e5f6' } });
 const TRANSFER = { from_person_id: 'p_priya', to_person_id: 'p_aarav', amount_minor: 170000, currency: 'INR' };
@@ -66,10 +66,9 @@ function transactionsQuery(q: Record<string, unknown>): { filter: Filter; limit:
 export function register(app: FastifyInstance, ctx: Ctx, _deps: V1Deps): void {
   const privateRead = { schema: { querystring: { type: 'object', additionalProperties: true } } }; // the handler checks the query itself (no coercion)
 
-  app.get('/app/v1/trips/:trip/money', async (req: any, reply) => {
-    reply.header('cache-control', 'private, no-store');
-    return readMoneyView(ctx, req.params.trip, req.personId); // membership is checked inside, with the read
-  });
+  app.get('/app/v1/trips/:trip/money', { preValidation: memberFirst(ctx, 'private, no-store') }, async (req: any) =>
+    readMoneyView(ctx, req.params.trip, req.personId)); // membership is checked again inside, with the read
+
   app.get('/app/v1/trips/:trip/transactions', { ...privateRead, ...inTrip(ctx, (req, trip, me) => listTransactions(ctx, trip, me, transactionsQuery(req.query ?? {})), 200, 'private, no-store') });
 
   // ---- expenses

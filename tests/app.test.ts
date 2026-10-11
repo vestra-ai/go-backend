@@ -249,7 +249,7 @@ describe('votes, mandate and the "needs you" strip', () => {
   });
 
   it('a Go card that names you is in your strip until Go removes you with replace_card', async () => {
-    await goCall('post_message', { text: 'Rahul, approve?', card: { card_id: 'c_pay', kind: 'notice', fallback_text: 'Rahul, approve', title: 'Approve', body: 'x', tone: 'heads_up', for_person_ids: [rahul.id] } }, trip);
+    await goCall('post_message', { text: 'Rahul, approve?', card: { card_id: 'c_pay', kind: 'notice', fallback_text: 'Rahul, approve', title: 'Approve', body: 'x', tone: 'heads_up', for_person_ids: [rahul.id], actions: [{ action_id: 'approve', label: 'Approve', style: 'primary' }] } }, trip);
     expect((await api(rahul, 'GET', `/app/v1/trips/${trip}/needs-you`)).body.items.find((x: any) => x.kind === 'card')).toMatchObject({ item_id: 'card:c_pay', title: 'Rahul, approve', subtitle: 'Approve', target: { card_id: 'c_pay' } });
     await h.go.call('replace_card', { trip_id: trip, card: { card_id: 'c_pay', kind: 'notice', fallback_text: 'done', title: 'Done', body: 'x', tone: 'heads_up', for_person_ids: [] } });
     expect((await api(rahul, 'GET', `/app/v1/trips/${trip}/needs-you`)).body.items.find((x: any) => x.kind === 'card')).toBeUndefined();

@@ -33,9 +33,9 @@ export const routes: RouteMeta[] = [
     example: { body: { upi_id: 'aarav@okhdfc' }, responses: [{ name: 'Me', status: 200, body: { ...ME_EXAMPLE, seq: 13 } }, refused(422, 'invalid', 'upi_id must match pattern "^[\\w.\\-]{2,256}@[a-zA-Z]{2,64}$"', 'upi_id')] } },
   { method: 'DELETE', path: '/app/v1/me/upi', section: SECTIONS.me, title: 'Remove my UPI id', summary: 'Removes it. Safe to repeat. Answers Me plus seq (null when there was none).',
     example: { responses: [{ name: 'Me', status: 200, body: { ...ME_EXAMPLE, has_upi: false, upi_id_masked: null, seq: 14 } }] } },
-  { method: 'POST', path: '/app/v1/me/vault-link', section: SECTIONS.me, title: 'Vault link', summary: `A short-lived link to the person's vault page in Go, for the browser sheet, or with display: "embedded" for a frame inside the app: { start?: home | add_card | add_login | add_documents, display?: sheet | embedded, context?: { trip_id, purpose: "visa" } } (strict). embedded is for start home only (422 display otherwise); the page then posts { type: "go-vault", status: saved | cancelled | failed } to its parent. add_documents is the visa form (passport data never touches the server), behind features.visa: 422 start when it is off. start and context go to Go's vault_link as they are. ${VAULT_LINKS_PER_MINUTE} a minute per person (429). Never cached.`,
+  { method: 'POST', path: '/app/v1/me/vault-link', section: SECTIONS.me, title: 'Vault link', summary: `A short-lived link to the person's vault page in Go, for the browser sheet, or with display: "embedded" for a frame inside the app: { start?: home | add_card | add_login | add_documents, display?: sheet | embedded, context?: { trip_id, purpose: "visa" } } (strict). embedded is for start home only (422 display otherwise); the page then posts { type: "go-vault", status: saved | cancelled | failed } to its parent. add_documents is the visa form (passport data never touches the server), behind features.visa: 422 start when it is off. start and context go to Go's vault_link as they are. ${VAULT_LINKS_PER_MINUTE} a minute per person (429), counting only calls that reach Go. Never cached.`,
     example: { body: { start: 'add_documents', context: { trip_id: 't_goa', purpose: 'visa' } }, responses: [{ name: 'Link', status: 200, body: { url: 'https://brain.go.example/vault/documents?link=lk_4Rt8Zp2Lq', expires_at: '2026-10-05T09:06:30Z' } }, refused(422, 'invalid', 'add_documents is not on yet (features.visa)', 'start'), refused(429, 'rate_limited', `at most ${VAULT_LINKS_PER_MINUTE} vault links a minute: slow down`, null, 42)] } },
-  { method: 'DELETE', path: '/app/v1/me', section: SECTIONS.me, title: 'Delete my account', summary: 'Body { confirm: true }. Go forgets you everywhere (502 and nothing else if it cannot), your answers are cleared, you leave every trip, your messages read "Former member", your email, UPI id and photo go. Your token stops working.',
+  { method: 'DELETE', path: '/app/v1/me', section: SECTIONS.me, title: 'Delete my account', summary: 'Body { confirm: true }. Go forgets you everywhere (502 and nothing else if it cannot), your answers are cleared, you leave every trip, your messages and the room\'s pills that named you read "Former member", your email, UPI id and photo go. Your token stops working.',
     example: { body: { confirm: true }, responses: [{ name: 'Accepted', status: 202 }, { name: 'Go did not answer', status: 502, body: { error: { code: 'go_unavailable', message: 'Go could not forget you just now; nothing was deleted. Try again.', field: null, retry_after_seconds: null, request_id: 'a1b2c3d4e5f6' } } }] } },
   { method: 'POST', path: '/app/v1/dev/sign-in', section: SECTIONS.dev, title: 'Dev sign-in', summary: 'Creates a person and answers a dev token. Only when the server runs with AUTH_MODE=dev.', auth: 'none', dev: true },
 ];
@@ -71,12 +71,12 @@ export function register(app: FastifyInstance, ctx: Ctx, deps: V1Deps): void {
     reply.header('cache-control', 'no-store');
     req.idempotency = undefined;
     const input = checkVaultLink(req.body);
-    vaultLinks.take(req.personId);
     if (input.start === 'add_documents' && !deps.features.visa) throw invalid('add_documents is not on yet (features.visa)', 'start');
     // Go's vault frames only its home page (contract 1.3): adding a card or a login stays in the sheet. Said here, so the
     // app hears why and not "Go could not do that".
     if (input.display === 'embedded' && (input.start ?? 'home') !== 'home') throw invalid('embedded is for the vault home only: open this page in the sheet', 'display');
     if (input.context) await requireMember(ctx.pool, input.context.trip_id, req.personId); // only a trip you are in (403 otherwise)
+    vaultLinks.take(req.personId); // after every check: only a request that goes to Go counts
     return vaultLink(deps.go, req.personId, input.start, input.context, input.display);
   });
 

@@ -4,11 +4,10 @@
 // server agree.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Ctx } from '../../context.js';
-import { requireMember } from '../../domain/actions.js';
 import { checkinOff, completeCheckin, getCheckin, patchCheckin } from '../../domain/checkin.js';
 import { checkPatchCheckin } from '../bodies.js';
 import { SECTIONS, type RouteMeta } from './meta.js';
-import { atLeastOneField, type TripRequest, type V1Deps } from './shared.js';
+import { atLeastOneField, memberFirst, type TripRequest, type V1Deps } from './shared.js';
 
 const FLIGHT = { number: '6E 5313', carrier_name: 'IndiGo', logo_url: 'https://brain.go.example/logos/6E.png', date: '2026-11-06', origin: { name: 'Bengaluru T1', code: 'BLR', time: '20:40' }, destination: { name: 'Goa · Mopa', code: 'GOX', time: '21:55' } };
 const SEAT_MAP = {
@@ -44,12 +43,15 @@ export const routes: RouteMeta[] = [
 ];
 
 export function register(app: FastifyInstance, ctx: Ctx, deps: V1Deps): void {
-  // The flag first (404 for anyone, member or not), then the member check, then the domain.
+  // The flag first (404 for anyone, member or not), then the member check, both before validation; then the domain.
+  const memberCheck = memberFirst(ctx);
   const checkin = (fn: (req: TripRequest, trip: string, me: string, reply: FastifyReply) => unknown) => ({
-    handler: async (req: FastifyRequest, reply: FastifyReply) => {
+    preValidation: async (req: FastifyRequest, reply: FastifyReply) => {
       if (!deps.features.checkin) throw checkinOff();
+      await memberCheck(req, reply);
+    },
+    handler: async (req: FastifyRequest, reply: FastifyReply) => {
       const r = req as TripRequest;
-      await requireMember(ctx.pool, r.params.trip, r.personId);
       return fn(r, r.params.trip, r.personId, reply);
     },
   });

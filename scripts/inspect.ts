@@ -1,6 +1,6 @@
 // What happened between our server and Go, from the outbox and logs/go-traffic.jsonl.
 //   pnpm inspect                 summary: socket state, outbox per trip, errors, latencies
-//   pnpm inspect --trip t_xxx    only one trip
+//   pnpm inspect --trip t_xxx    only one trip (also `--trip=t_xxx`, or the id alone: `pnpm inspect t_xxx`)
 //   pnpm inspect --since 10m     only traffic from the last 10 minutes (s, m, h)
 import { existsSync, readFileSync } from 'node:fs';
 import pg from 'pg';
@@ -8,10 +8,14 @@ import { loadEnv } from './dev-real.js';
 
 const args = process.argv.slice(2);
 const opt = (name: string) => {
+  const joined = args.find((a) => a.startsWith(`--${name}=`));
+  if (joined) return joined.slice(name.length + 3);
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? args[i + 1] : undefined;
 };
-const trip = opt('trip');
+// A bare argument that is not an option's value is the trip: `pnpm inspect t_xxx` (pnpm may also pass a lone `--`).
+const positional = args.filter((a, i) => !a.startsWith('-') && !['--trip', '--since', '--env'].includes(args[i - 1] ?? ''));
+const trip = opt('trip') ?? positional[0];
 const sinceArg = opt('since');
 const since = sinceArg ? Date.now() - Number(sinceArg.slice(0, -1)) * { s: 1e3, m: 6e4, h: 36e5 }[sinceArg.slice(-1) as 's' | 'm' | 'h']! : 0;
 
@@ -27,6 +31,7 @@ const entries: Entry[] = existsSync('logs/go-traffic.jsonl')
   : [];
 const recent = entries.filter((e) => Date.parse(e.at) >= since && (!trip || e.trip_id === trip || e.kind === 'socket'));
 
+if (trip) console.log(`Only trip ${trip}: the outbox, the errors and the timings below are this trip's (the socket is shared).\n`);
 console.log('== Socket');
 for (const e of recent.filter((x) => x.kind === 'socket').slice(-8)) console.log(`  ${e.at}  ${e.note}`);
 

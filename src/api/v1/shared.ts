@@ -49,12 +49,22 @@ export const id = { type: 'string', minLength: 1, maxLength: 64 } as const;
 /** The route params every trip route has. The HTTP edge is loosely typed; the domain functions are not. */
 export type TripRequest = FastifyRequest & { params: { trip: string; [k: string]: string }; body: any; query: any };
 
-/** Runs `fn` for a person who is in the trip (403 otherwise, also for a trip that does not exist). `cacheControl` for private reads (§1.6). */
+/**
+ * The member check as a `preValidation` hook: it runs before Fastify checks a route's query string, so a stranger gets
+ * 403 (also for a trip that does not exist) before any query rule, body rule, feature flag or rate limit tells them
+ * about the route. It runs after the shell's sign-in and Idempotency-Key hooks, so a repeated write still gets its
+ * stored answer (a repeated leave stays 204). `cacheControl` for private reads (§1.6), on the 403 too.
+ */
+export const memberFirst = (ctx: Ctx, cacheControl?: string) => async (req: FastifyRequest, reply: FastifyReply) => {
+  if (cacheControl) reply.header('cache-control', cacheControl);
+  await requireMember(ctx.pool, (req as TripRequest).params.trip, req.personId);
+};
+
+/** Runs `fn` for a person who is in the trip (403 otherwise, from `memberFirst`). `cacheControl` for private reads (§1.6). */
 export const inTrip = (ctx: Ctx, fn: (req: TripRequest, trip: string, me: string) => unknown, status = 200, cacheControl?: string) => ({
+  preValidation: memberFirst(ctx, cacheControl),
   handler: async (req: FastifyRequest, reply: FastifyReply) => {
     const r = req as TripRequest;
-    if (cacheControl) reply.header('cache-control', cacheControl);
-    await requireMember(ctx.pool, r.params.trip, r.personId);
     const out = await fn(r, r.params.trip, r.personId);
     if (status !== 200) reply.code(status);
     return out;
@@ -63,12 +73,12 @@ export const inTrip = (ctx: Ctx, fn: (req: TripRequest, trip: string, me: string
 
 /**
  * Runs `fn` with the trip and the person. The domain function checks membership again inside its transaction; the check
- * here comes first so a stranger gets 403 before any body rule, feature flag or rate limit tells them about the route.
+ * in `memberFirst` comes first so a stranger gets 403 before any body rule, feature flag or rate limit tells them about the route.
  */
 export const withTrip = (ctx: Ctx, fn: (trip: string, me: string, req: TripRequest) => unknown, status = 200) => ({
+  preValidation: memberFirst(ctx),
   handler: async (req: FastifyRequest, reply: FastifyReply) => {
     const r = req as TripRequest;
-    await requireMember(ctx.pool, r.params.trip, r.personId);
     const out = await fn(r.params.trip, r.personId, r);
     if (status !== 200) reply.code(status);
     return out;

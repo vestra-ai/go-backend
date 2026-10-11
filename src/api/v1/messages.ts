@@ -8,7 +8,7 @@ import { pageMessages } from '../../domain/room.js';
 import { RateLimiter } from '../rate-limit.js';
 import { checkEditMessage, checkPostMessage, checkPutReaction } from '../bodies.js';
 import { SECTIONS, type RouteMeta } from './meta.js';
-import { inTrip, withTrip, type V1Deps } from './shared.js';
+import { inTrip, memberFirst, withTrip, type V1Deps } from './shared.js';
 
 /** App contract Appendix A: 20 reactions a minute per person per trip. */
 export const REACTIONS_PER_MINUTE = 20;
@@ -72,6 +72,7 @@ export function register(app: FastifyInstance, ctx: Ctx, deps: V1Deps): void {
   }));
   app.get('/app/v1/trips/:trip/catch-up', {
     schema: { querystring: { type: 'object', properties: { force: { type: 'string', enum: ['1', '0', 'true', 'false'] } } } },
+    preValidation: memberFirst(ctx), // catchUp checks again, for its read marker
     handler: async (req: any, reply) => {
       const answer = await catchUp(ctx, deps.go, req.params.trip, req.personId, req.query.force === '1' || req.query.force === 'true');
       return answer === null ? reply.code(204).send() : answer;

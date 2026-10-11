@@ -80,24 +80,30 @@ export function dropNulls<T>(value: T): T {
   return value;
 }
 
+/** Where the first error is, one segment per step (`['items', '0', 'category']`): the instance path plus the missing or extra property. */
+function pathOf(e: NonNullable<ValidateFunction['errors']>[number]): string[] {
+  const path = e.instancePath.split('/').filter(Boolean).map((s) => s.replace(/~1/g, '/').replace(/~0/g, '~'));
+  if (e.keyword === 'required') path.push((e.params as { missingProperty: string }).missingProperty);
+  if (e.keyword === 'additionalProperties') path.push((e.params as { additionalProperty: string }).additionalProperty);
+  return path;
+}
+
 function describe(errors: NonNullable<ValidateFunction['errors']>): string {
   const e = errors[0]!;
-  const path = e.instancePath.split('/').filter(Boolean).join('.');
-  let field = path;
-  if (e.keyword === 'required') field = [path, (e.params as { missingProperty: string }).missingProperty].filter(Boolean).join('.');
-  if (e.keyword === 'additionalProperties') field = [path, (e.params as { additionalProperty: string }).additionalProperty].filter(Boolean).join('.');
+  const field = pathOf(e).join('.');
   const what = e.keyword === 'required' ? 'is required' : e.message ?? 'is invalid';
   return `${field || 'params'} ${what}`.slice(0, 500);
 }
 
-export type Checked<T = Record<string, unknown>> = { ok: true; value: T } | { ok: false; message: string };
+/** A failure says what is wrong (`message`) and where (`path`, the first error's segments; empty for the value itself). */
+export type Checked<T = Record<string, unknown>> = { ok: true; value: T } | { ok: false; message: string; path: string[] };
 
 /** Checks a value against a named schema of the contract. The value is returned with nulls dropped. */
 export function check<T = Record<string, unknown>>(schemaName: string, value: unknown): Checked<T> {
   const v = dropNulls(value);
   const validate = validator(schemaName);
   if (validate(v)) return { ok: true, value: v as T };
-  return { ok: false, message: describe(validate.errors!) };
+  return { ok: false, message: describe(validate.errors!), path: pathOf(validate.errors![0]!) };
 }
 
 export interface MethodInfo {
@@ -117,6 +123,6 @@ export const METHODS: Record<string, MethodInfo> = Object.fromEntries(
 /** `parseParams('post_message', params)`: the params checked against the method's params schema. */
 export function parseParams<T = Record<string, unknown>>(method: string, params: unknown): Checked<T> {
   const info = METHODS[method];
-  if (!info) return { ok: false, message: `unknown method ${method}` };
+  if (!info) return { ok: false, message: `unknown method ${method}`, path: [] };
   return check<T>(info.params, params);
 }

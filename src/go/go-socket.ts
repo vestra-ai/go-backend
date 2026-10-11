@@ -72,6 +72,19 @@ export function withoutLiveLinks(value: unknown): unknown {
 /** The same for a frame that could not be read as JSON-RPC, where only its text is at hand. */
 const withoutLiveLinksText = (raw: string): string => raw.replace(/("live_url"\s*:\s*")(?:[^"\\]|\\.)*/g, '$1[not logged]');
 
+/** Go's reads of a whole trip: answered not_found only when this server does not have the trip. */
+const TRIP_READS = new Set(['read_trip', 'read_messages', 'typing']);
+
+/**
+ * Go asking about a trip that lives on another server (or a deleted test database) is not our error: one warn line
+ * that says so, instead of the refusal line. True when it was that. The answer itself does not change.
+ */
+function strayTrip(method: string, tripId: unknown, err: unknown): boolean {
+  if (!TRIP_READS.has(method) || !(err instanceof SocketCallError) || err.dataCode !== 'not_found') return false;
+  console.warn(`[go] ${method} for a trip this server does not have: ${typeof tripId === 'string' ? tripId : '-'} (not_found)`);
+  return true;
+}
+
 export class GoSocket {
   private ws: WebSocket | null = null;
   private attempt = 0;
@@ -129,6 +142,8 @@ export class GoSocket {
       clearTimeout(idle);
       if (this.ws === ws) this.ws = null;
       if (this.stopped) return;
+      // One line, in production too, so a reconnect says why: 1006 is Go going away without a goodbye (a redeploy).
+      this.opts.log?.(`go socket closed ${code} ${reason.toString()}`.trim());
       const wait = RECONNECT_BACKOFF_SECONDS[Math.min(this.attempt++, RECONNECT_BACKOFF_SECONDS.length - 1)]!;
       this.timer = setTimeout(() => this.start(), wait * 1000);
     });
@@ -198,7 +213,7 @@ export class GoSocket {
     if (frame.id === undefined) {
       // a notification: never answered
       if (!check.ok) this.opts.log?.(`notification ${frame.method} dropped: ${check.message}`);
-      if (handler && check.ok) await handler(check.value, frame.params).catch(() => {});
+      if (handler && check.ok) await handler(check.value, frame.params).catch((err) => strayTrip(frame.method, fp.trip_id, err));
       return;
     }
     const answer = (body: { result?: object; error?: { code: number; message: string; data?: { code?: string } } }) => {
@@ -223,6 +238,7 @@ export class GoSocket {
       // Every refusal is printed, in production too (there is no traffic log there): ids, the code, the field and our
       // own message. Never the params, which carry names and words.
       const field = (err as { field?: string | null }).field;
+      if (strayTrip(frame.method, fp.trip_id, e)) return answer({ error: { code: e.code, message, ...data } });
       console.warn(`[go] ${frame.method} answered ${e.code} trip=${fp.trip_id ?? '-'} request=${fp.request_id ?? '-'}${field ? ` field=${field}` : ''}: ${message}`);
       answer({ error: { code: e.code, message, ...data } });
     }

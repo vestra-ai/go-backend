@@ -194,7 +194,7 @@ export async function updateTripDetails(ctx: Ctx, tripId: string, personId: stri
     assertItinerarySize(input.itinerary);
     input.itinerary.forEach((day, i) => {
       const checked = check('Day', day);
-      if (!checked.ok) throw invalid(`itinerary[${i}] ${checked.message}`, `itinerary[${i}]`);
+      if (!checked.ok) throw invalid(`itinerary[${i}] ${checked.message}`, checked.path.reduce((at, s) => (/^\d+$/.test(s) ? `${at}[${s}]` : `${at}.${s}`), `itinerary[${i}]`));
     });
   }
   return withTx(ctx.pool, async (db) => {

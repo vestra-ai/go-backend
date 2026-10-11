@@ -629,7 +629,7 @@ export async function needsYou(ctx: Ctx, tripId: string, personId: string): Prom
  * What this person has to do in this trip, worked out from our own rows (app contract §4.11, the sources table plus the
  * money line), on a given connection so a trip read and the home screen count it inside their own transactions.
  * `vote`: each open vote they have not voted in. `mandate`: the payer, while the mandate is unanswered. `card`: Go's cards
- * naming them in `for_person_ids` (until replace_card drops them), on messages they may see (`visible_to_person_ids`). `record_line`: an open, active line naming them.
+ * naming them in `for_person_ids` (until replace_card drops them) that have a button (an action or a suggestion's cta), on messages they may see (`visible_to_person_ids`). `record_line`: an open, active line naming them.
  * `settle_up`: each net transfer where they owe. `checkin`: each flight covering them whose cached check-in state is open (src/domain/checkin.ts),
  * only when `features.checkin` is on; the strip never asks Go.
  */
@@ -654,9 +654,13 @@ export async function needsYouIn(db: Db, tripId: string, personId: string, featu
       order by d.closed_at, d.decision_id`,
     [tripId, personId],
   );
+  // Only a card with something to press: a notice naming them with no buttons ("Go forgot you in this trip") is information, not a to-do.
   const cards = await db.query(
-    `select message_id, card->>'card_id' as card_id, card->>'fallback_text' as text, card->>'title' as title, card->'actions'->0->>'label' as cta, sent_at from messages
-      where trip_id = $1 and author_kind = 'go' and card->'for_person_ids' ? $2 and ${visibleSql('$2')} order by seq`,
+    `select message_id, card->>'card_id' as card_id, card->>'fallback_text' as text, card->>'title' as title,
+            coalesce(card->'actions'->0->>'label', card->'suggestion'->'cta'->>'label') as cta, sent_at from messages
+      where trip_id = $1 and author_kind = 'go' and card->'for_person_ids' ? $2 and ${visibleSql('$2')}
+        and ((jsonb_typeof(card->'actions') = 'array' and card->'actions' <> '[]'::jsonb) or card->'suggestion'->'cta'->>'action_id' is not null)
+      order by seq`,
     [tripId, personId],
   );
   const lines = await db.query(

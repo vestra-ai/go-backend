@@ -1,13 +1,13 @@
 // §4.4: trips, the person's own answers in a trip, reading, leaving. The live connection is in live.ts (§3).
 import type { FastifyInstance } from 'fastify';
 import type { Ctx } from '../../context.js';
-import { createTrip, leaveTrip, markSeen, requireMember, setGoPaused } from '../../domain/actions.js';
+import { createTrip, leaveTrip, markSeen, setGoPaused } from '../../domain/actions.js';
 import { inviteOf, rotateInvite } from '../../domain/invites.js';
 import { getMyTripAnswers, updateMyTripAnswers, updateTripDetails } from '../../domain/person-edits.js';
 import { parseInclude, readTripView } from '../../domain/trip-view.js';
 import { checkCreateTrip, checkPatchTrip, checkPatchTripMe, checkPauseGo, checkReadTrip } from '../bodies.js';
 import { SECTIONS, type RouteMeta } from './meta.js';
-import { atLeastOneField, inTrip, type V1Deps } from './shared.js';
+import { atLeastOneField, inTrip, memberFirst, type V1Deps } from './shared.js';
 
 const PERSON = { person_id: 'p_aarav', name: 'Aarav Shah', role: 'organizer', joined_at: '2026-10-08T10:00:00.000Z', from_city: 'Bengaluru', know: ['Vibe: beach'], has_upi: true, go_paused: false };
 // `seq` is 2 after a create: trip.created is change 1, the "Trip created · Aarav joined" pill is change 2.
@@ -50,9 +50,8 @@ export function register(app: FastifyInstance, ctx: Ctx, deps: V1Deps): void {
     return reply.code(201).send(await readTripView(ctx, trip_id, req.personId));
   });
 
-  app.get('/app/v1/trips/:trip', { schema: { querystring: { type: 'object', properties: { include: { type: 'string', maxLength: 200 } } } } }, async (req: any, reply) => {
+  app.get('/app/v1/trips/:trip', { schema: { querystring: { type: 'object', properties: { include: { type: 'string', maxLength: 200 } } } }, preValidation: memberFirst(ctx) }, async (req: any, reply) => {
     const trip: string = req.params.trip;
-    await requireMember(ctx.pool, trip, req.personId);
     const view = await readTripView(ctx, trip, req.personId, parseInclude(req.query.include));
     const etag = `"${view.seq}"`;
     reply.header('etag', etag);

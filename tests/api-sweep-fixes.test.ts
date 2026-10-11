@@ -40,6 +40,6 @@ describe('answers', () => {
     const open = (await t.api(rahul, 'POST', `${trip}/decisions`, { client_id: 'sweep-open', question: 'Where?', kind: 'choice', anonymous: false, options: [{ label: 'A' }, { label: 'B' }] })).body.decision.decision_id;
     const booking = await t.api(rahul, 'POST', `${trip}/bookings`, { kind: 'stay', title: 'Villa', vendor: 'ixigo', ref: 'X1', amount_minor: 100, payer_person_id: 'p_rahul', for_person_ids: ['p_rahul'], decision_id: open });
     const day = await t.api(rahul, 'PATCH', trip, { itinerary: [{ date: '2026-11-06', items: [{ title: 'x' }] }] });
-    expect([past, booking, day].map((r) => [r.status, r.body.error?.field])).toEqual([[422, 'closes_at'], [422, 'decision_id'], [422, 'itinerary[0]']]);
+    expect([past, booking, day].map((r) => [r.status, r.body.error?.field])).toEqual([[422, 'closes_at'], [422, 'decision_id'], [422, 'itinerary[0].items[0].category']]);
   });
 });
