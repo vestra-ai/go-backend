@@ -11,6 +11,7 @@ const overlay = JSON.parse(readFileSync(new URL('../contract/extensions-1.1.json
 const socket = JSON.parse(readFileSync(new URL('../contract/socket.json', import.meta.url), 'utf8'));
 const CHECKIN_SCHEMAS = ['CheckinState', 'GetCheckin', 'SubmitCheckin', 'SubmitCheckinResult'];
 const DEMO_SCHEMAS = ['PaymentCompleted', 'PaymentCompletedData'];
+const EXPENSE_SCHEMAS = ['UpdateExpense', 'UpdateExpenseResult'];
 
 /** Valid against the official files alone, and against the Server's own check (official + overlay): the two must agree. */
 const passes = (schema: string, value: unknown) => [validOfficial(schema, value), check(schema, value).ok];
@@ -47,13 +48,13 @@ describe('the official contract and the Server\'s overlay', () => {
     expect(socket.info.version).toBe('1.3.0');
   });
 
-  it('the overlay holds only the check-in schemas and methods and the demo\'s payment.completed event, none of them already in the official files', () => {
-    expect(CONTRACT_EXTENSIONS_VERSION).toBe('1.3.0+server-checkin');
+  it('the overlay holds only the check-in schemas and methods, the demo\'s payment.completed event and update_expense, none of them already in the official files', () => {
+    expect(CONTRACT_EXTENSIONS_VERSION).toBe('1.3.0+server-checkin+update-expense');
     // `Event` is the one official name in the overlay: it only gains the payment.completed branch (docs/GO-TEAM-DEMO-PAYMENT.md).
-    expect(Object.keys(overlay.schemas).sort()).toEqual([...CHECKIN_SCHEMAS, ...DEMO_SCHEMAS, 'Event'].sort());
+    expect(Object.keys(overlay.schemas).sort()).toEqual([...CHECKIN_SCHEMAS, ...DEMO_SCHEMAS, ...EXPENSE_SCHEMAS, 'Event'].sort());
     expect(overlay.schemas.Event).toEqual({ oneOf: [{ $ref: '#/components/schemas/PaymentCompleted' }] });
-    expect(overlay.methods.map((m: any) => m.name)).toEqual(['get_checkin', 'submit_checkin']);
-    expect([...CHECKIN_SCHEMAS, ...DEMO_SCHEMAS].filter(hasOfficial)).toEqual([]);
+    expect(overlay.methods.map((m: any) => m.name)).toEqual(['get_checkin', 'submit_checkin', 'update_expense']);
+    expect([...CHECKIN_SCHEMAS, ...DEMO_SCHEMAS, ...EXPENSE_SCHEMAS].filter(hasOfficial)).toEqual([]);
     expect(overlay.methods.filter((m: any) => officialMethods.methods.some((o: any) => o.name === m.name))).toEqual([]);
   });
 
@@ -65,7 +66,17 @@ describe('the official contract and the Server\'s overlay', () => {
     const official = simplifyNullable(officialGoJson.components.schemas.Event) as { oneOf: unknown[] };
     expect(validator('Event').schema).toEqual({ ...official, oneOf: [...official.oneOf, { $ref: '#/components/schemas/PaymentCompleted' }] });
     for (const m of officialMethods.methods) expect(METHODS[m.name], m.name).toEqual(m);
-    expect(Object.keys(METHODS).sort()).toEqual([...officialMethods.methods.map((m: any) => m.name), 'get_checkin', 'submit_checkin'].sort());
+    expect(Object.keys(METHODS).sort()).toEqual([...officialMethods.methods.map((m: any) => m.name), 'get_checkin', 'submit_checkin', 'update_expense'].sort());
+  });
+
+  // Saket's trip, 11 Oct: Go could only add_expense, so "split it evenly" added a second expense. update_expense is the
+  // Server's until Go's own contract has it.
+  it('update_expense is known to the Server and not to the official files', () => {
+    expect(METHODS.update_expense).toMatchObject({ direction: 'to_server', params: 'UpdateExpense', result: 'UpdateExpenseResult', sends_event: 'expense.changed' });
+    expect(parseParams('update_expense', { request_id: 'r', trip_id: 't', expense_id: 'e', split_person_ids: ['p_a', 'p_b'] })).toMatchObject({ ok: true });
+    expect(parseParams('update_expense', { request_id: 'r', trip_id: 't', expense_id: 'e', split_person_ids: [] })).toMatchObject({ ok: false });
+    expect(parseParams('update_expense', { request_id: 'r', trip_id: 't', split_person_ids: ['p_a'] })).toMatchObject({ ok: false, message: 'expense_id is required' });
+    expect(() => validOfficial('UpdateExpense', {})).toThrow(/no schema UpdateExpense/);
   });
 
   it('the check-in requests are known to the Server and not to the official files', () => {

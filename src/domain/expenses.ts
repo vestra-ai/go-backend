@@ -3,6 +3,7 @@
 import { goContractOf, type Ctx } from '../context.js';
 import { check } from '../contract/index.js';
 import { newId } from '../db/ids.js';
+import type pg from 'pg';
 import type { Db } from '../db/pool.js';
 import { withTx } from '../db/pool.js';
 import { change, nextSeq } from '../db/write-change.js';
@@ -18,7 +19,7 @@ import { readOnly } from './money-view.js';
  * on 8 Oct 2026). On GO_CONTRACT=1.0 the change takes its number with no event, and Go sees the new split on its next
  * read_trip; on 1.1 (docs/GO-CHANGES.md B4) the event is sent.
  */
-async function expenseUpdated(ctx: Ctx, db: Db, tripId: string, data: { expense: ExpenseView; change: 'updated'; by: { kind: 'person'; person_id: string }; by_person_id: string }): Promise<number> {
+async function expenseUpdated(ctx: Ctx, db: Db, tripId: string, data: { expense: ExpenseView; change: 'updated'; by: Actor; by_person_id?: string }): Promise<number> {
   return goContractOf(ctx) === '1.1' ? change(db, tripId, 'expense.changed', data) : nextSeq(db, tripId);
 }
 
@@ -70,7 +71,7 @@ export async function insertExpense(db: Db, tripId: string, f: ExpenseFields): P
 }
 
 /** The expense, held for the rest of the transaction. 404 when it is not in this trip or was removed. */
-async function lockExpense(db: Db, tripId: string, expenseId: string): Promise<ExpenseStoredRow> {
+export async function lockExpense(db: Db, tripId: string, expenseId: string): Promise<ExpenseStoredRow> {
   const row = (await db.query<ExpenseStoredRow>('select * from expenses where trip_id = $1 and expense_id = $2 and removed_at is null for update', [tripId, expenseId])).rows[0];
   if (!row) throw notFound(`expense ${expenseId} does not exist`);
   return row;
@@ -143,21 +144,33 @@ export interface ExpenseSplitEdit {
   note?: string;
 }
 
-/** "Fix split" (see `mayChange`): the new split, and a new note if given. Go hears `expense.changed` with change `updated` on contract 1.1. */
+/** Who changes an expense: a person in the App, or Go (its `update_expense`). */
+type Actor = { kind: 'person'; person_id: string } | { kind: 'go' };
+
+/**
+ * The new split, and a new note if given, on an expense already locked: everyone named must be in the trip. Go hears
+ * `expense.changed` with change `updated` on contract 1.1; the room's line goes only when the split itself moved (a new
+ * note alone is not a money movement). The App's Fix the split and Go's `update_expense` both come here.
+ */
+export async function changeExpenseSplit(ctx: Ctx, db: pg.PoolClient, tripId: string, row: ExpenseStoredRow, input: ExpenseSplitEdit, by: Actor): Promise<ExpenseView & { seq: number }> {
+  const ids = [...new Set(input.split_person_ids)];
+  await checkExpenseFields(db, tripId, { paid_by_person_id: null, category: row.category, split_person_ids: ids, booking_id: null });
+  const updated = (await db.query<ExpenseStoredRow>('update expenses set split_person_ids = $2, note = $3 where expense_id = $1 returning *', [row.expense_id, JSON.stringify(ids), input.note ?? row.note])).rows[0]!;
+  const expense = expenseView(updated);
+  // by_person_id names a person only: Go's change leaves it out, as the Server leaves out every empty member.
+  const seq = await expenseUpdated(ctx, db, tripId, { expense, change: 'updated', by, ...(by.kind === 'person' ? { by_person_id: by.person_id } : {}) });
+  await moneyChanged(ctx, tripId, seq);
+  if (!sameIds(row.split_person_ids, ids)) await postSplitChanged({ ctx, db, tripId }, expense, by);
+  return { ...expense, seq };
+}
+
+/** "Fix split" (see `mayChange`): the new split, and a new note if given (`changeExpenseSplit`). */
 export async function updateExpenseSplit(ctx: Ctx, tripId: string, personId: string, expenseId: string, input: ExpenseSplitEdit): Promise<ExpenseView & { seq: number }> {
   return withTx(ctx.pool, async (db) => {
     const member = await requireMember(db, tripId, personId);
     const row = await lockExpense(db, tripId, expenseId);
     await mayChange(db, tripId, row, personId, member.role, 'change');
-    const ids = [...new Set(input.split_person_ids)];
-    await checkExpenseFields(db, tripId, { paid_by_person_id: null, category: row.category, split_person_ids: ids, booking_id: null });
-    const updated = (await db.query<ExpenseStoredRow>('update expenses set split_person_ids = $2, note = $3 where expense_id = $1 returning *', [expenseId, JSON.stringify(ids), input.note ?? row.note])).rows[0]!;
-    const expense = expenseView(updated);
-    const seq = await expenseUpdated(ctx, db, tripId, { expense, change: 'updated', by: { kind: 'person', person_id: personId }, by_person_id: personId });
-    await moneyChanged(ctx, tripId, seq);
-    // The room's line, only when the split itself moved (a new note alone is not a money movement).
-    if (!sameIds(row.split_person_ids, ids)) await postSplitChanged({ ctx, db, tripId }, expense, personId);
-    return { ...expense, seq };
+    return changeExpenseSplit(ctx, db, tripId, row, input, { kind: 'person', person_id: personId });
   });
 }
 

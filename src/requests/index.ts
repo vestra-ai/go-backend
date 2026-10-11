@@ -5,7 +5,7 @@ import { addReaction, removeReaction } from './reactions.js';
 import { readMessages, readTrip } from './reads.js';
 import { addRecordLine, updateRecordLine } from './record.js';
 import { postMessage, replaceCard, typing } from './messages.js';
-import { addBooking, addExpense, cancelSpendApproval, requestSpendApproval, updateBooking } from './money.js';
+import { addBooking, addExpense, cancelSpendApproval, requestSpendApproval, updateBooking, updateExpense } from './money.js';
 import { updateTrip } from './trip.js';
 import { addVoteOptions, closeVote, openVote, setMandate } from './votes.js';
 
@@ -36,7 +36,7 @@ function addBookingWithExtras(ctx: Ctx): Handler {
   };
 }
 
-/** Go's 19 requests, each answered from the shared database. A method not in this table is answered -32601. */
+/** Go's 19 requests and the Server's update_expense (contract/extensions-1.1.json), each answered from the shared database. A method not in this table is answered -32601. */
 export function goRequestHandlers(ctx: Ctx, answerWithinMs = ANSWER_WITHIN_MS): Record<string, Handler> {
   const handlers: Record<string, Handler> = {
     read_trip: readTrip(ctx),
@@ -56,6 +56,7 @@ export function goRequestHandlers(ctx: Ctx, answerWithinMs = ANSWER_WITHIN_MS): 
     add_booking: addBookingWithExtras(ctx),
     update_booking: updateBooking(ctx),
     add_expense: addExpense(ctx),
+    update_expense: updateExpense(ctx),
     request_spend_approval: requestSpendApproval(ctx),
     cancel_spend_approval: cancelSpendApproval(ctx),
   };

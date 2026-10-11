@@ -11,8 +11,8 @@ It describes the Server as of contract rev 4 (10 Oct 2026), after the first inte
 **Where the shapes are defined.** Go's official contract **1.3.0**, from `vestra-ai/go-brain` `packages/contract`
 (branch `build`, commit `de37966d`, taken 11 Oct 2026), held in this repository as `contract/go.json` (shapes), `contract/methods.json`
 (methods) and `contract/socket.json`; the signing and spend-approval test vectors are identical to Go's. The Server
-checks every frame against those files. `contract/extensions-1.1.json` (now `1.3.0+server-checkin`) adds only the two
-web check-in requests (section 2), not in Go's contract yet. `visible_to_person_ids` on `PostMessage` and `Message` was
+checks every frame against those files. `contract/extensions-1.1.json` (now `1.3.0+server-checkin+update-expense`) adds
+only the two web check-in requests (section 2) and `update_expense` (section 4), not in Go's contract yet. `visible_to_person_ids` on `PostMessage` and `Message` was
 the Server's overlay until 1.2 made it official. Where this page and those files differ, the files are what the Server
 checks against.
 
@@ -160,6 +160,7 @@ error `-32601`; params that do not match the contract with `422`, `data.code: "i
 | `add_record_line` · `update_record_line` | | `record.changed` |
 | `add_booking` · `update_booking` | `AddBooking` · `UpdateBooking` | `booking.changed` |
 | `add_expense` | `AddExpense` → `AddExpenseResult` | `expense.changed` `added`, then the Server's money line in the room |
+| `update_expense` (Server's overlay) | `UpdateExpense` → `UpdateExpenseResult` | `expense.changed` `updated` by Go (contract 1.1), then "Go changed the split of …" in the room |
 | `request_spend_approval` | `RequestSpendApproval` → `SpendApprovalResult` | none |
 | `cancel_spend_approval` | `CancelSpendApproval` → `Ok` | none |
 
@@ -184,6 +185,11 @@ error `-32601`; params that do not match the contract with `422`, `data.code: "i
   units go one each to the first people in joining order). `approval_id` (1.1) names the vault payment it belongs to
   and changes nothing else. **For rooms at different prices, send one `add_expense` per room**, split among that
   room's people.
+- **`update_expense`** (in `contract/extensions-1.1.json` until Go's contract has it) changes who an existing expense is
+  split between, and its `note` when given: `{ request_id, trip_id, expense_id, split_person_ids, note? }` →
+  `{ expense, seq }`. It is the App's Fix the split, done by Go: everyone named must be in the trip (`422`), an expense
+  not in the trip or removed is `404`, a repeat of the same `request_id` is done once. The amount and the payer never
+  change. **"Split it evenly" changes the expense that stands: never send a second `add_expense` for it.**
 - **`request_spend_approval`** has two forms (1.3: `RequestSpendApproval = RequestPersonalSpendApproval |
   RequestGroupSpendApproval`). A repeat of the same `request_id` gets the same answer, token included, in both. 1.2's
   ticket form (`kind: "ticket"`, `for_person_id`) is gone with 1.3: the Server answers it `422`.

@@ -4,7 +4,7 @@ import { once } from '../db/once.js';
 import type { Db } from '../db/pool.js';
 import { change, emit, nextSeq } from '../db/write-change.js';
 import { conflict, invalid, notFound } from '../domain/errors.js';
-import { insertExpense, moneyChanged } from '../domain/expenses.js';
+import { changeExpenseSplit, insertExpense, lockExpense, moneyChanged } from '../domain/expenses.js';
 import { postExpenseAdded } from '../domain/ledger-lines.js';
 import { bookingOf, recordLineOf, visibleSql } from '../domain/mappers.js';
 import type { BookingRow, RecordLineRow } from '../domain/mappers.js';
@@ -111,6 +111,21 @@ export const addExpense = (ctx: Ctx) => async (p: any) =>
     await moneyChanged(ctx, p.trip_id, seq);
     await postExpenseAdded({ ctx, db, tripId: p.trip_id }, expense, { kind: 'go' }); // the room's line, for Go's expenses too
     return { expense_id: expense.expense_id, seq };
+  });
+
+/**
+ * Go changes who an expense is split between, and its note if given: the App's Fix the split, done by Go
+ * (`changeExpenseSplit`). Go acts for the group, as with add_expense, so no person's right to change it is checked;
+ * everyone named must be in the trip. 404 for an expense not in the trip or removed. Go's "split it evenly" changes the
+ * expense that stands, never adds a second one (Saket's trip, 11 Oct: a second ₹24,846 beside the ₹49,692).
+ */
+export const updateExpense = (ctx: Ctx) => async (p: any) =>
+  once(ctx.pool, p.trip_id, p.request_id, async (db) => {
+    await tripOf(db, p.trip_id);
+    const row = await lockExpense(db, p.trip_id, p.expense_id);
+    const changed = await changeExpenseSplit(ctx, db, p.trip_id, row, { split_person_ids: p.split_person_ids, ...(p.note ? { note: p.note } : {}) }, { kind: 'go' });
+    const { seq, ...expense } = changed;
+    return { expense, seq };
   });
 
 /**
