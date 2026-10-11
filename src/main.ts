@@ -4,6 +4,7 @@ import { buildApp } from './api/app.js';
 import { DevAuth, SupabaseAuth } from './api/auth.js';
 import { loadConfig, socketUrl } from './config.js';
 import { createPool } from './db/pool.js';
+import { closePdfBrowser, pdfSelfTest, pdfStatus } from './demo/pdf.js';
 import { GoSocket, type TrafficEntry } from './go/go-socket.js';
 import { goRequestHandlers } from './requests/index.js';
 import { startJobs } from './jobs/votes.js';
@@ -28,6 +29,10 @@ const storage = config.storage === 'supabase'
   : new MemoryStorage(process.env.PUBLIC_BASE_URL ?? `http://localhost:${config.port}`);
 if (config.storage === 'memory') console.warn('[storage] STORAGE=memory: uploads live in memory and are lost on restart. Set SUPABASE_SECRET_KEY (and SUPABASE_URL) for Supabase Storage.');
 else console.log(`storage: supabase bucket ${config.supabaseStorageBucket}`);
+// The demo's ticket PDFs need a Chromium (PUPPETEER_EXECUTABLE_PATH); without one a demo booking has no file.
+console.log(`ticket pdfs: ${pdfStatus()}`);
+// A real render right after start, so the deploy log proves the e-tickets and vouchers work (it never blocks the start).
+void pdfSelfTest().then((r) => (r.startsWith('ok') ? console.log : console.error)(`ticket pdfs: ${r}`));
 const ctx: Ctx = {
   pool,
   live,
@@ -90,6 +95,7 @@ const shutdown = async () => {
   await sender.idle(); // let an event that is on the way get its answer
   go.stop();
   await app.close();
+  await closePdfBrowser();
   await live.close();
   await pool.end();
   process.exit(0);

@@ -47,8 +47,8 @@ export class MemoryStorage implements Storage {
     return { mime, size_bytes: bytes.length };
   }
 
-  /** Stores bytes straight away, as if they had been PUT (for tests). */
-  put(path: string, bytes: Buffer, mime: string): void {
+  /** Stores bytes straight away, as if they had been PUT (the demo's ticket PDFs, and tests). */
+  async put(path: string, bytes: Buffer, mime: string): Promise<void> {
     this.files.set(path, { bytes, mime });
   }
 

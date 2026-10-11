@@ -7,7 +7,7 @@
 import type pg from 'pg';
 import { nowOf, type Ctx } from '../context.js';
 import { Forbidden, needsYouIn } from './actions.js';
-import { bookingsForPerson } from './bookings.js';
+import { bookingsForPerson, linkDocuments } from './bookings.js';
 import { invalid } from './errors.js';
 import { actorOf, compact, visibleSql } from './mappers.js';
 import { buildSnapshot } from './snapshot.js';
@@ -80,8 +80,9 @@ export async function readTripView(ctx: Ctx, tripId: string, personId: string, i
       [tripId, personId],
     );
     const needs = (await needsYouIn(db, tripId, personId, ctx.features)).length;
-    const bookings = await bookingsForPerson(db, snap.bookings, personId);
+    const forPerson = await bookingsForPerson(db, snap.bookings, personId);
     await db.query('commit');
+    const bookings = await linkDocuments(ctx.storage, forPerson.items, forPerson.paths); // signed after the read, not inside it
 
     const cancels = new Map(links.rows.map((r) => [r.decision_id as string, r.cancels_booking_id as string]));
     const mine = snap.people.find((p) => p.person_id === personId)!;
