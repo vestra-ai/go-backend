@@ -514,6 +514,18 @@ amount per person in the chat, and a trip carries it as `budget_per_person_minor
 other members of `TripView.budget` (`lowest`, `answered`, `of`) keep the Go contract's shape and mean nothing to the app.
 Go's in-app link `go://trips/<trip>/sheet/budget` opens the group budget editor.
 
+**A booking fills the trip's empty fields.** When a booking is added (Approve on Go's pay card, Go's own booking, or
+one a person adds), the trip takes from its confirmed bookings whatever it does not have yet. Nothing set is ever
+overwritten:
+- `destination`: the stay's place, else the city the outbound flight, train or bus lands in (for example "Goa" for
+  Mopa's airport GOX);
+- `stay`: the stay's name;
+- `dates`: the stay's check-in to check-out; else, only when both a going and a return journey are booked, the going
+  departure date to the return arrival date (a one-way flight sets no dates).
+
+It arrives as `trip_changed kinds:["trip"]` (and `home_changed` when the place or dates moved): re-read the trip. The
+automatic name then follows ("Goa 2026").
+
 **The automatic name.** A trip whose stored `title` is still exactly `"New trip"` and which has a destination with a
 name is shown as `"<destination.name> <year>"`, for example `"Hampi 2026"`: the year of `dates.start` when dates are
 set, else the current year in India (Asia/Kolkata). It is worked out on every app read: `TripView.title`, the home

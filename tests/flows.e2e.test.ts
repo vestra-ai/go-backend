@@ -369,7 +369,7 @@ describe('F4. From a vote to a booking (guides: "From a vote to a booking", "Mon
     expect((await rows(h.pool, 'select used_at, booking_id from spend_approvals where approval_id = $1', [approval.approval_id]))[0]).toMatchObject({ used_at: expect.any(Date), booking_id: b.booking_id });
     await h.flush();
     const list = eventsFor(trip, mark);
-    expect(list.map((e) => e.type)).toEqual(['booking.changed', 'record.changed', 'expense.changed', 'payment.completed', 'message.created', 'message.created']);
+    expect(list.map((e) => e.type)).toEqual(['booking.changed', 'record.changed', 'expense.changed', 'payment.completed', 'message.created', 'message.created', 'trip.updated']); // the last: the trip's empty fields from the booking
     expect(list[1]!.data).toMatchObject({ change: 'updated', by: { kind: 'system' }, line: { line_id: decided.line_id, kind: 'booked', booking_id: b.booking_id } });
     expect(list[3]!.data).toMatchObject({ approval_id: approval.approval_id, card_id: 'c_villa_pay', decision_id: villa, booking_id: b.booking_id, method: 'demo' });
     expect(list[4]!.data.message).toMatchObject({ author: { kind: 'system' }, text: `${b.title} booked` });

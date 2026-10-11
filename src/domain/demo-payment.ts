@@ -18,6 +18,7 @@ import { bookingOf, compact, recordLineOf, type BookingRow, type RecordLineRow }
 import { activePeople, loadDecisions } from './snapshot.js';
 import type { ApprovalRow, PickRow } from './spend.js';
 import { bookedText, postSystemMessage } from './system-messages.js';
+import { fillTripFromBookings } from './trip-from-booking.js';
 
 export interface PayCardLike {
   card_id: string; kind: string; state?: string; approval_id?: string; payer_person_id?: string; merchant?: string; purpose?: string;
@@ -167,6 +168,7 @@ export async function demoPay(ctx: Ctx, tripId: string, personId: string, cardId
     // The room's lines last, as after Go's add_booking and add_expense: "<title> booked", then the money line.
     await postSystemMessage(ctx, db, tripId, bookedText(f.title));
     await postExpenseAdded({ ctx, db, tripId }, expense, { kind: 'person', person_id: personId });
+    await fillTripFromBookings(ctx, db, tripId); // the trip's empty place, stay and dates from what is now booked
     await publishHome(ctx, tripId, [...new Set([personId, ...(card.for_person_ids ?? [])])]); // the card leaves their open items
     // The ticket files are copied from their links once the payment is saved, in the background, as for Go's add_booking:
     // a file that cannot be fetched is skipped and the booking stands without it.

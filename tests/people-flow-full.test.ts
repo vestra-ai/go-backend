@@ -52,7 +52,7 @@ it('the whole feature in one walk from the web app\'s origin: every change takes
     : e.type + (e.data.change ? `:${e.data.change}` : '') + (e.type === 'trip.updated' ? `:${e.data.by.kind}:${e.data.changed}` : '') + (e.type === 'person.updated' ? `:${e.data.changed}` : '');
   expect(events.map(label)).toEqual([
     'decision.opened', 'pill:system:Where do we stay?', ...Array(5).fill('decision.voted'), 'decision.closed', 'record.changed:added', 'pill:system:Villa Sol won · 5 votes', // the first vote, decided
-    'booking.changed:added', 'record.changed:updated', 'pill:system:Villa Sol booked', 'booking.changed:updated', // a booking against it, updated
+    'booking.changed:added', 'record.changed:updated', 'pill:system:Villa Sol booked', 'trip.updated:system:stay', 'booking.changed:updated', // a booking against it (the trip had no stay: it takes the booked one), updated
     'decision.opened', 'pill:system:Cancel this booking? Villa Sol', ...Array(3).fill('decision.voted'), 'decision.closed', 'booking.changed:cancelled', 'record.changed:added', 'pill:system:Cancel: Villa Sol won · 3 votes', // the group cancels it
     'person.updated:name', 'person.updated:has_upi', 'person.updated:from_city,know', // a rename, a UPI id (only that one exists), join answers
     'trip.updated:person:title,status', // the trip edit names the person

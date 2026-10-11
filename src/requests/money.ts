@@ -12,6 +12,7 @@ import { approvalProblem, issueApproval, personalCheck, personalPickSql, spendCh
 import type { ApprovalRow, PickRow } from '../domain/spend.js';
 import { loadDecisions } from '../domain/snapshot.js';
 import { bookedText, postSystemMessage } from '../domain/system-messages.js';
+import { fillTripFromBookings } from '../domain/trip-from-booking.js';
 import { assertCurrency, assertPeopleInTrip, requireSomething, tripOf } from './guards.js';
 
 export const addBooking = (ctx: Ctx) => async (p: any, raw: Record<string, unknown>) =>
@@ -62,6 +63,7 @@ export const addBooking = (ctx: Ctx) => async (p: any, raw: Record<string, unkno
     await emit(db, p.trip_id, lineSeq, 'record.changed', { line: recordLineOf(line), change: decided ? 'updated' : 'added', by: { kind: 'system' } });
     await ctx.live.publish(p.trip_id, { kind: 'trip', seq: lineSeq, kinds: ['booking', 'record'] }); // before the pill's notice: live frames in change-number order
     await postSystemMessage(ctx, db, p.trip_id, bookedText(p.title)); // the room's pill (decision D8), after the events, sent to Go as message.created
+    await fillTripFromBookings(ctx, db, p.trip_id); // the trip's empty place, stay and dates from what is now booked
     return { booking_id: booking.booking_id, seq };
   });
 

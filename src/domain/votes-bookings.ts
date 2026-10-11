@@ -16,6 +16,7 @@ import { bookingOf, compact, decisionOf, recordLineOf } from './mappers.js';
 import type { BookingRow, RecordLineRow } from './mappers.js';
 import { loadMessageForApp } from './room.js';
 import { bookedText, postSystemMessage, voteCardFor } from './system-messages.js';
+import { fillTripFromBookings } from './trip-from-booking.js';
 import type { Message } from './types.js';
 import { lockBooking, openDecision } from './voting.js';
 import { decisionForPerson, publishHomeAll, requireMember, type DecisionForPerson } from './actions.js';
@@ -116,6 +117,7 @@ export async function addPersonBooking(ctx: Ctx, tripId: string, personId: strin
     await emit(db, tripId, lineSeq, 'record.changed', { line: recordLineOf(line), change: decided ? 'updated' : 'added', by: { kind: 'system' } });
     await ctx.live.publish(tripId, { kind: 'trip', seq: lineSeq, kinds: ['booking', 'record'] }); // before the pill's notice
     await postSystemMessage(ctx, db, tripId, bookedText(input.title)); // the room's pill (D8), after the events
+    await fillTripFromBookings(ctx, db, tripId); // the trip's empty place, stay and dates from what is now booked
     return { ...bookingForApp(bookingOf(booking), [], personId), seq };
   });
 }

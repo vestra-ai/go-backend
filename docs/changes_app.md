@@ -154,6 +154,32 @@ There are three parts:
   `http://localhost:3002`. Add any new web address to the server's `APP_ORIGINS` before using it.
 
 
+## Demo payment: Approve on the pay card is the payment (11 Oct)
+
+For the demo no money moves and there is no vault step (CONTRACT-APP §4.7, "For the demo").
+
+1. **Approve answers `done` at once.** When the payer taps `approve` on a `pay` card in `state: "waiting"`, the tap
+   (`POST …/cards/:card_id/actions`) answers `{ "result": "done" }`. There is no `open` and no vault link.
+   **Do:** don't wait for or open a vault page on the payer's Approve. Show a short "Paid" state and let the frames
+   below redraw the card.
+2. **Key on `action_id`, not the label.** Go now labels the button **"Pay with ixigo money"**. The button is still
+   `action_id: "approve"`.
+3. **Drop the old helper line.** "Approve opens Go's vault page. You confirm there, never in the app." (`copy.ts`
+   `pay.helper`) is now wrong. Remove it, or change it to something like "Paid with ixigo money. This is a demo, no
+   money moves."
+4. **What arrives after the tap:**
+   - a `card` frame, then a `message` frame: the pay card is now `state: "paid"` with `actions: null` (no buttons);
+   - `trip_changed` with `kinds` `booking`, `record` and `expense`: a confirmed booking (with a `DEMO-…` reference)
+     and its expense now exist, so re-read bookings and money;
+   - two room lines: "`<title>` booked" and the money line ("… added `<title>` …");
+   - then Go posts a **`ticket` card**, `{ kind: "ticket", card_id, booking_id }`.
+     - **Do:** draw it from `GET /trips/:trip/bookings/:booking_id` (a record card; the Server's row is the truth).
+     - A person's own ticket comes only to them (`visible_to_person_ids`).
+5. **A repeated tap** answers `done` again and changes nothing.
+6. **When the payment can no longer be taken** (Go expired the card at that moment, or it is already booked):
+   `{ "result": "refused", "toast": "This payment is no longer waiting." }`. **Do:** show the toast.
+7. **Unchanged:** Decline / "Not now", an expired card's "Start again", and anyone else's tap still go to Go as before.
+
 ## Demo booking tickets (12 Oct)
 
 For the demo, a booking made by **Approve** on Go's pay card now looks like a real one and comes with a ticket file.

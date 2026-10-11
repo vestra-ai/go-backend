@@ -88,7 +88,7 @@ describe('GET: the state from Go, kept', () => {
     expect([await strip('p_rahul'), await strip('p_arjun'), await strip('p_priya')]).toEqual([[item], [item], []]);
     expect((await t.api(t.as('p_arjun'), 'GET', '/app/v1/trips/t_goa')).body.needs_you_count).toBe(1);
     expect(await attention('p_rahul')).toEqual({ kind: 'task', label: 'Web check-in is open' });
-    expect(await attention('p_priya')).toEqual({ kind: 'collecting' });
+    expect(await attention('p_priya')).toEqual({ kind: 'all_set' }); // the flight booking gave the trip its place, so it is planned
   });
 
   it('when Go is away the cached state is answered; with nothing cached, 502 go_unavailable; Go\'s working answer keeps what is cached', async () => {
@@ -171,7 +171,7 @@ describe('POST complete', () => {
     expect([await strip('p_rahul'), (await strip('p_arjun')).length]).toEqual([[], 1]);
     expect(refusal(await patch('p_rahul', { seat: '14D' }))).toEqual([409, 'conflict']);
     expect(refusal(await complete('p_rahul'))).toEqual([409, 'conflict']);
-    expect(await attention('p_rahul')).toEqual({ kind: 'collecting' }); // nothing else waits for him
+    expect(await attention('p_rahul')).toEqual({ kind: 'all_set' }); // nothing else waits for him, and the booking made the trip planned
   });
 
   it('Go silent → 502 go_unavailable, and the state is left as it was', { timeout: 10_000 }, async () => {

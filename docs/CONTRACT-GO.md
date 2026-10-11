@@ -82,7 +82,7 @@ Every event is `{ event_id, trip_id, seq, occurred_at, type, data }`.
 | `type` | Sent when | `data` (shapes in `go.json` unless marked) |
 |---|---|---|
 | `trip.created` | a person creates a trip (always `seq` 1) | the `TripSnapshot` |
-| `trip.updated` | a person or Go changes the title, destination, dates, vibe, stay, itinerary, status or **the group budget** | `{ by, changed: [...] }`. `changed` names the fields (`"budget"` for the budget), **not the new values**: read the trip |
+| `trip.updated` | a person or Go changes the title, destination, dates, vibe, stay, itinerary, status or **the group budget**; or, **by the system**, a new booking fills the trip's empty `destination`, `stay` or `dates` (never a value already set) | `{ by, changed: [...] }`. `changed` names the fields (`"budget"` for the budget), **not the new values**: read the trip |
 | `person.joined` | someone joins by invite link | `{ person }` with their join answers |
 | `person.updated` | name, photo, UPI flag (when it flips), starting city, earliest leave, what Go should know, or Pause Go changed; also after "forget me" clears a person's join answers | `{ person, changed: [...] }`, `changed` among `name`, `photo_url`, `has_upi`, `from_city`, `earliest_leave`, `know`, `go_paused` (the 1.0 enum also has `role`, which the Server does not send today) |
 | `person.left` | someone leaves, or deletes their account | `{ person_id }` |

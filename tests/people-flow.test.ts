@@ -42,7 +42,7 @@ it('one journey from the web app\'s origin: decide a vote, add a booking against
   expect(bodies.map((e) => check('Event', e).ok).every(Boolean)).toBe(true);
   expect(bodies.map((e) => e.type === 'message.created' ? `pill:${e.data.message.author.kind}:${e.data.message.text}` : e.type + (e.data.change ? `:${e.data.change}` : ''))).toEqual([
     'decision.opened', 'pill:system:Where do we stay?', ...Array(5).fill('decision.voted'), 'decision.closed', 'record.changed:added', 'pill:system:Villa Sol won · 5 votes', // the first vote, its anchor, its decided line and its pill
-    'booking.changed:added', 'record.changed:updated', 'pill:system:Villa Sol, 3 nights booked', // the booking, the decided line becoming the booked line, its pill
+    'booking.changed:added', 'record.changed:updated', 'pill:system:Villa Sol, 3 nights booked', 'trip.updated', // the booking, the decided line becoming the booked line, its pill, the trip taking the empty stay
     'booking.changed:updated', // the reference and start time (no pill)
     'decision.opened', 'pill:system:Cancel this booking? Villa Sol, 3 nights', ...Array(3).fill('decision.voted'), 'decision.closed', 'booking.changed:cancelled', 'record.changed:added', 'pill:system:Cancel: Villa Sol, 3 nights won · 3 votes', // the cancellation vote, passing
   ]);

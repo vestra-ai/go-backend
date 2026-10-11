@@ -103,7 +103,7 @@ describe("the demo's payment", () => {
     // Go hears them in this order, and payment.completed names what came before it.
     await h.flush();
     const heard = h.go.events.slice(events) as any[];
-    expect(heard.map((e) => e.type)).toEqual(['booking.changed', 'record.changed', 'expense.changed', 'payment.completed', 'message.created', 'message.created']);
+    expect(heard.map((e) => e.type)).toEqual(['booking.changed', 'record.changed', 'expense.changed', 'payment.completed', 'message.created', 'message.created', 'trip.updated']); // the last: the trip takes its empty place/stay/dates from the booking
     expect(heard.map((e) => e.seq)).toEqual([...heard.map((e) => e.seq)].sort((a, b) => a - b));
     expect(heard[0].data).toMatchObject({ change: 'added', by: { kind: 'system' }, booking: { booking_id: booking.booking_id, approval_id } });
     const paid = heard[3];
@@ -113,7 +113,7 @@ describe("the demo's payment", () => {
       personal: { person_id: 'p_priya', card_id: flights, option_id: 'o1' }, booking_id: booking.booking_id, expense_id: expense.expense_id,
       method: 'demo', paid_at: expect.any(String), by: { kind: 'person', person_id: 'p_priya' },
     });
-    expect(heard.slice(4).map((e) => e.data.message.text)).toEqual(['IndiGo 6E 2134 · BLR → GOX booked', expect.stringMatching(/^Priya added IndiGo 6E 2134 · BLR → GOX · ₹6,000 · split/)]);
+    expect(heard.slice(4, 6).map((e) => e.data.message.text)).toEqual(['IndiGo 6E 2134 · BLR → GOX booked', expect.stringMatching(/^Priya added IndiGo 6E 2134 · BLR → GOX · ₹6,000 · split/)]);
 
     // The app reads it back: the booking, the money, and the card in the paid list.
     const bookings = await t.api(t.as('p_priya'), 'GET', '/app/v1/trips/t_goa/bookings');
