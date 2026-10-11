@@ -89,10 +89,10 @@ describe('against a Go on contract 1.1', () => {
 });
 
 describe('the route list', () => {
-  it('has 70 app routes, and none of the eleven that rev 4 removed', () => {
+  it('has 71 app routes, and none of the eleven that rev 4 removed', () => {
     const routes = sections.flatMap((s) => s.routes).filter((r) => !r.dev).map((r) => `${r.method} ${r.path.replace('/app/v1', '')}`);
     const removed = ['POST /me/devices', 'DELETE /me/devices/:device_id', 'POST /invites/:code/later', 'POST /invites/:code/decline', 'PUT /trips/:trip/me/budget', 'DELETE /trips/:trip/me/budget',
       'POST /trips/:trip/expenses/:id/approve', 'POST /trips/:trip/expenses/:id/dispute', 'POST /trips/:trip/settlements/:id/confirm', 'POST /trips/:trip/settlements/:id/dispute', 'POST /trips/:trip/transfers/nudge'];
-    expect([routes.length, new Set(routes).size, removed.filter((r) => routes.includes(r))]).toEqual([70, 70, []]);
+    expect([routes.length, new Set(routes).size, removed.filter((r) => routes.includes(r))]).toEqual([71, 71, []]);
   });
 });

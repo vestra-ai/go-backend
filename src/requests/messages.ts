@@ -90,6 +90,8 @@ export const replaceCard = (ctx: Ctx) => async (p: { trip_id: string }, raw: Rec
     if (!found.rows[0]) throw notFound(`card ${card.card_id} is not on one of Go's messages in trip ${p.trip_id}`);
     const seq = await nextSeq(db, p.trip_id);
     await db.query('update messages set card = $2, updated_seq = $3 where message_id = $1', [found.rows[0].message_id, JSON.stringify(card), seq]);
+    // What was kept about the old card's options (rev 5 E) is not about this card: Details asks Go afresh.
+    await db.query('delete from option_details where trip_id = $1 and card_id = $2', [p.trip_id, card.card_id]);
     const message_id = found.rows[0].message_id as string;
     await ctx.live.publish(p.trip_id, { kind: 'card', message_id });
     // And the message as it now stands, at its new seq: an earlier notice for this message that finds it already moved

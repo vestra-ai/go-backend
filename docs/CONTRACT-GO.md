@@ -219,8 +219,13 @@ error `-32601`; params that do not match the contract with `422`, `data.code: "i
   blanked in its test traffic log. **You do not get it back:** the card in `message.created`, `message.edited` and
   `read_messages` comes without `live_url`, so the link is not kept in the Server's queue of events. Everything else on
   the card is as you sent it.
+- **`get_option_details`** (1.3): the Server asks when a member who can see the card opens an option's Details, with
+  that person's id, and waits 3 s. A whole answer is kept an hour per trip, card and option, and served to anyone who
+  can see the card. `complete: false` is shown and not kept. A `409`, a timeout or an answer outside the contract
+  shows the last kept answer, else the card's own `details`; a `404` drops what was kept. `replace_card` drops what was
+  kept for that card, so the next open asks you again. At most 10 asks a minute per person per trip.
 - **`add_vote_options`** (1.3) is in the contract but the Server does not answer it yet (`-32601`, unknown method),
-  and does not yet call `place_info` or `get_option_details`. An `options` card may hold up to 10 options, and
+  and does not yet call `place_info`. An `options` card may hold up to 10 options, and
   `OptionsCard.decision_id`, `Option.url`, `WorkingCard.live_url` pass through to the app as you send them.
 - **`post_message` · cards.** A card is stored exactly as sent and reaches the app unchanged, so every field below
   passes through. `mentions` and a card's `for_person_ids` put the message in those people's "needs you" list.

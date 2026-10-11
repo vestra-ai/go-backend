@@ -15,7 +15,7 @@ import { notFound } from './errors.js';
  */
 export const TRIP_TABLES = [
   'votes', 'reactions', 'checkins', 'booking_documents',
-  'record_lines', 'spend_approvals', 'option_picks', 'settlements', 'expenses', 'bookings', 'decisions', 'messages',
+  'record_lines', 'spend_approvals', 'option_picks', 'option_details', 'settlements', 'expenses', 'bookings', 'decisions', 'messages',
   'invites', 'outbox', 'go_requests', 'trip_people', 'trips',
 ] as const;
 
@@ -28,6 +28,7 @@ const DELETES: Record<(typeof TRIP_TABLES)[number], string> = {
   record_lines: 'delete from record_lines where trip_id = $1',
   spend_approvals: 'delete from spend_approvals where trip_id = $1',
   option_picks: 'delete from option_picks where trip_id = $1', // after spend_approvals, which point at a pick (014)
+  option_details: 'delete from option_details where trip_id = $1',
   settlements: 'delete from settlements where trip_id = $1',
   expenses: 'delete from expenses where trip_id = $1',
   bookings: 'delete from bookings where trip_id = $1',

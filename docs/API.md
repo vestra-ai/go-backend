@@ -652,6 +652,19 @@ Upsert by `message_id`, place by `seq`, whichever mode brought the message.
   §9); `https://` opens the browser sheet. `listen` on a live `call` card answers `open` with Go's listen-in page.
 - Show a button only to the people in `only_for_person_ids` (absent = everyone); `per_option` puts it on every option.
 - The vault link is `POST /me/vault-link` (§4.1).
+- **An option's Details** (rev 5): `GET /trips/:trip/cards/:card_id/options/:option_id/details`, asked when a person
+  opens Details on an option of one of Go's `options` cards. Answers Go's `OptionFullDetails`: everything the card's
+  own `details` has (`gallery_urls`, `caption`, `why`, `costs`, `total_minor`, `amenities`, `activities`, `facts`,
+  `cancellation`, `rating`, `review_count`, `go_note`) plus `address`, `map { lat, lng }`, `check_in`, `check_out`
+  (`"14:00"`), `property_type`, `stars`, `rooms` (`RoomType[]`, with photos), `policies`, `reviews` (up to 10 of
+  `{ rating, text, date: "YYYY-MM-DD" or "YYYY-MM", source }`), `nearby` (`{ name, distance_m? }`) and `url`. Every
+  field is optional: draw what is there. The Server asks Go (3 s) and keeps a whole answer for an hour. **`complete:
+  false`** means partial: Go is still collecting reviews or photos, or Go was not asked (you are over the limit) or did
+  not answer, and this is the last answer kept or what the card carries; show it and ask again when Details is next
+  opened. `404` when the card or option is not one you can see, or Go no longer has it. `go_unavailable` (`409` while
+  Go has not switched this on) or `429` come only when there is nothing at all to show. **10 lookups of Go a minute per
+  person per trip**; an answer already kept is free. When Go replaces the card, what was kept is dropped and the next
+  open asks Go again. `Cache-Control: private, no-store`.
 - **Go's live view** (rev 5): a `working` card may carry `live_url`, an `https` page of Go's own that shows the browser
   Go is driving, view only. While the card's `state` is `running` or `needs_you`, open it in an in-app panel
   (`<iframe>`); Go's page allows framing only from the app's origins. The link is valid about 15 minutes and Go sends a
@@ -1045,6 +1058,7 @@ instances the real limit is that many times higher). Every `429` carries `retry_
 | Messages | **30 per minute per person per trip** (`429`, `retry_after_seconds: 10`) |
 | Reactions | **20 per minute per person per trip** |
 | Card taps | **10 per minute per person per trip**; a repeat of a `press_id` already counted is free |
+| Option details | **10 lookups of Go per minute per person per trip**; an answer kept in the last hour is free |
 | Votes | **20 per minute per person** (cast, moved or taken back) |
 | Typing frames | 1 `on` per 2 s per trip per socket; a person's typing runs out after 6 s, Go's after 10 s |
 | City search | **5 per second per person** |
@@ -1086,7 +1100,7 @@ Every `429` carries `retry_after_seconds` in the body and a `Retry-After` header
 
 ## Appendix C: endpoint index
 
-The routes in the route metadata of `src/api/v1/*.ts` (70, counted by a test; dev-only routes excluded), kept in step by hand. Paths are under `/app/v1`. The internal routes (§10) are not app routes and are not listed.
+The routes in the route metadata of `src/api/v1/*.ts` (71, counted by a test; dev-only routes excluded), kept in step by hand. Paths are under `/app/v1`. The internal routes (§10) are not app routes and are not listed.
 
 | § | Method | Path | Sign-in |
 |---|---|---|---|
@@ -1120,6 +1134,7 @@ The routes in the route metadata of `src/api/v1/*.ts` (70, counted by a test; de
 | §4.6 | `PUT` | `/trips/:trip/messages/:id/reaction` | bearer |
 | §4.6 | `GET` | `/trips/:trip/catch-up` | bearer |
 | §4.7 | `POST` | `/trips/:trip/cards/:card_id/actions` | bearer |
+| §4.7 | `GET` | `/trips/:trip/cards/:card_id/options/:option_id/details` | bearer, member |
 | §4.8 | `GET` | `/trips/:trip/decisions/:id` | bearer |
 | §4.8 | `POST` | `/trips/:trip/decisions` | bearer |
 | §4.8 | `PUT` | `/trips/:trip/decisions/:id/vote` | bearer |

@@ -15,7 +15,7 @@ export interface Ctx {
   spendPrivateKey: string;
   now?: () => Date;
   /** Rate limits a test may loosen or tighten; the defaults are the app contract's (Appendix A). */
-  limits?: { messagesPerMinute?: number; reactionsPerMinute?: number; cardTapsPerMinute?: number; votesPerMinute?: number; vaultLinksPerMinute?: number; uploadsPerMinute?: number };
+  limits?: { messagesPerMinute?: number; reactionsPerMinute?: number; cardTapsPerMinute?: number; votesPerMinute?: number; vaultLinksPerMinute?: number; optionDetailsPerMinute?: number; uploadsPerMinute?: number };
   /** The feature flags the environment set (the rest take their defaults): the domain reads the ones that change a rule, such as `checkin`. */
   features?: Partial<Features>;
   /** What Go's side accepts (GO_CONTRACT). Absent means 1.0: the events Go 1.0 refuses are kept to ourselves. */
