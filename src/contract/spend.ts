@@ -6,23 +6,22 @@ export type SpendApprovalClaims = components['schemas']['SpendApprovalClaims'];
 /** The one header every spend approval has: {"alg":"EdDSA","typ":"go-spend+jws"} */
 const HEADER = Buffer.from('{"alg":"EdDSA","typ":"go-spend+jws"}').toString('base64url');
 
-/** Claims are signed in this exact key order (guides/money.md, "Signing the spend approval"; 1.2 adds for_person_id and kind after decision_id). */
+/** Claims are signed in this exact key order (guides/money.md, "Signing the spend approval"; 1.3 has personal where a vote's approval has decision_id). */
 const CLAIM_ORDER = [
-  'iss', 'aud', 'jti', 'trip_id', 'decision_id', 'for_person_id', 'kind', 'payer_person_id', 'amount_minor', 'currency',
+  'iss', 'aud', 'jti', 'trip_id', 'decision_id', 'personal', 'payer_person_id', 'amount_minor', 'currency',
   'merchant', 'purpose', 'refundable_until', 'iat', 'exp',
 ] as const;
 
 /**
  * Which payment the claims are for, as Go's vault checks it (go-brain packages/contract spend-approval.ts, spendFormProblem):
- * a group's vote (decision_id), or 1.2's ticket (for_person_id, whose traveller is the payer). Null when they say exactly
- * one; else what is wrong.
+ * a group's vote (decision_id), or 1.3's personal pick (personal: the person, Go's card and the option they tapped; that
+ * person is the payer). Null when they say exactly one; else what is wrong.
  */
-export function spendFormProblem(c: { decision_id?: string | null; for_person_id?: string | null; kind?: string | null; payer_person_id: string }): string | null {
+export function spendFormProblem(c: { decision_id?: string | null; personal?: { person_id: string } | null; payer_person_id: string }): string | null {
   const vote = c.decision_id != null;
-  const ticket = c.for_person_id != null;
-  if (vote === ticket) return 'exactly one of decision_id and for_person_id';
-  if (ticket && c.payer_person_id !== c.for_person_id) return "a ticket's payer is the person it is for";
-  if (vote && c.kind != null) return 'a group approval has no kind';
+  const personal = c.personal != null;
+  if (vote === personal) return 'exactly one of decision_id and personal';
+  if (personal && c.payer_person_id !== c.personal!.person_id) return "a personal approval's payer is the person who picked";
   return null;
 }
 
@@ -30,7 +29,9 @@ function canonical(claims: SpendApprovalClaims): string {
   const ordered: Record<string, unknown> = {};
   for (const key of CLAIM_ORDER) {
     const v = (claims as Record<string, unknown>)[key];
-    if (v !== undefined && v !== null) ordered[key] = v;
+    if (v === undefined || v === null) continue;
+    // The pick's own keys in the contract's order too: person, card, option.
+    ordered[key] = key === 'personal' ? { person_id: claims.personal!.person_id, card_id: claims.personal!.card_id, option_id: claims.personal!.option_id } : v;
   }
   return JSON.stringify(ordered);
 }

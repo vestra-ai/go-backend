@@ -35,10 +35,10 @@ describe('spend approval test vector', () => {
 });
 
 describe('method table and params checks', () => {
-  it('has Go\'s 18 requests and the server\'s 8, plus the two 1.1 check-in requests from the overlay', () => {
+  it('has Go\'s 19 requests and the server\'s 10, plus the two 1.1 check-in requests from the overlay', () => {
     const all = Object.values(METHODS);
-    expect(all.filter((m) => m.direction === 'to_server')).toHaveLength(18);
-    expect(all.filter((m) => m.direction === 'to_go').map((m) => m.name)).toEqual(['send_event', 'card_tap', 'catch_up', 'get_person', 'update_person', 'delete_fact', 'forget_person', 'vault_link', 'get_checkin', 'submit_checkin']);
+    expect(all.filter((m) => m.direction === 'to_server')).toHaveLength(19); // 1.3 adds add_vote_options
+    expect(all.filter((m) => m.direction === 'to_go').map((m) => m.name)).toEqual(['send_event', 'card_tap', 'catch_up', 'get_person', 'update_person', 'delete_fact', 'forget_person', 'vault_link', 'place_info', 'get_option_details', 'get_checkin', 'submit_checkin']);
   });
   it('accepts the documented post_message example', () => {
     const r = parseParams('post_message', {

@@ -1,6 +1,6 @@
 {
-  "contract": "1.2.0+server-checkin",
-  "description": "What the Server accepts beyond Go's official contract 1.2.0 (contract/go.json, from vestra-ai/go-brain packages/contract): the web check-in requests, behind the checkin flag. Not yet agreed with Go's team. Laid over the official files additively. (`visible_to_person_ids` on post_message and Message was ours until 1.2 made it official.)",
+  "contract": "1.3.0+server-checkin",
+  "description": "What the Server accepts beyond Go's official contract 1.3.0 (contract/go.json, from vestra-ai/go-brain packages/contract): the web check-in requests, behind the checkin flag. Not yet agreed with Go's team. Laid over the official files additively. (`visible_to_person_ids` on post_message and Message was ours until 1.2 made it official.)",
   "schemas": {
     "GetCheckin": {
       "type": "object",

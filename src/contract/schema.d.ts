@@ -265,6 +265,46 @@ export interface components {
             price_minor: number;
             photos?: components["schemas"]["Photo"][] | null;
         };
+        MapPoint: {
+            lat: number;
+            lng: number;
+        };
+        OptionReview: {
+            rating?: number | null;
+            text: string;
+            date?: string | null;
+            source?: string | null;
+        };
+        NearbyPlace: {
+            name: string;
+            distance_m?: number | null;
+        };
+        OptionFullDetails: {
+            gallery_urls?: string[] | null;
+            caption?: string | null;
+            why?: string[] | null;
+            costs?: components["schemas"]["OptionCost"][] | null;
+            total_minor?: number | null;
+            amenities?: string[] | null;
+            activities?: string[] | null;
+            facts?: components["schemas"]["OptionFact"][] | null;
+            cancellation?: string | null;
+            rating?: number | null;
+            review_count?: number | null;
+            go_note?: string | null;
+            address?: string | null;
+            map?: components["schemas"]["MapPoint"] | null;
+            check_in?: string | null;
+            check_out?: string | null;
+            property_type?: string | null;
+            stars?: number | null;
+            rooms?: components["schemas"]["RoomType"][] | null;
+            policies?: string[] | null;
+            reviews?: components["schemas"]["OptionReview"][] | null;
+            nearby?: components["schemas"]["NearbyPlace"][] | null;
+            url?: string | null;
+            complete?: boolean | null;
+        };
         Option: {
             option_id: string;
             title: string;
@@ -287,6 +327,7 @@ export interface components {
             price_min_minor?: number | null;
             price_max_minor?: number | null;
             room_types?: components["schemas"]["RoomType"][] | null;
+            url?: string | null;
         };
         /** @description Options Go found (stays, flights, places...), with prices and when they were checked. */
         OptionsCard: {
@@ -304,6 +345,7 @@ export interface components {
             /** Format: date-time */
             checked_at: string;
             options: components["schemas"]["Option"][];
+            decision_id?: string | null;
             actions?: components["schemas"]["CardAction"][] | null;
         };
         ArrangedRoom: {
@@ -358,6 +400,7 @@ export interface components {
                 state: "todo" | "doing" | "done" | "failed";
             }[];
             screenshot_url?: string | null;
+            live_url?: string | null;
             page_url?: string | null;
             /** Format: date-time */
             updated_at: string;
@@ -1030,6 +1073,25 @@ export interface components {
             type: "DecisionClosed";
             data: components["schemas"]["DecisionClosedData"];
         };
+        DecisionOptionsAddedData: {
+            decision_id: string;
+            options: components["schemas"]["DecisionOption"][];
+            by: components["schemas"]["Actor"];
+        };
+        /** @description 1.3 (rev 5 R5): options were added to an open vote ("see more", add_vote_options). Their indexes continue from the last option; votes already cast stay. */
+        DecisionOptionsAdded: {
+            event_id: string;
+            trip_id: string;
+            seq: number;
+            /** Format: date-time */
+            occurred_at: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "DecisionOptionsAdded";
+            data: components["schemas"]["DecisionOptionsAddedData"];
+        };
         DecisionCancelledData: {
             decision_id: string;
             by: components["schemas"]["Actor"];
@@ -1181,7 +1243,7 @@ export interface components {
             type: "SettlementRecorded";
             data: components["schemas"]["SettlementRecordedData"];
         };
-        Event: components["schemas"]["MessageCreated"] | components["schemas"]["MessageEdited"] | components["schemas"]["MessageDeleted"] | components["schemas"]["ReactionAdded"] | components["schemas"]["ReactionRemoved"] | components["schemas"]["PersonJoined"] | components["schemas"]["PersonUpdated"] | components["schemas"]["PersonLeft"] | components["schemas"]["TripCreated"] | components["schemas"]["TripUpdated"] | components["schemas"]["DecisionOpened"] | components["schemas"]["DecisionVoted"] | components["schemas"]["DecisionClosed"] | components["schemas"]["DecisionCancelled"] | components["schemas"]["MandateSet"] | components["schemas"]["MandateConfirmed"] | components["schemas"]["MandateDeclined"] | components["schemas"]["RecordChanged"] | components["schemas"]["BookingChanged"] | components["schemas"]["ExpenseChanged"] | components["schemas"]["SettlementRecorded"];
+        Event: components["schemas"]["MessageCreated"] | components["schemas"]["MessageEdited"] | components["schemas"]["MessageDeleted"] | components["schemas"]["ReactionAdded"] | components["schemas"]["ReactionRemoved"] | components["schemas"]["PersonJoined"] | components["schemas"]["PersonUpdated"] | components["schemas"]["PersonLeft"] | components["schemas"]["TripCreated"] | components["schemas"]["TripUpdated"] | components["schemas"]["DecisionOpened"] | components["schemas"]["DecisionVoted"] | components["schemas"]["DecisionClosed"] | components["schemas"]["DecisionCancelled"] | components["schemas"]["DecisionOptionsAdded"] | components["schemas"]["MandateSet"] | components["schemas"]["MandateConfirmed"] | components["schemas"]["MandateDeclined"] | components["schemas"]["RecordChanged"] | components["schemas"]["BookingChanged"] | components["schemas"]["ExpenseChanged"] | components["schemas"]["SettlementRecorded"];
         ReadTrip: {
             trip_id: string;
         };
@@ -1221,6 +1283,13 @@ export interface components {
             anonymous: boolean;
             options: components["schemas"]["DecisionOption"][];
             closes_at?: string | null;
+        };
+        /** @description 1.3: adds options to an open vote, for the options a "See more" tap brought. */
+        AddVoteOptions: {
+            request_id: string;
+            trip_id: string;
+            decision_id: string;
+            options: components["schemas"]["DecisionOption"][];
         };
         OpenDecisionResult: {
             decision_id: string;
@@ -1337,7 +1406,12 @@ export interface components {
             refundable_until?: string | null;
             decision_id: string;
         };
-        RequestTicketSpendApproval: {
+        PersonalPick: {
+            person_id: string;
+            card_id: string;
+            option_id: string;
+        };
+        RequestPersonalSpendApproval: {
             request_id: string;
             trip_id: string;
             amount_minor: number;
@@ -1345,11 +1419,9 @@ export interface components {
             merchant: string;
             purpose: string;
             refundable_until?: string | null;
-            /** @constant */
-            kind: "ticket";
-            for_person_id: string;
+            personal: components["schemas"]["PersonalPick"];
         };
-        RequestSpendApproval: components["schemas"]["RequestTicketSpendApproval"] | components["schemas"]["RequestGroupSpendApproval"];
+        RequestSpendApproval: components["schemas"]["RequestPersonalSpendApproval"] | components["schemas"]["RequestGroupSpendApproval"];
         CancelSpendApproval: {
             request_id: string;
             trip_id: string;
@@ -1358,7 +1430,7 @@ export interface components {
             reason: "payment_failed" | "payer_declined" | "price_changed" | "expired" | "other";
         };
         /** @enum {string} */
-        SpendDenialReason: "decision_not_found" | "decision_not_closed" | "no_mandate" | "payer_has_not_confirmed" | "payer_declined" | "over_cap" | "currency_mismatch" | "not_refundable" | "approval_outstanding" | "not_in_trip" | "already_booked";
+        SpendDenialReason: "decision_not_found" | "decision_not_closed" | "no_mandate" | "payer_has_not_confirmed" | "payer_declined" | "over_cap" | "currency_mismatch" | "not_refundable" | "approval_outstanding" | "not_in_trip" | "no_pick" | "already_booked";
         SpendApproved: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -1503,6 +1575,7 @@ export interface components {
             person_id: string;
             start?: ("home" | "add_card" | "add_login" | "add_documents") | null;
             context?: components["schemas"]["LinkContext"] | null;
+            display?: ("sheet" | "embedded") | null;
         };
         Link: {
             /** Format: uri */
@@ -1514,6 +1587,28 @@ export interface components {
             /** @constant */
             ok: true;
             contract: string;
+        };
+        PlaceInfoRequest: {
+            name: string;
+            from_city?: string | null;
+        };
+        PlaceTravel: {
+            /** @enum {string} */
+            mode: "flight" | "train" | "bus" | "cab" | "drive";
+            duration_minutes: number;
+        };
+        PlaceInfo: {
+            place: components["schemas"]["Place"];
+            tag?: string | null;
+            travel?: components["schemas"]["PlaceTravel"] | null;
+            best_months?: number[] | null;
+            complete?: boolean | null;
+        };
+        GetOptionDetails: {
+            trip_id: string;
+            card_id: string;
+            option_id: string;
+            person_id: string;
         };
         /** @enum {string} */
         ErrorCode: "bad_signature" | "not_found" | "invalid" | "conflict" | "rate_limited" | "internal" | "unavailable";
@@ -1565,7 +1660,7 @@ export interface components {
                 } | null;
             };
         };
-        /** @description What the Server signs. exp is at most 600 seconds after iat. A group approval carries decision_id; 1.2's ticket approval carries for_person_id (and kind "ticket") instead, and its payer is that person. */
+        /** @description What the Server signs. exp is at most 600 seconds after iat. A group approval carries decision_id; 1.3's personal approval carries personal (the person, Go's card and the option they picked) instead, and its payer is that person. */
         SpendApprovalClaims: {
             /** @constant */
             iss: "server";
@@ -1574,8 +1669,7 @@ export interface components {
             jti: string;
             trip_id: string;
             decision_id?: string | null;
-            for_person_id?: string | null;
-            kind?: "ticket" | null;
+            personal?: components["schemas"]["PersonalPick"] | null;
             payer_person_id: string;
             amount_minor: number;
             currency: string;

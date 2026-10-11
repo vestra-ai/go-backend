@@ -102,7 +102,7 @@ export async function cardTap(
   const card = m.card as { actions?: Array<{ action_id: string }> | null; suggestion?: { cta?: { action_id?: string } | null } | null };
   const buttons = new Set([...(card.actions ?? []).map((a) => a.action_id), ...(card.suggestion?.cta?.action_id ? [card.suggestion.cta.action_id] : [])]);
   if (!buttons.has(input.action_id)) throw invalid(`this card has no "${input.action_id}" button (now)`, 'action_id');
-  // 1.2's ticket approval (rev 5 H): the person picked an option, so keep the pick, with the price the card showed, before
+  // 1.3's personal approval (rev 5 H): the person picked an option, so keep the pick, with the price the card showed, before
   // Go hears of it. Kept even when Go then does not answer: the person did pick. An option not on the card is not a pick.
   const picked = m.kind === 'options' && input.option_id ? (m.card as OptionsCardRow).options?.find((o) => o.option_id === input.option_id) : undefined;
   if (picked) {

@@ -1,4 +1,4 @@
-// The contract is Go's official 1.2.0 (contract/go.json, socket.json, methods.json, from vestra-ai/go-brain
+// The contract is Go's official 1.3.0 (contract/go.json, socket.json, methods.json, from vestra-ai/go-brain
 // packages/contract). The Server's overlay (contract/extensions-1.1.json) holds only its web check-in additions, laid over
 // the official files additively: every official schema and method is exactly as Go wrote it, and anything outside the
 // contract is still refused. `visible_to_person_ids` on PostMessage and Message is official since 1.2.
@@ -40,14 +40,14 @@ const settlement = { settlement_id: 'st_1', from_person_id: 'p_a', to_person_id:
 const event = (type: string, data: unknown) => ({ event_id: 'e_1', trip_id: 't', seq: 9, occurred_at: '2026-10-05T06:50:30Z', type, data });
 
 describe('the official contract and the Server\'s overlay', () => {
-  it('the official contract is 1.2.0, in all three files', () => {
-    expect(officialMethods.contract).toBe('1.2.0');
-    expect(officialGoJson.info.version).toBe('1.2.0');
-    expect(socket.info.version).toBe('1.2.0');
+  it('the official contract is 1.3.0, in all three files', () => {
+    expect(officialMethods.contract).toBe('1.3.0');
+    expect(officialGoJson.info.version).toBe('1.3.0');
+    expect(socket.info.version).toBe('1.3.0');
   });
 
   it('the overlay holds only the check-in schemas and methods, none of them already in the official files', () => {
-    expect(CONTRACT_EXTENSIONS_VERSION).toBe('1.2.0+server-checkin');
+    expect(CONTRACT_EXTENSIONS_VERSION).toBe('1.3.0+server-checkin');
     expect(Object.keys(overlay.schemas).sort()).toEqual([...CHECKIN_SCHEMAS].sort());
     expect(overlay.methods.map((m: any) => m.name)).toEqual(['get_checkin', 'submit_checkin']);
     expect(CHECKIN_SCHEMAS.filter(hasOfficial)).toEqual([]);
@@ -118,6 +118,19 @@ describe('1.1 shapes against the official files', () => {
   });
 });
 
+describe('1.3 shapes against the official files', () => {
+  it('an options card holds up to 10 options (5 before 1.3), with a vote, an https link and a live view', () => {
+    const option = (i: number) => ({ option_id: `o${i}`, title: `Stay ${i}`, highlights: [], url: 'https://www.ixigo.com/hotels/x' });
+    const post = (count: number, over: Record<string, unknown> = {}) => parseParams('post_message', {
+      request_id: 'r', trip_id: 't', text: 'Stays',
+      card: { card_id: 'c_1', kind: 'options', fallback_text: 'Stays', title: 'Stays', option_kind: 'stay', checked_at: '2026-10-11T06:00:00Z', decision_id: 'd_1', options: Array.from({ length: count }, (_, i) => option(i)), ...over },
+    });
+    expect(post(10)).toMatchObject({ ok: true });
+    expect(post(11)).toMatchObject({ ok: false });
+    expect(parseParams('post_message', { request_id: 'r', trip_id: 't', text: 'Searching', card: { card_id: 'c_w', kind: 'working', fallback_text: 'Searching', task_id: 'tk_1', title: 'Searching ixigo', state: 'running', steps: [], updated_at: '2026-10-11T06:00:00Z', live_url: 'https://go.example/live#t' } })).toMatchObject({ ok: true });
+  });
+});
+
 describe('1.2 shapes against the official files', () => {
   it('post_message with visible_to_person_ids validates; an empty list is refused', () => {
     const post = { request_id: 'r', trip_id: 't', text: 'Only for you', visible_to_person_ids: ['p_a'] };
@@ -125,17 +138,17 @@ describe('1.2 shapes against the official files', () => {
     expect(parseParams('post_message', { ...post, visible_to_person_ids: [] })).toMatchObject({ ok: false });
   });
 
-  it('request_spend_approval has two forms, the group vote and the ticket; a ticket with no for_person_id is refused', () => {
+  it('request_spend_approval has two forms, the group vote and 1.3\'s personal pick; 1.2\'s ticket form is gone', () => {
     const base = { request_id: 'r', trip_id: 't', amount_minor: 592000, currency: 'INR', merchant: 'IndiGo', purpose: 'Flight' };
     const group = { ...base, decision_id: 'd_1' };
-    const ticket = { ...base, kind: 'ticket', for_person_id: 'p_a' };
-    for (const p of [group, ticket]) expect([validOfficial('RequestSpendApproval', p), parseParams('request_spend_approval', p).ok]).toEqual([true, true]);
-    expect(parseParams('request_spend_approval', { ...base, kind: 'ticket' })).toMatchObject({ ok: false });
+    const personal = { ...base, personal: { person_id: 'p_a', card_id: 'c_1', option_id: 'o1' } };
+    for (const p of [group, personal]) expect([validOfficial('RequestSpendApproval', p), parseParams('request_spend_approval', p).ok]).toEqual([true, true]);
+    expect(parseParams('request_spend_approval', { ...base, kind: 'ticket', for_person_id: 'p_a' })).toMatchObject({ ok: false });
     expect(parseParams('request_spend_approval', base)).toMatchObject({ ok: false });
   });
 
-  it('the denial reasons gain not_in_trip and already_booked', () => {
-    for (const reason of ['not_in_trip', 'already_booked']) expect(passes('SpendDenied', { status: 'denied', reason })).toEqual([true, true]);
+  it('the denial reasons gain not_in_trip and already_booked, and 1.3\'s no_pick', () => {
+    for (const reason of ['not_in_trip', 'already_booked', 'no_pick']) expect(passes('SpendDenied', { status: 'denied', reason })).toEqual([true, true]);
   });
 });
 

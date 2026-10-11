@@ -260,3 +260,22 @@ The Server forwards every `typing` notification from Go to the room, with no con
 7. E: details.
 8. C: pass-throughs.
 9. B: ideas.
+
+## 11 Oct, later: Go shipped contract 1.3, so the parked items resume
+Production Go's `/v1/health` says 1.3.0. Go's 1.3 (go-brain `build`, `de37966d`) has every rev 5 shape, and Go has
+built live view, the embedded vault (the vault's home only), `place_info` and `get_option_details`. Nothing in Go sends
+`more_options` or calls `add_vote_options` yet.
+
+**1.3 replaced 1.2's ticket form** (`kind: "ticket"`, `for_person_id`) with the personal form this plan first described
+in H (`personal: { person_id, card_id, option_id }`), and added the denial reason `no_pick`. Go's vault refuses the old
+claims, so the Server's H had to follow.
+
+Order of work from here (reviewed 11 Oct):
+1. **Done on branch `rev5-contract-1.3`:** Go's 1.3.0 files; H on the personal form (the named card and option must be
+   the person's own tap on their own card; `no_pick`; the price limit is floor(price × 1.05) and an option with no
+   price fits nothing, as Go's simulator has it); F (10 options) arrives with the files.
+2. **C:** live view and vault display pass-through. Embedded is for the vault's home only: answer anything else clearly.
+3. **E**, then **B.** Both answers may say `complete: false`: show a partial answer but don't keep it, and never
+   replace a kept photo with an empty one.
+4. **A** last: Go has not built its side.
+

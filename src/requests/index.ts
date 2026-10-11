@@ -36,7 +36,7 @@ function addBookingWithExtras(ctx: Ctx): Handler {
   };
 }
 
-/** Go's 18 requests, each answered from the shared database. A method not in this table is answered -32601. */
+/** Go's requests (18 of 1.3's 19: add_vote_options is not built yet), each answered from the shared database. A method not in this table is answered -32601. */
 export function goRequestHandlers(ctx: Ctx, answerWithinMs = ANSWER_WITHIN_MS): Record<string, Handler> {
   const handlers: Record<string, Handler> = {
     read_trip: readTrip(ctx),
