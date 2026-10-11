@@ -59,13 +59,13 @@ describe('needs_you on the home screen', () => {
 
     const home = await homeOf('p_priya');
     expect(home.needs_you.items.map((i: any) => [i.kind, i.trip_id, i.trip_title, i.title])).toEqual([
-      ['vote', 't_hampi', 'Hampi - 2027', 'Sunrise at Matanga?'], // closes in an hour
+      ['vote', 't_hampi', 'Hampi 2027', 'Sunrise at Matanga?'], // closes in an hour
       ['vote', 't_goa', 'Goa 🌴', 'Pick dates'], // in three
-      ['vote', 't_hampi', 'Hampi - 2027', 'Bikes or a car?'], // no closing time: after the timed ones
+      ['vote', 't_hampi', 'Hampi 2027', 'Bikes or a car?'], // no closing time: after the timed ones
       ['mandate', 't_goa', 'Goa 🌴', 'Yes, book it? Villa Sol, up to ₹55,000'],
-      ['card', 't_hampi', 'Hampi - 2027', 'Bus from Bengaluru'],
+      ['card', 't_hampi', 'Hampi 2027', 'Bus from Bengaluru'],
       ['settle_up', 't_goa', 'Goa 🌴', 'Settle up with Rahul'],
-      ['record_line', 't_hampi', 'Hampi - 2027', 'Book the bus'], // due 7 Nov
+      ['record_line', 't_hampi', 'Hampi 2027', 'Book the bus'], // due 7 Nov
       ['record_line', 't_goa', 'Goa 🌴', 'Passport copies'], // due 8 Nov
       ['record_line', 't_goa', 'Goa 🌴', 'Sunscreen'], // no due date
     ]);
@@ -79,7 +79,7 @@ describe('needs_you on the home screen', () => {
     expect(byKind('record_line').map((i: any) => i.target)).toEqual([{ line_id: ids.lineHampi }, { line_id: ids.lineGoa }, { line_id: ids.lineNoDue }]);
     // The trip cards' own count agrees, trip by trip; the over trip is in past_trips with its automatic-name rule untouched.
     expect(home.trips.map((x: any) => [x.trip_id, x.title, x.attention])).toEqual(expect.arrayContaining([
-      ['t_hampi', 'Hampi - 2027', { kind: 'needs_you', count: 4 }],
+      ['t_hampi', 'Hampi 2027', { kind: 'needs_you', count: 4 }],
       ['t_goa', 'Goa 🌴', { kind: 'needs_you', count: 5 }],
     ]));
     expect(home.past_trips.map((x: any) => x.trip_id)).toEqual(['t_over']);

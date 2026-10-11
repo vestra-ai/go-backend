@@ -94,7 +94,7 @@ There are three parts:
      pending items.
    - The trip home's "Next up" can use the same items from `GET /trips/:trip/needs-you` instead of the fixed list.
 2. **The automatic trip name (§4.4).** A trip still called exactly "New trip" that has a destination now reads
-   **"Hampi - 2026"** (the year of the start date, else this year). It shows on `TripView.title`, the home cards, `owes`,
+   **"Hampi 2026"** (the year of the start date, else this year). It shows on `TripView.title`, the home cards, `owes`,
    `needs_you` and the invite preview. **Do:** nothing beyond showing `title`. It renames itself when the destination
    or dates change (`trip_changed` and `home_changed` arrive). A name a person typed is never changed.
 3. **Vote right on Go's options card, plus "See more" (§4.7, rev 5).**

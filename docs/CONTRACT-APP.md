@@ -467,7 +467,7 @@ other members of `TripView.budget` (`lowest`, `answered`, `of`) keep the Go cont
 Go's in-app link `go://trips/<trip>/sheet/budget` opens the group budget editor.
 
 **The automatic name.** A trip whose stored `title` is still exactly `"New trip"` and which has a destination with a
-name is shown as `"<destination.name> - <year>"`, for example `"Hampi - 2026"`: the year of `dates.start` when dates are
+name is shown as `"<destination.name> <year>"`, for example `"Hampi 2026"`: the year of `dates.start` when dates are
 set, else the current year in India (Asia/Kolkata). It is worked out on every app read: `TripView.title`, the home
 cards (`TripSummary.title`, `PastTripSummary.title`, `Owed.trip_title`, `needs_you[].trip_title`) and the invite
 preview's `trip.title`. Nothing is stored and no event is sent; Go's `read_trip` and events keep `"New trip"`. A title a

@@ -201,20 +201,20 @@ opens ixigo.com.
 
 ## More from the app (11 Oct): trip name, typing, pending items
 
-### I. The trip's name follows its destination: "Hampi - 2026" (read-time only)
+### I. The trip's name follows its destination: "Hampi 2026" (read-time only)
 **Seen:** the destination is decided and saved in the trip (the room's chips show "Hampi ✓"), but the room is still
 called "New trip".
 
 **Change:** only the `title` field that `GET /app/v1/trips/:trip` (TripView) answers.
 - When the stored title is still the default "New trip" and the trip has a destination, answer
-  `title: "<destination.name> - <current year, IST>"`, for example "Hampi - 2026".
+  `title: "<destination.name> <current year, IST>"`, for example "Hampi 2026".
 - When the destination changes, the next read shows the new name. The app already re-reads on `trip_changed`, which
   the destination change sends.
 - Nothing is stored and no event is sent. A title a person or Go set is answered as stored.
 - *To decide:* do the home card (`GET /home` `TripSummary.title`), the invite preview and Go's `read_trip` show the same
   name, or only the trip screen? See open question 5.
 - **Tests:**
-  - "New trip" with a destination: "Hampi - 2026".
+  - "New trip" with a destination: "Hampi 2026".
   - No destination: "New trip".
   - A renamed trip: its own name.
 

@@ -87,7 +87,7 @@ export async function readTripView(ctx: Ctx, tripId: string, personId: string, i
     const mine = snap.people.find((p) => p.person_id === personId)!;
     const view: TripView = {
       ...snap,
-      title: tripTitle({ title: snap.title, destination: snap.destination, dates_start: snap.dates?.start }, nowOf(ctx)), // "Hampi - 2026" for a trip still called "New trip"
+      title: tripTitle({ title: snap.title, destination: snap.destination, dates_start: snap.dates?.start }, nowOf(ctx)), // "Hampi 2026" for a trip still called "New trip"
       decisions: snap.decisions.map((d) => (cancels.has(d.decision_id) ? ({ ...d, cancels_booking_id: cancels.get(d.decision_id) } as typeof d) : d)),
       bookings,
       stage: stageOf({ destination: snap.destination, dates: snap.dates, bookings: snap.bookings }),

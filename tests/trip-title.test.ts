@@ -1,4 +1,4 @@
-// The automatic trip name (rev 5 I): "New trip" with a destination reads "<destination> - <year>" on every app read
+// The automatic trip name (rev 5 I): "New trip" with a destination reads "<destination> <year>" on every app read
 // (TripView, the home card, the invite preview), never in what Go reads, and nothing is stored.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { tripTitle } from '../src/domain/trip-title.js';
@@ -36,10 +36,10 @@ describe('the automatic trip name', () => {
     expect(await titles(tripId)).toEqual(['New trip', 'New trip', 'New trip']);
   });
 
-  it('once Go sets the destination: "Hampi - <this year in India>" on TripView, the home card and the invite preview; Go\'s read_trip and the stored row still say "New trip"', async () => {
+  it('once Go sets the destination: "Hampi <this year in India>" on TripView, the home card and the invite preview; Go\'s read_trip and the stored row still say "New trip"', async () => {
     await go('update_trip', { trip_id: tripId, destination: { name: 'Hampi' } });
     const year = Number(new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric' }).format(new Date()));
-    expect(await titles(tripId)).toEqual(Array(3).fill(`Hampi - ${year}`));
+    expect(await titles(tripId)).toEqual(Array(3).fill(`Hampi ${year}`));
     expect((await go('read_trip', { trip_id: tripId })).title).toBe('New trip');
     expect((await rows(h.pool, 'select title from trips where trip_id = $1', [tripId]))[0].title).toBe('New trip');
     // No event was sent for the name itself: only the destination's trip.updated.
@@ -49,7 +49,7 @@ describe('the automatic trip name', () => {
 
   it('with dates the year is the start date\'s: 2027', async () => {
     await t.api(rahul(), 'PATCH', `/app/v1/trips/${tripId}`, { dates: { start: '2027-01-10', end: '2027-01-12' } });
-    expect(await titles(tripId)).toEqual(Array(3).fill('Hampi - 2027'));
+    expect(await titles(tripId)).toEqual(Array(3).fill('Hampi 2027'));
   });
 
   it('a renamed trip keeps its own name, and so does a trip that never was "New trip"', async () => {
@@ -67,6 +67,6 @@ describe('the automatic trip name', () => {
       tripTitle({ title: 'New trip', destination: null }),
       tripTitle({ title: 'New trip', destination: { name: '  ' } }),
       tripTitle({ title: 'new trip', destination: { name: 'Hampi' } }),
-    ]).toEqual(['Hampi - 2027', 'Hampi - 2028', 'New trip', 'New trip', 'new trip']);
+    ]).toEqual(['Hampi 2027', 'Hampi 2028', 'New trip', 'New trip', 'new trip']);
   });
 });

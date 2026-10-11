@@ -162,7 +162,7 @@ error `-32601`; params that do not match the contract with `422`, `data.code: "i
 - **`read_trip` · money.** `money.transfers` is the fewest payments that square everyone up, from every expense and
   every recorded payback. Go reads it and never works it out.
 - **`read_trip` · title.** `title` is the stored title, `"New trip"` included. The app shows a trip still called "New
-  trip" as "<destination> - <year>" (for example "Hampi - 2026"); that name is worked out on the app's reads only, is
+  trip" as "<destination> <year>" (for example "Hampi 2026"); that name is worked out on the app's reads only, is
   never stored, and is never in `read_trip`, the snapshot or an event. To name the trip, Go sends `update_trip { title }`.
 - **A test trip that was reset.** The App team can delete a test trip and everything in it (an internal route, never
   used on real trips). Nothing more is sent about it, events not yet delivered included, and every request naming it
