@@ -32,6 +32,8 @@ export interface Storage {
   /** Links for several files at once (one round trip where the backend allows it). Same order as `paths`. */
   signDownloads(paths: string[], ttlSeconds: number): Promise<string[]>;
   delete(path: string): Promise<void>;
+  /** Stores these bytes at `path`, replacing a file already there (the demo's ticket PDFs, rendered by the server itself). */
+  put(path: string, bytes: Buffer, mime: string): Promise<void>;
   /** Copies the file behind `url` into Storage at `path` (booking documents, call recordings), within `limits` when given. */
   putFromUrl(url: string, path: string, limits?: CopyLimits): Promise<Copied>;
   /** Routes the storage serves itself (the in-process fake's upload and download endpoints). */

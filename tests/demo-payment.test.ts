@@ -7,6 +7,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { check } from '../src/contract/index.js';
 import { settleDocumentCopies } from '../src/domain/bookings.js';
 import * as demoBooking from '../src/domain/demo-booking.js';
+import { settleDemoTickets } from '../src/demo/attach.js';
+import { setPdfRenderer } from '../src/demo/pdf.js';
 import { appApi } from './helpers/app-api.js';
 import { rows, startHarness, type Harness } from './helpers/harness.js';
 
@@ -15,6 +17,7 @@ let t: ReturnType<typeof appApi>;
 let files: Server; // stands in for wherever the booking module keeps its ticket files
 let filesUrl: string;
 beforeAll(async () => {
+  setPdfRenderer(async () => null); // no Chromium here, whatever the machine has: one test puts in a fake renderer
   h = await startHarness();
   t = appApi(h);
   files = createServer((_req, res) => res.writeHead(200, { 'content-type': 'application/pdf' }).end(Buffer.from('%PDF-1.4 demo')));
@@ -22,6 +25,7 @@ beforeAll(async () => {
   filesUrl = `http://127.0.0.1:${(files.address() as AddressInfo).port}`;
 });
 afterAll(async () => {
+  setPdfRenderer(undefined);
   files.close();
   await h.stop();
 });
@@ -84,12 +88,16 @@ describe("the demo's payment", () => {
     expect(await cardOf(pay)).toMatchObject({ kind: 'pay', state: 'paid', actions: null, approval_id, amount_minor: 600000, merchant: 'ixigo' });
 
     const [booking] = await rows(h.pool, 'select * from bookings where approval_id = $1', [approval_id]);
-    expect(booking).toMatchObject({ kind: 'flight', status: 'confirmed', title: 'IndiGo 6E 2134', vendor: 'ixigo', currency: 'INR', payer_person_id: 'p_priya', for_person_ids: ['p_priya'], decision_id: null });
+    expect(booking).toMatchObject({ kind: 'flight', status: 'confirmed', title: 'IndiGo 6E 2134 · BLR → GOX', vendor: 'ixigo', currency: 'INR', payer_person_id: 'p_priya', for_person_ids: ['p_priya'], decision_id: null });
     expect([Number(booking.amount_minor), booking.ref, booking.journey.number]).toEqual([600000, expect.stringMatching(/^DEMO-[0-9A-F]{6}$/), '6E 2134']);
+    // The demo module's richer booking: the times, a seat and PNR for the traveller, and the rows that say it is a demo.
+    expect([booking.starts_at.toISOString(), booking.ends_at.toISOString()]).toEqual(['2026-11-06T14:10:00.000Z', '2026-11-06T16:25:00.000Z']);
+    expect(booking.passengers).toEqual([{ person_id: 'p_priya', seat: expect.stringMatching(/^\d+[A-F]$/), pnr: expect.stringMatching(/^[A-HJ-NP-Z2-9]{6}$/) }]);
+    expect(booking.details).toEqual(expect.arrayContaining([{ label: 'Cabin', value: 'Economy' }, { label: 'Duration', value: '2h 15m' }, { label: 'Booking', value: 'Demo, no real ticket' }]));
     const [approval] = await rows(h.pool, 'select used_at, booking_id from spend_approvals where approval_id = $1', [approval_id]);
     expect([approval.used_at, approval.booking_id]).toEqual([expect.any(Date), booking.booking_id]);
     const [expense] = await rows(h.pool, 'select * from expenses where booking_id = $1', [booking.booking_id]);
-    expect(expense).toMatchObject({ paid_by_person_id: 'p_priya', split_person_ids: ['p_priya'], category: 'getting_around', note: 'IndiGo 6E 2134' });
+    expect(expense).toMatchObject({ paid_by_person_id: 'p_priya', split_person_ids: ['p_priya'], category: 'getting_around', note: 'IndiGo 6E 2134 · BLR → GOX' });
     expect(Number(expense.amount_minor)).toBe(600000);
 
     // Go hears them in this order, and payment.completed names what came before it.
@@ -105,7 +113,7 @@ describe("the demo's payment", () => {
       personal: { person_id: 'p_priya', card_id: flights, option_id: 'o1' }, booking_id: booking.booking_id, expense_id: expense.expense_id,
       method: 'demo', paid_at: expect.any(String), by: { kind: 'person', person_id: 'p_priya' },
     });
-    expect(heard.slice(4).map((e) => e.data.message.text)).toEqual(['IndiGo 6E 2134 booked', expect.stringMatching(/^Priya added IndiGo 6E 2134 · ₹6,000 · split/)]);
+    expect(heard.slice(4).map((e) => e.data.message.text)).toEqual(['IndiGo 6E 2134 · BLR → GOX booked', expect.stringMatching(/^Priya added IndiGo 6E 2134 · BLR → GOX · ₹6,000 · split/)]);
 
     // The app reads it back: the booking, the money, and the card in the paid list.
     const bookings = await t.api(t.as('p_priya'), 'GET', '/app/v1/trips/t_goa/bookings');
@@ -130,6 +138,60 @@ describe("the demo's payment", () => {
     const mine = (await t.api(t.as('p_priya'), 'GET', '/app/v1/trips/t_goa/bookings')).body.items.find((b: any) => b.booking_id === booking.booking_id);
     const theirs = (await t.api(t.as('p_arjun'), 'GET', '/app/v1/trips/t_goa/bookings')).body.items.find((b: any) => b.booking_id === booking.booking_id);
     expect([mine.documents.length, theirs.documents, theirs.passengers]).toEqual([1, undefined, undefined]);
+  });
+
+  it("the demo module's ticket PDF is rendered after the payment, kept in storage, and reaches the covered person with a signed link; others get none", async () => {
+    const { pay, approval_id } = await personalPayCard('p_meher', 'k');
+    const rendered: string[] = [];
+    setPdfRenderer(async (html) => {
+      rendered.push(html);
+      return { bytes: Buffer.from('%PDF-1.7 e-ticket'), pages: 1 };
+    });
+    try {
+      const liveMark = h.live.events.length;
+      expect((await tap('p_meher', pay, { action_id: 'approve' })).body).toEqual({ result: 'done' });
+      await settleDemoTickets();
+      const [booking] = await rows(h.pool, 'select booking_id, passengers from bookings where approval_id = $1', [approval_id]);
+      expect(rendered.length).toBe(1);
+      for (const want of ['BLR', 'GOX', 'Meher', booking.passengers[0].pnr, booking.passengers[0].seat, 'CONFIRMED · DEMO']) expect(rendered[0]).toContain(want);
+      const docs = await rows(h.pool, 'select document_id, name, mime, size_bytes, pages, visibility, path from booking_documents where booking_id = $1', [booking.booking_id]);
+      expect(docs).toEqual([{ document_id: expect.stringMatching(/^doc_/), name: 'E-ticket BLR-GOX.pdf', mime: 'application/pdf', size_bytes: 17, pages: 1, visibility: 'covered', path: `bookings/t_goa/${booking.booking_id}/${docs[0].document_id}.pdf` }]);
+      expect(h.storage.files.get(docs[0].path)).toEqual({ bytes: Buffer.from('%PDF-1.7 e-ticket'), mime: 'application/pdf' });
+      // Phones hear it landed: a new change number for the booking, and the covered person's home.
+      const live = h.live.events.slice(liveMark).map((e) => e.event as any);
+      const landed = live.filter((e) => e.kind === 'trip' && e.kinds.length === 1 && e.kinds[0] === 'booking');
+      const [trip] = await rows(h.pool, `select seq from trips where trip_id = 't_goa'`);
+      expect(landed.map((e) => e.seq)).toEqual([Number(trip.seq)]);
+      expect(live.filter((e) => e.kind === 'home' && e.person_id === 'p_meher').length).toBeGreaterThanOrEqual(2);
+
+      // Meher gets the document with a link valid an hour, in the list, the booking and the trip; Rahul gets no documents.
+      const mine = (await t.api(t.as('p_meher'), 'GET', '/app/v1/trips/t_goa/bookings')).body.items.find((b: any) => b.booking_id === booking.booking_id);
+      expect(mine.documents).toEqual([{ document_id: docs[0].document_id, name: 'E-ticket BLR-GOX.pdf', mime: 'application/pdf', size_bytes: 17, pages: 1, visibility: 'covered', url: expect.stringContaining('/_dev/storage/') }]);
+      const fetched = await h.app.inject({ method: 'GET', url: new URL(mine.documents[0].url).pathname });
+      expect([fetched.statusCode, fetched.body]).toEqual([200, '%PDF-1.7 e-ticket']);
+      h.storage.now = () => Date.now() + 59 * 60_000; // still good just before the hour
+      expect((await h.app.inject({ method: 'GET', url: new URL(mine.documents[0].url).pathname })).statusCode).toBe(200);
+      h.storage.now = () => Date.now() + 61 * 60_000;
+      expect((await h.app.inject({ method: 'GET', url: new URL(mine.documents[0].url).pathname })).statusCode).toBe(403);
+      h.storage.now = () => Date.now();
+      const one = (await t.api(t.as('p_meher'), 'GET', `/app/v1/trips/t_goa/bookings/${booking.booking_id}`)).body;
+      const inTrip = (await t.api(t.as('p_meher'), 'GET', '/app/v1/trips/t_goa')).body.bookings.find((b: any) => b.booking_id === booking.booking_id);
+      expect([one.documents[0].url, inTrip.documents[0].url]).toEqual([expect.stringContaining('/_dev/storage/'), expect.stringContaining('/_dev/storage/')]);
+      expect(one.documents[0].url).not.toBe(mine.documents[0].url); // minted on every read
+      const theirs = (await t.api(t.as('p_rahul'), 'GET', '/app/v1/trips/t_goa/bookings')).body.items.find((b: any) => b.booking_id === booking.booking_id);
+      expect([theirs.documents, theirs.passengers, theirs.details.length > 0]).toEqual([undefined, undefined, true]);
+      expect((await t.api(t.as('p_meher'), 'GET', `/app/v1/trips/t_goa/bookings/${booking.booking_id}/documents/${docs[0].document_id}`)).status).toBe(302);
+
+      // A render that fails is logged and skipped: the booking stands without a file.
+      const failing = await personalPayCard('p_priya', 'l');
+      setPdfRenderer(async () => { throw new Error('chromium crashed'); });
+      expect((await tap('p_priya', failing.pay, { action_id: 'approve' })).body).toEqual({ result: 'done' });
+      await settleDemoTickets();
+      const [standing] = await rows(h.pool, `select b.booking_id, b.status, count(d.*)::int as files from bookings b left join booking_documents d using (booking_id) where b.approval_id = $1 group by b.booking_id`, [failing.approval_id]);
+      expect([standing.status, standing.files]).toEqual(['confirmed', 0]);
+    } finally {
+      setPdfRenderer(async () => null);
+    }
   });
 
   it('is done once: a second tap, with the same press or a new one, is answered the same and writes nothing more', async () => {

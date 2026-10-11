@@ -16,7 +16,7 @@ or the app.
 One file, one function: **`src/domain/demo-booking.ts` → `demoBookingFor`**.
 
 ```ts
-export function demoBookingFor(s: DemoBookingSource): DemoBookingFields | Promise<DemoBookingFields>
+export function demoBookingFor(s: DemoBookingSource, now?: Date): DemoBookingFields | Promise<DemoBookingFields>
 ```
 
 - Replace the **body** of `demoBookingFor`. Put your own code in new files (for example `src/demo/…`) and call it from
@@ -42,10 +42,11 @@ approval, and a second tap on the card waits.
 | `payer_person_id` | who paid |
 | `for_person_ids` | who the booking covers. One person for their own ticket; everyone in the trip for a group stay |
 | `option_kind` | the kind of the card the option came from: `stay`, `flight`, `train`, `bus`, `cab`, `place`, `food`, `activity`. May be missing. For a group vote whose winning option is not tied to one of Go's options cards it is always `stay` |
-| `option` | the option that was paid for, exactly as Go's card showed it (for a group vote: the vote's winning option, with the card option it came from laid over it): `title` (or `label` for a vote's option), `image_url`, `refundable_until`, `place`, `journey`, `return_journey`, and any other field Go put on it. **May be missing**, and any field inside it may be missing |
+| `option` | the option that was paid for, exactly as Go's card showed it (for a group vote: the vote's winning option, with the card option it came from laid over it): `title` (or `label` for a vote's option), `image_url`, `refundable_until`, `place`, `journey`, `return_journey`, `room_types`, `highlights`, and any other field Go put on it. **May be missing**, and any field inside it may be missing |
+| `people` | the covered people **and the payer**: `[{ person_id, name, email? }]`, read by `demoPay` in the same transaction. Names go on the ticket. An email is private (app contract §1.7): show it only on a file nobody but its owner sees |
+| `trip` | `{ title, destination?, dates?: { start, end } }` (dates as `YYYY-MM-DD`): a stay's check-in and check-out are the trip's dates |
 
-You get ids, not names. If you need people's names for the ticket, ask for `people: [{ person_id, name }]` to be added
-to the source; do not query the database from your module.
+Do not query the database from your module: if you need more, ask for it to be added to the source.
 
 ## 4. What you return (`DemoBookingFields`)
 
@@ -67,6 +68,7 @@ booking is checked against the contract before it is saved, and a value over a l
 | `details` | no | at most 20 rows of `{ label 1–40, value 1–200 }` | the ticket's detail rows ("Baggage · 15 kg", "Room · Deluxe, 2 guests") |
 | `passengers` | no | at most 30 of `{ person_id, seat? ≤ 20, pnr? ≤ 40 }`; every `person_id` **must be one of `for_person_ids`**, each at most once | each traveller's seat and PNR |
 | `documents` | no | at most 10 of `{ name 1–200, mime, url, pages?, visibility: "covered" \| "group" }` | the ticket file the app opens (see section 5) |
+| `tickets` | no | at most 10 of `{ kind: "flight", name, data: TicketData }` or `{ kind: "stay", name, data: HotelBookingData }` (`src/demo/tickets/`) | ticket files the Server renders to PDF itself after the payment (see section 5) |
 
 `null` and "left out" mean the same thing. Return only what you have.
 
@@ -83,11 +85,16 @@ trip sees the booking without them. `details`, `journey`, `place` and the rest a
   booking stands without it. Nothing tells the payer.
 - `visibility: "covered"` shows the file only to the people the booking covers; `"group"` shows it to the whole trip.
 - If you do not have a file, return no `documents`. The app still draws the ticket from the booking's fields.
+- **Or let the Server render it:** return `tickets` (the generator inputs, not a link). After the payment is saved,
+  `src/demo/attach.ts` renders each one to HTML (`src/demo/tickets/`), then to an A4 PDF with the machine's Chromium
+  (`src/demo/pdf.ts`, `PUPPETEER_EXECUTABLE_PATH`), stores it at `bookings/<trip>/<booking>/<document_id>.pdf`, lists it
+  for the covered people, and sends `trip_changed kinds:["booking"]`. In the background: a slow or failed render never
+  holds up the tap, and with no Chromium the booking simply has no file.
 
 ## 6. Rules the function must keep
 
 1. **Be fast and local.** It runs while the payment card and its approval are locked. No network calls, no database, no waiting on Go: aim for
-   well under 100 ms. If you must generate a file, do it ahead of time and return its link.
+   well under 100 ms. Never render a file here: return `tickets` and the Server renders them after the payment (section 5).
 2. **Never throw for missing input.** `option`, `option_kind` and every field inside `option` can be absent. Fall back
    to `purpose` and `merchant`. If your function throws, the payer's tap fails and nothing is booked.
 3. **Stay inside the limits in section 4.** Trim strings (`.slice(0, 120)`) rather than trusting Go's text to fit.
@@ -106,24 +113,40 @@ trip sees the booking without them. `details`, `journey`, `place` and the rest a
    that card from the booking you described: this is where your work shows up on screen.
 6. The ticket file, if you gave one, appears on the booking a moment later.
 
-## 8. What the default does today
+## 8. What it does now (`src/demo/`)
 
-Until you replace it, `demoBookingFor` returns a thin booking: `kind` from the card's kind when that is `stay`,
-`flight`, `train`, `bus`, `cab` or `activity` (else the journey's mode, else `other`), `title` from the option (else
-`purpose`),
-`vendor` from the merchant, a `DEMO-` reference, the option's journey, place and image as they are, one detail row
-("Paid · Demo payment"), and for a journey one passenger per covered person with the reference as PNR. No seats, no
-file.
+`demoBookingFor` builds the booking in `src/demo/booking.ts`, synchronously, from the option and the source:
+
+- **A flight, train or bus** (an option with a readable `journey`): `kind` from the card's kind (else the journey's mode),
+  `title` "IndiGo 6E 2134 · DEL → GOI", `starts_at`/`ends_at` from the legs, the journey and return leg as Go sent them,
+  one passenger per covered person with a seat on each leg ("14A / 9C") and the shared 6-character PNR, and detail rows
+  (Cabin, Fare, Baggage, Terminal, Stops, Duration, Return, Booking ID, "Booking · Demo, no real ticket"). `tickets`: one
+  ixigo-style e-ticket per leg, with the travellers' names, PNR, e-ticket numbers and seats. Times print at the offset Go
+  sent them with (else India time). A cab gets the same booking with no ticket.
+- **A stay** (the card's kind is `stay`): `title` from the option (else its place, else `purpose`), check-in 14:00 and
+  check-out 11:00 in the place's time zone (else India) on the trip's dates (else tomorrow for three nights), detail
+  rows (Check-in, Check-out, Nights, Room from the first `room_types`, Guests, Cancellation from `refundable_until`, the
+  booking numbers, the demo row). `tickets`: one hotel voucher; its primary guest is the payer, with their email only
+  when the stay covers the payer alone.
+- **Anything else, or no option at all:** the thin booking as before: `title` from the option (else `purpose`), the
+  journey, place and image as they are, one row ("Paid · Demo payment"), no ticket.
+
+Made-up parts come from `src/demo/fake.ts`, seeded with `approval_id`, so the same payment always gets the same PNR,
+seats, numbers and `DEMO-…` reference. The PNR and e-ticket numbers are only in `passengers` and the files (covered
+people), never in `details`. If building the rich booking fails on odd input, the thin one is answered instead: the
+function never throws.
 
 ## 9. How to check your work
 
 - `npx vitest run tests/demo-payment.test.ts` runs the whole flow, personal ticket and group stay, against your
-  function. Its tests assert what the default returns today: the booking's `title` (`IndiGo 6E 2134`, `Villa Sol`),
-  `kind`, `vendor`, `ref` matching `DEMO-`, the journey passed through, the expense's note and category, and the room
-  lines "`<title>` booked" and "… added `<title>` …". When your module changes any of these, update those assertions
-  in the same change.
-- Add your own tests for `demoBookingFor` directly: it is a plain function, so call it with a `DemoBookingSource` and
-  check the result. Cover a flight with a return leg, a stay, and a source with **no `option` at all**.
+  function. Its tests assert what the module returns: the booking's `title` (`IndiGo 6E 2134 · BLR → GOX`, `Villa
+  Sol`), `kind`, `vendor`, `ref` matching `DEMO-`, the journey passed through, the times, seat, PNR and demo row, the
+  expense's note and category, the room lines "`<title>` booked" and "… added `<title>` …", and (with a fake renderer)
+  the e-ticket PDF stored and listed with a signed `url` for the covered person only. When your module changes any of
+  these, update those assertions in the same change.
+- `tests/demo-booking.test.ts` calls `demoBookingFor` directly: a flight with a return leg, a stay with and without the
+  trip's dates, and a source with **no `option` at all**. `tests/demo-tickets.test.ts` checks the templates, and renders
+  both PDFs with a real Chromium when `PUPPETEER_EXECUTABLE_PATH` is set.
 - Check your output against the contract in a test, so a limit never surprises you in the demo:
   ```ts
   import { check } from '../src/contract/index.js';

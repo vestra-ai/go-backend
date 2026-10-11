@@ -293,7 +293,7 @@ interface MoneyView extends Money {                     // contract Money: curre
 type BookingForApp = Booking & {
   details?: Array<{ label: string; value: string }>; return_journey?: Journey;
   passengers?: Array<{ person_id: Id; seat?: string; pnr?: string }>;           // covered people only
-  documents?: Array<{ document_id: Id; name: string; mime: string; size_bytes: number; pages?: number; visibility: "covered" | "group" }>;   // covered people only; no url: open it through GET …/documents/:document_id
+  documents?: Array<{ document_id: Id; name: string; mime: string; size_bytes: number; pages?: number; visibility: "covered" | "group"; url?: string }>;   // covered people only; url: a signed link valid 1 hour, fresh on every read (§4.10)
   added_by_person_id?: Id;
 };
 // Message (contract) gains quick_replies? ([{ label, text? }], Go's chips) and, on an upload-backed attachment, upload_id; a voice note is a file attachment with duration_s.
@@ -758,7 +758,7 @@ or `confirmations`; `Settlement` has no `status` or `responded_at`; `Transaction
 
 | Method & path | Who | Request | Answer | Errors | Go hears / live |
 |---|---|---|---|---|---|
-| `GET /trips/:trip/bookings` | member | — | `{ "items": [Booking], "seq" }`: every booking, `confirmed` and `cancelled`, newest first. `passengers[]` and `documents[]` only in bookings that cover you; `details` and `return_journey` for everyone | | — |
+| `GET /trips/:trip/bookings` | member | — | `{ "items": [Booking], "seq" }`: every booking, `confirmed` and `cancelled`, newest first. `passengers[]` and `documents[]` only in bookings that cover you, each document with its `url` (a signed link valid 1 hour); `details` and `return_journey` for everyone | | — |
 | `GET /trips/:trip/bookings/:id` | member | — | `Booking` (same rule) | 404 not in this trip | — |
 | `GET /trips/:trip/bookings/:id/documents/:document_id` | a **covered person**, or anyone in the trip when the document is `visibility: "group"` | — | `302` to a **signed link valid 10 minutes** (`private, no-store`). Render the PDF client-side from it; "Share to the group" is a normal message with the file attached | 403 not covered; 404 booking not in the trip, or document not on this booking | — |
 | `POST /trips/:trip/bookings` | any member | `AddBooking` (below), strict | `201 Booking` as you see it (the covered-people rule above; `documents: []` for now) plus `seq`. Stored `confirmed`, in the trip's currency, with you as `added_by_person_id`; **no expense** is created | 422 | `booking.changed` `change: "added"` by you, then `record.changed` (the **booked** line: a decided line of the vote it names becomes booked, else a new line), then the system message "<title> booked". Live: `trip_changed kinds: ["booking","record"]` |
@@ -778,7 +778,17 @@ vote). Render `image_url`/`logo_url` only when they are `http(s)` links.
 
 **Documents.** When Go's `add_booking` names `documents[]` (1.1), the Server copies each file from Go's link into its own
 storage in the background (PDF or image, ≤ 25 MB; a file that cannot be copied is skipped and logged) and serves it only
-through the documents route above. A booking added by a person has no documents.
+through short signed links, never Go's link. A booking added by a person has no documents. Each document in a read (the
+bookings list, one booking, `TripView.bookings`) carries **`url`**: a signed link to the file, **valid 1 hour**, minted on
+that read. Open or download it directly; when it has run out, read the booking again for a fresh one (the documents route
+above still works as a stable link). A document may arrive without `url` if Storage could not sign it at that moment: use
+the documents route.
+
+**Demo bookings (the demo payment).** A booking written when the payer taps Approve on Go's pay card carries a ticket file
+a moment after the tap: a **PDF e-ticket** for each leg of a flight, train or bus, or a **PDF hotel voucher** for a stay
+(ixigo-style, marked DEMO, `visibility: "covered"`). The booking itself is answered at once, without the file; when the
+file lands the Server sends **`trip_changed kinds:["booking"]`** with a new `seq` (and `home_changed` to the covered
+people): read the booking again to get `documents[]`. If the Server cannot render, the booking stays without a file.
 
 **Cancelling by vote.** The Server opens a yes/no vote that is **not anonymous** and closes **24 hours** after it opens:
 question "Cancel this booking? <title>", options "Cancel: <title>" (index 0) and "Keep: <title>" (index 1; titles cut to

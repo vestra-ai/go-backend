@@ -153,6 +153,27 @@ There are three parts:
 - **CORS:** production allows `https://go-frontend-three.vercel.app`, `http://localhost:3000` and
   `http://localhost:3002`. Add any new web address to the server's `APP_ORIGINS` before using it.
 
+
+## Demo booking tickets (12 Oct)
+
+For the demo, a booking made by **Approve** on Go's pay card now looks like a real one and comes with a ticket file.
+
+1. **Richer demo bookings (§4.10).** A flight, train or bus booking has the carrier, flight number, route and times, a
+   seat and PNR for each traveller in `passengers[]` (covered people only), and detail rows such as Cabin, Fare,
+   Baggage, Terminal, Stops and Duration. A stay has `starts_at`/`ends_at` (check-in 14:00, check-out 11:00 local time,
+   on the trip's dates), and rows for Check-in, Check-out, Nights, Room, Guests and Cancellation. Every demo booking has
+   the row **"Booking · Demo, no real ticket"** and a `DEMO-…` reference. Nothing to change if you already draw
+   `details[]` and `passengers[]`.
+2. **A PDF a moment after Approve.** The booking is answered at once without a file. A few seconds later the Server adds
+   a **PDF e-ticket** per leg (`E-ticket DEL-GOI.pdf`) or a **PDF hotel voucher** (`Hotel voucher <name>.pdf`) to
+   `documents[]`, and sends **`trip_changed kinds:["booking"]`** with a new `seq` (and `home_changed` to the covered
+   people). **Do:** on that frame, re-read the bookings (or the one booking) to show the file.
+3. **`documents[].url` (§2, §4.10).** Every document in the bookings list, one booking and `TripView.bookings` now carries
+   `url`: a **signed link valid 1 hour**, minted on each read. Open, download or share it directly. **Do:** don't store it;
+   read the booking again for a fresh one when it has run out. `GET …/bookings/:id/documents/:document_id` (302) still
+   works as the stable link, and is the fallback when a document comes without `url`. Only covered people get
+   `documents[]`, as before.
+
 ---
 
 **Questions or anything unclear:** reply to the Server team. When this file and `CONTRACT-APP.md` differ,

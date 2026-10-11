@@ -14,7 +14,7 @@ const BOOKING = {
   payer_person_id: 'p_rahul', for_person_ids: ['p_rahul', 'p_arjun'], starts_at: '2026-11-06T14:10:00Z', ends_at: '2026-11-06T16:25:00Z', journey: JOURNEY,
   details: [{ label: 'PNR', value: 'K7QX2M' }, { label: 'Baggage', value: '15 kg' }], created_at: '2026-10-08T10:00:00Z',
   passengers: [{ person_id: 'p_rahul', seat: '14A', pnr: 'K7QX2M' }, { person_id: 'p_arjun', seat: '14B', pnr: 'K7QX2M' }],
-  documents: [{ document_id: 'doc_01JA', name: '6E5313-K7QX2M.pdf', mime: 'application/pdf', size_bytes: 184233, pages: 2, visibility: 'covered' }],
+  documents: [{ document_id: 'doc_01JA', name: '6E5313-K7QX2M.pdf', mime: 'application/pdf', size_bytes: 184233, pages: 2, visibility: 'covered', url: 'https://<ref>.supabase.co/storage/v1/object/sign/go-files/bookings/t_goa/b_01JA/doc_01JA.pdf?token=…' }],
 };
 const { passengers: _p, documents: _d, ...BOOKING_FOR_OTHERS } = BOOKING;
 const refused = (status: number, code: string, msg: string, field: string | null = null) => ({ name: code, status, body: { error: { code, message: msg, field, retry_after_seconds: null, request_id: 'req_01JA7Q3V8Z' } } });
@@ -22,7 +22,7 @@ const refused = (status: number, code: string, msg: string, field: string | null
 export const routes: RouteMeta[] = [
   {
     method: 'GET', path: '/app/v1/trips/:trip/bookings', section: SECTIONS.bookings, title: 'Bookings',
-    summary: 'The Bookings tab: every booking of the trip, confirmed and cancelled, newest first, with the trip change number. passengers[] and documents[] are in a booking only for the people it covers (for_person_ids); everyone else gets the booking without those two keys. details and return_journey are for everyone.',
+    summary: 'The Bookings tab: every booking of the trip, confirmed and cancelled, newest first, with the trip change number. passengers[] and documents[] are in a booking only for the people it covers (for_person_ids); everyone else gets the booking without those two keys. Each document carries url, a signed link valid 1 hour, minted on every read. details and return_journey are for everyone.',
     example: { responses: [{ name: 'as a covered person', status: 200, body: { items: [BOOKING], seq: 61 } }, { name: 'as anyone else', status: 200, body: { items: [BOOKING_FOR_OTHERS], seq: 61 } }] },
   },
   {

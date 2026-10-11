@@ -210,7 +210,7 @@ describe('reading bookings (the covered-people rule)', () => {
 
 describe('documents Go sends with add_booking', () => {
   let bid: string;
-  it('copies each file once into storage under its own path, keeps the facts without a link, skips a file it cannot copy without failing Go\'s request, and stores the 1.1 fields', async () => {
+  it('copies each file once into storage under its own path, keeps the facts and gives covered people our own signed link (never Go\'s), skips a file it cannot copy without failing Go\'s request, and stores the 1.1 fields', async () => {
     const documents = [
       { document_id: 'doc_pdf', name: '6E5313-K7QX2M.pdf', mime: 'application/pdf', size_bytes: 15, pages: 2, visibility: 'covered', url: `${filesBase}/ticket.pdf` },
       { document_id: 'doc_png', name: 'voucher.png', mime: 'image/png', size_bytes: 3, visibility: 'group', url: `${filesBase}/voucher.png` },
@@ -233,11 +233,12 @@ describe('documents Go sends with add_booking', () => {
     expect((await h.go.call('add_booking', params)).result).toEqual(r.result);
     await settleDocumentCopies();
     expect((await rows(h.pool, 'select count(*)::int as n from booking_documents where booking_id = $1', [bid]))[0].n).toBe(2);
-    // Covered people see the documents (facts only, no url); the rest of the trip sees neither documents nor passengers.
+    // Covered people see the documents (the facts, and a signed link to our copy); the rest of the trip sees neither documents nor passengers.
     const rahul = (await one(bid, t.as('p_rahul'))).body;
     const priya = (await one(bid, t.as('p_priya'))).body;
+    const signed = expect.stringContaining('https://go.example/_dev/storage/');
     expect([rahul.documents, rahul.passengers, rahul.details, 'documents' in priya, 'passengers' in priya, priya.details]).toEqual([
-      [{ document_id: 'doc_pdf', name: '6E5313-K7QX2M.pdf', mime: 'application/pdf', size_bytes: 15, pages: 2, visibility: 'covered' }, { document_id: 'doc_png', name: 'voucher.png', mime: 'image/png', size_bytes: 3, visibility: 'group' }],
+      [{ document_id: 'doc_pdf', name: '6E5313-K7QX2M.pdf', mime: 'application/pdf', size_bytes: 15, pages: 2, visibility: 'covered', url: signed }, { document_id: 'doc_png', name: 'voucher.png', mime: 'image/png', size_bytes: 3, visibility: 'group', url: signed }],
       [{ person_id: 'p_rahul', seat: '14A', pnr: 'K7QX2M' }], [{ label: 'PNR', value: 'K7QX2M' }], false, false, [{ label: 'PNR', value: 'K7QX2M' }],
     ]);
     expect(JSON.stringify(rahul)).not.toContain(filesBase);

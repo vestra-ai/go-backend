@@ -68,9 +68,13 @@ export class SupabaseStorage implements Storage {
     await this.call('DELETE', `/object/${encodeURIComponent(this.opts.bucket)}`, { prefixes: [path] });
   }
 
+  async put(path: string, bytes: Buffer, mime: string): Promise<void> {
+    await this.call('POST', `/object/${this.objectPath(path)}`, new Blob([new Uint8Array(bytes)]), { 'content-type': mime, 'x-upsert': 'true' });
+  }
+
   async putFromUrl(url: string, path: string, limits?: CopyLimits): Promise<Copied> {
     const { bytes, mime } = await fetchForCopy(url, limits, this.fetch);
-    await this.call('POST', `/object/${this.objectPath(path)}`, new Blob([new Uint8Array(bytes)]), { 'content-type': mime, 'x-upsert': 'true' });
+    await this.put(path, bytes, mime);
     return { mime, size_bytes: bytes.length };
   }
 }

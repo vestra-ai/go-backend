@@ -2,18 +2,19 @@
 // Go's waiting pay cards, the Server takes the payment as done. The tap never reaches Go and no vault page opens. In one
 // transaction the card becomes paid, the booking and its expense are written, the room gets its lines, and Go hears
 // booking.changed, record.changed, expense.changed and then payment.completed, which names them all.
-import type { Ctx } from '../context.js';
+import { nowOf, type Ctx } from '../context.js';
 import { newId } from '../db/ids.js';
 import { once } from '../db/once.js';
 import type { Db } from '../db/pool.js';
 import { change, emit, nextSeq } from '../db/write-change.js';
+import { attachDemoTickets } from '../demo/attach.js';
 import { publishHome } from './actions.js';
 import { storeBookingExtras } from './bookings.js';
 import { demoBookingFor, type DemoOption } from './demo-booking.js';
 import { conflict } from './errors.js';
 import { insertExpense, moneyChanged } from './expenses.js';
 import { postExpenseAdded } from './ledger-lines.js';
-import { bookingOf, recordLineOf, type BookingRow, type RecordLineRow } from './mappers.js';
+import { bookingOf, compact, recordLineOf, type BookingRow, type RecordLineRow } from './mappers.js';
 import { activePeople, loadDecisions } from './snapshot.js';
 import type { ApprovalRow, PickRow } from './spend.js';
 import { bookedText, postSystemMessage } from './system-messages.js';
@@ -98,10 +99,15 @@ export async function demoPay(ctx: Ctx, tripId: string, personId: string, cardId
     const everyone = (await activePeople(db, tripId)).map((p) => p.person_id);
     const forPeople = approval.for_person_id ? [approval.for_person_id] : everyone;
     const { option, option_kind } = await paidOption(db, tripId, approval);
+    // The names on the ticket (the covered people and the payer) and the trip's dates for a stay.
+    const people = (await db.query('select person_id, name, email from people where person_id = any($1)', [[...new Set([...forPeople, personId])]])).rows
+      .map((p) => compact({ person_id: p.person_id as string, name: p.name as string, email: (p.email as string | null) ?? undefined }));
+    const trip = (await db.query(`select title, destination, to_char(dates_start, 'YYYY-MM-DD') as start, to_char(dates_end, 'YYYY-MM-DD') as "end" from trips where trip_id = $1`, [tripId])).rows[0];
     const f = await demoBookingFor({
       trip_id: tripId, approval_id: approval.approval_id, merchant: approval.merchant, purpose: card.purpose ?? approval.merchant,
-      amount_minor: amount, currency: approval.currency, payer_person_id: personId, for_person_ids: forPeople, option_kind, option,
-    });
+      amount_minor: amount, currency: approval.currency, payer_person_id: personId, for_person_ids: forPeople, option_kind, option, people,
+      trip: trip && compact({ title: trip.title as string, destination: trip.destination ?? undefined, dates: trip.start && trip.end ? { start: trip.start as string, end: trip.end as string } : undefined }),
+    }, nowOf(ctx));
 
     // Row locks before the change number, as on Go's add_booking: the vote's decided line becomes the booked line.
     const decided = approval.decision_id
@@ -166,6 +172,9 @@ export async function demoPay(ctx: Ctx, tripId: string, personId: string, cardId
     // a file that cannot be fetched is skipped and the booking stands without it.
     const documents = (f.documents ?? []).slice(0, 10).map((d) => ({ ...d, document_id: newId('doc'), size_bytes: 0 }));
     if (documents.length) after(() => storeBookingExtras(ctx, tripId, booking.booking_id, { documents }));
+    // The ticket PDFs the module described are rendered here, in the background too (src/demo/attach.ts).
+    const tickets = f.tickets ?? [];
+    if (tickets.length) after(() => attachDemoTickets(ctx, tripId, booking.booking_id, tickets));
     return DEMO_PAID;
   });
 }

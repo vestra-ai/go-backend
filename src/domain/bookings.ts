@@ -2,19 +2,21 @@
 // (app contract §1.7): `passengers[]` and `documents[]` are returned only to the people in
 // `for_person_ids`; everyone else gets the booking without those two keys. Go's own reads keep everything. And the
 // files: when Go's add_booking names documents, each `url` is fetched once, the file is kept in Storage under our own
-// path, and the app only ever gets a short signed link from GET …/documents/:document_id (never the stored link).
+// path, and the app only ever gets short signed links, never the stored link: each document it sees carries `url`
+// (valid an hour, minted on every read), and GET …/documents/:document_id answers a fresh one.
 import type { Ctx } from '../context.js';
 import type { Db } from '../db/pool.js';
 import { IMAGE, MAX_UPLOAD_BYTES, extensionFor } from '../api/v1/uploads.js';
+import { DOWNLOAD_TTL_SECONDS, type Storage } from '../storage/storage.js';
 import { Forbidden } from './actions.js';
 import { notFound } from './errors.js';
 import { bookingOf, compact, type BookingRow } from './mappers.js';
 import type { Booking } from './types.js';
 
-/** A document the app sees: the file's facts and nothing about where it is. Opened through GET …/documents/:document_id. */
-export interface AppDocument { document_id: string; name: string; mime: string; size_bytes: number; pages?: number; visibility: 'covered' | 'group' }
+/** A document the app sees: the file's facts and, in reads, a signed link to it (`url`, valid an hour). Never where it is stored. */
+export interface AppDocument { document_id: string; name: string; mime: string; size_bytes: number; pages?: number; visibility: 'covered' | 'group'; url?: string }
 
-export interface BookingDocumentRow extends AppDocument { booking_id: string; path: string; created_at: Date }
+export interface BookingDocumentRow extends Omit<AppDocument, 'url'> { booking_id: string; path: string; created_at: Date }
 
 export type BookingForApp = Booking & { documents?: AppDocument[] };
 
@@ -39,10 +41,37 @@ export function bookingForApp(booking: Booking, documents: BookingDocumentRow[],
   return compact({ ...booking, passengers, documents: documents.map(documentOf) }) as BookingForApp;
 }
 
-/** The trip's bookings as this person may see them, inside the caller's transaction (TripView and the list share it). */
-export async function bookingsForPerson(db: Db, bookings: Booking[], personId: string): Promise<BookingForApp[]> {
+/**
+ * The trip's bookings as this person may see them, inside the caller's transaction (TripView and the list share it),
+ * and where each document they see is stored, by document id: `linkDocuments` signs them once the read is over.
+ */
+export async function bookingsForPerson(db: Db, bookings: Booking[], personId: string): Promise<{ items: BookingForApp[]; paths: Map<string, string> }> {
   const docs = await documentsOf(db, bookings.map((b) => b.booking_id));
-  return bookings.map((b) => bookingForApp(b, docs.get(b.booking_id) ?? [], personId));
+  const paths = new Map(bookings.filter((b) => b.for_person_ids.includes(personId)).flatMap((b) => (docs.get(b.booking_id) ?? []).map((d) => [d.document_id, d.path] as const)));
+  return { items: bookings.map((b) => bookingForApp(b, docs.get(b.booking_id) ?? [], personId)), paths };
+}
+
+/**
+ * Every document in the answer gets `url`: a signed link valid an hour, minted now, all in one batch. If Storage cannot
+ * sign, the documents go out without it (logged); the documents route still opens them.
+ */
+export async function linkDocuments(
+  storage: Storage,
+  items: BookingForApp[],
+  paths: Map<string, string>,
+  log: (msg: string, err?: unknown) => void = (m, e) => console.error(`[bookings] ${m}`, e ?? ''),
+): Promise<BookingForApp[]> {
+  if (paths.size === 0) return items;
+  const ids = [...paths.keys()];
+  let urls: Map<string, string>;
+  try {
+    const signed = await storage.signDownloads(ids.map((id) => paths.get(id)!), DOWNLOAD_TTL_SECONDS);
+    urls = new Map(ids.map((id, i) => [id, signed[i]!]));
+  } catch (err) {
+    log('the documents could not be signed; answered without their links', err instanceof Error ? err.message : err);
+    return items;
+  }
+  return items.map((b) => (b.documents?.length ? ({ ...b, documents: b.documents.map((d) => compact({ ...d, url: urls.get(d.document_id) })) } as BookingForApp) : b));
 }
 
 async function readOnly<T>(ctx: Ctx, work: (db: Db) => Promise<T>): Promise<T> {
@@ -62,12 +91,13 @@ async function readOnly<T>(ctx: Ctx, work: (db: Db) => Promise<T>): Promise<T> {
 
 /** GET /trips/:trip/bookings: every booking, confirmed and cancelled, newest first, with the trip's change number. */
 export async function listBookings(ctx: Ctx, tripId: string, personId: string): Promise<{ items: BookingForApp[]; seq: number }> {
-  return readOnly(ctx, async (db) => {
+  const { items, paths, seq } = await readOnly(ctx, async (db) => {
     const seq = (await db.query('select seq from trips where trip_id = $1', [tripId])).rows[0]?.seq as number | undefined;
     if (seq === undefined) throw notFound(`trip ${tripId} does not exist`);
     const { rows } = await db.query<BookingRow>('select * from bookings where trip_id = $1 order by created_at desc, booking_id desc', [tripId]);
-    return { items: await bookingsForPerson(db, rows.map(bookingOf), personId), seq };
+    return { ...(await bookingsForPerson(db, rows.map(bookingOf), personId)), seq };
   });
+  return { items: await linkDocuments(ctx.storage, items, paths), seq };
 }
 
 async function bookingRow(db: Db, tripId: string, bookingId: string): Promise<BookingRow> {
@@ -79,7 +109,8 @@ async function bookingRow(db: Db, tripId: string, bookingId: string): Promise<Bo
 /** GET /trips/:trip/bookings/:id. */
 export async function getBooking(ctx: Ctx, tripId: string, personId: string, bookingId: string): Promise<BookingForApp> {
   const row = await bookingRow(ctx.pool, tripId, bookingId);
-  return (await bookingsForPerson(ctx.pool, [bookingOf(row)], personId))[0]!;
+  const { items, paths } = await bookingsForPerson(ctx.pool, [bookingOf(row)], personId);
+  return (await linkDocuments(ctx.storage, items, paths))[0]!;
 }
 
 /**
