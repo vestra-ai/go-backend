@@ -156,7 +156,7 @@ describe('request_spend_approval, the personal form', () => {
     it('no_pick: no tap, someone else\'s tap, another option, or another card than the one they tapped', async () => {
       const card = await postFlights('p_arjun');
       const denied = await ask('p_arjun', card);
-      expect(denied).toEqual({ status: 'denied', reason: 'no_pick', detail: 'that person has not picked that option on their own card in the last 30 minutes' });
+      expect(denied).toEqual({ status: 'denied', reason: 'no_pick', detail: 'that person has not picked that option on a card of theirs in the last 30 minutes' });
       expect(check('SpendApprovalResult', denied)).toMatchObject({ ok: true });
       const priyas = await picked('p_priya');
       expect((await ask('p_arjun', priyas)).reason).toBe('no_pick'); // Priya's tap is not Arjun's
@@ -166,13 +166,21 @@ describe('request_spend_approval, the personal form', () => {
       expect((await ask('p_arjun', card)).status).toBe('approved');
     });
 
-    it('no_pick: a tap on a card that is not their own (a card for the group, or one naming someone else)', async () => {
-      const group = await postFlights();
-      await tap('p_kabir', group);
-      expect((await ask('p_kabir', group)).reason).toBe('no_pick');
+    it('no_pick: a tap on a card addressed to someone else; a card that names nobody is the room\'s, and anyone may pick from it', async () => {
+      const room = await postFlights();
+      await tap('p_kabir', room);
+      expect((await ask('p_kabir', room)).status).toBe('approved'); // Go books a room's flights card for whoever taps it
+      // Only a room's card of tickets: a tap on the room's stays card (the group's to vote on and pay for) is no personal pick.
+      await ok('post_message', { text: 'Stays', card: { card_id: 'c_room_stays', kind: 'options', fallback_text: 'Stays', title: 'Stays', option_kind: 'stay', checked_at: '2026-10-05T06:49:30Z', options: [{ option_id: 'o1', title: 'Casa Azul', price_minor: PRICE, currency: 'INR', highlights: [] }], actions: [{ action_id: 'pick', label: 'Pick', style: 'primary', per_option: true }] } });
+      await tap('p_kabir', 'c_room_stays');
+      expect((await ask('p_kabir', 'c_room_stays')).reason).toBe('no_pick');
       const priyas = await postFlights('p_priya');
       await tap('p_kabir', priyas); // the card is in the room, so the tap goes through; it is still Priya's card
       expect((await ask('p_kabir', priyas)).reason).toBe('no_pick');
+      // Go's own step after a pick (travel/taps.ts): the card redrawn with the picked flight alone and no buttons. Still theirs.
+      const shown = await picked('p_rahul');
+      await ok('replace_card', { card: { card_id: shown, kind: 'options', fallback_text: 'Flights to Goa', title: 'Flights', option_kind: 'flight', checked_at: '2026-10-05T06:49:30Z', for_person_ids: ['p_rahul'], options: [{ option_id: 'o1', title: 'IndiGo 6E 2134', price_minor: PRICE, currency: 'INR', highlights: ['Non-stop'] }], actions: [] } });
+      expect((await ask('p_rahul', shown)).status).toBe('approved');
       // Their own card, picked, then replaced by Go without that option: the card is read as it stands now.
       const own = await picked('p_kabir');
       await ok('replace_card', { card: { card_id: own, kind: 'notice', fallback_text: 'Gone', title: 'Sold out', body: 'That fare is gone', tone: 'heads_up', for_person_ids: ['p_kabir'] } });

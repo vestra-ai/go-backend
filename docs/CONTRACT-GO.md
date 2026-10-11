@@ -190,10 +190,14 @@ error `-32601`; params that do not match the contract with `422`, `data.code: "i
     `option_id`), the Server keeps the pick (who, card, option, the option's `price_minor` and `currency` as the card
     showed them, and when) before it sends you the tap, even when you then do not answer. The checks, in this order:
     1. `personal.person_id` is in the trip now; else **`not_in_trip`**.
-    2. That person tapped **that option on that card** in the **last 30 minutes**, and the card is **their own**: one
-       of your cards whose `for_person_ids` names them, or on a message whose `visible_to_person_ids` names them. Else
-       **`no_pick`**. A card for the whole group, or one naming someone else, is not their own, even though they can
-       tap it.
+    2. That person tapped **that option on that card** in the **last 30 minutes**, and the card is one they may
+       pick from: one of your cards, on a message they can see, and **not addressed to someone else**. A card whose
+       `for_person_ids` names people is theirs only when it names them (or its message's `visible_to_person_ids` does);
+       a card that names nobody is the room's, and anyone in the room may pick from it for themselves when its
+       `option_kind` is `flight`, `train` or `bus` and it carries no `decision_id`. Else
+       **`no_pick`**. (Your guide and simulator ask for the card to name the person; the Server also takes a room's
+       card, since you book a room's flights card for whoever taps it.) Your booking may wait up to 30 minutes for an
+       ixigo login: a pick older than 30 minutes when you ask is `no_pick`, and the person picks again.
     3. The amount fits the price the card showed when they tapped: same `currency`, and
        `amount_minor ≤ floor(price_minor × 1.05)` (fares move). An option that showed no price fits no amount. Else
        **`no_pick`**: ask them to pick again at today's price.
@@ -225,11 +229,13 @@ error `-32601`; params that do not match the contract with `422`, `data.code: "i
   shows the last kept answer, else the card's own `details`; a `404` drops what was kept. `replace_card` drops what was
   kept for that card, so the next open asks you again. At most 10 asks a minute per person per trip.
 - **`place_info`** (1.3): asked by a background job, never while a person waits; about each idea of the home
-  carousel at most once every 24 hours whether or not you answered, one idea every 15 seconds, and not while the socket
+  carousel at most once every 24 hours once you have answered in full (hourly until then), one idea every 15 seconds, and not while the socket
   is down. `{ name, from_city? }`: `from_city` is absent for the ideas shown when the person's city is unknown. A whole
   answer's `place.photos` (the first 12), `tag`, `best_months` and, when a city was sent, `travel` are kept (`cab` and
-  `drive` are shown as car). `complete: false`, a refusal or an answer with no photos leaves the kept photos as they
-  were. The photo links are handed to the app as you sent them and kept until your next answer, so they must not expire.
+  `drive` are shown as car). A refusal or an answer with no photos leaves the kept photos as they were. `complete:
+  false` is not kept as the idea's answer, except that an idea with no photo yet takes the photos it brings (you mark
+  a place partial while it lacks only its best months). An idea you have not yet answered about in full is asked about
+  again after **1 hour**, not 24. The photo links are handed to the app as you sent them and kept until your next answer, so they must not expire.
 - **`OptionsCard.decision_id`** (1.3): `post_message` with an `options` card that carries a `decision_id` is accepted
   only when that vote is in the trip and **open**; otherwise `422`. So: `open_vote` first, then post the card. Give each
   `DecisionOption` the card option's `option_id` as its **`option_ref`**: that is how the app matches a card option to

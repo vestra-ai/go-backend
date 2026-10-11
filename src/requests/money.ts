@@ -143,12 +143,19 @@ async function personalApproval(ctx: Ctx, db: Db, p: any) {
   const member = await db.query('select 1 from trip_people where trip_id = $1 and person_id = $2 and left_at is null for update', [p.trip_id, person_id]);
   const key = [p.trip_id, person_id, card_id, option_id];
   const pick = member.rowCount ? (await db.query<PickRow>(personalPickSql, key)).rows[0] : undefined;
-  // Their own card, as it stands now: one of Go's, still showing that option, naming them or on a message for them (and
-  // not one hidden from them or deleted).
+  // A card they may pick from, as it stands now: one of Go's, still showing that option, on a message they can see and
+  // not deleted, and not addressed to someone else. A card that names people (for_person_ids) is theirs only when it
+  // names them, or its message is for them; a card that names nobody is the room's, and anyone in the room may pick
+  // from it for themselves when it is a card of tickets (flights, trains, buses: Go books a room's flights card for
+  // whoever taps it) and not one the group votes on. What makes the pick theirs is the tap, which the Server recorded
+  // itself; the payer is always the person who tapped.
   const theirs = pick
     ? await db.query(
         `select 1 from messages where trip_id = $1 and card_id = $2 and author_kind = 'go'
-           and (card->'for_person_ids' ? $3 or visible_to_person_ids ? $3) and ${visibleSql('$3')}
+           and (card->'for_person_ids' ? $3 or visible_to_person_ids ? $3
+                or (coalesce(jsonb_array_length(nullif(card->'for_person_ids', 'null')), 0) = 0
+                    and card->>'option_kind' in ('flight', 'train', 'bus') and card->>'decision_id' is null))
+           and ${visibleSql('$3')}
            and not deleted and card->'options' @> jsonb_build_array(jsonb_build_object('option_id', $4::text))`,
         [p.trip_id, card_id, person_id, option_id],
       )

@@ -74,6 +74,31 @@ describe('the ideas refresh (place_info)', () => {
     expect((await idea('idea_any_goa')).tried).toBe(false);
   });
 
+  it('an idea Go has not answered about in full is asked about again after an hour, and takes the photos a partial answer brings when it has none', async () => {
+    // Go marks a place partial while it lacks only its best months (place-info.ts): the photos are there.
+    await onlyDue('idea_any_goa');
+    h.go.answers.place_info = () => ({ result: { place: { name: 'Goa', photos: [photo(7)] }, complete: false } });
+    expect(await refreshIdeas(h.ctx, go)).toBe(0); // not the idea's answer yet
+    expect(await idea('idea_any_goa')).toMatchObject({ photos: [photo(7)], refreshed: false, tried: true });
+    expect((await ideas())[0].image_url).toBe(photo(7).url);
+    // 59 minutes on it waits; 61 minutes on it is asked about again, and the whole answer is kept.
+    const ago = (minutes: number) => h.pool.query(`update ideas set refresh_tried_at = now() - make_interval(mins => $1) where idea_id = 'idea_any_goa'`, [minutes]);
+    h.go.answers.place_info = () => ({ result: GOA });
+    await ago(59);
+    expect(await refreshIdeas(h.ctx, go)).toBe(0);
+    await ago(61);
+    expect(await refreshIdeas(h.ctx, go)).toBe(1);
+    expect(await idea('idea_any_goa')).toMatchObject({ photos: [photo(1, 'Beach'), photo(2)], refreshed: true });
+    // Answered in full, it now waits a day: an hour on, nothing is asked.
+    await ago(61);
+    expect(await refreshIdeas(h.ctx, go)).toBe(0);
+    // A partial answer never touches photos an idea already has.
+    await ago(25 * 60);
+    h.go.answers.place_info = () => ({ result: { place: { name: 'Goa', photos: [photo(8)] }, complete: false } });
+    await refreshIdeas(h.ctx, go);
+    expect((await idea('idea_any_goa')).photos).toEqual([photo(1, 'Beach'), photo(2)]);
+  });
+
   it('keeps the photos it has when Go has none to give: a partial answer, a refusal, an answer outside the contract or one with no photos leaves them, until tomorrow', async () => {
     await onlyDue('idea_any_goa');
     await refreshIdeas(h.ctx, go);

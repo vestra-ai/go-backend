@@ -65,8 +65,8 @@ export interface PickRow {
  * The spend check for 1.3's personal form: a person's own payment (their ticket; a seat or a bag at check-in), with no
  * vote behind it. The first rule that fails, or null. The rules run in this order (Go's guide, "A person's own pick").
  * `pick` is that person's most recent tap on that option of that card in the last PICK_MINUTES (personalPickSql);
- * `theirs` says the card is their own: Go's card naming them in for_person_ids, or on a message only they and the people
- * named with them can see.
+ * `theirs` says the card is one they may pick from for themselves: Go's card, visible to them, and not addressed to
+ * someone else (it names them, or names nobody, or its message is for them).
  */
 export function personalCheck(
   inTrip: boolean, // personal.person_id is in the trip now
@@ -77,7 +77,7 @@ export function personalCheck(
   alreadyBooked: boolean, // a confirmed booking was made with an approval for the same person, card and option
 ): Denial | null {
   if (!inTrip) return { reason: 'not_in_trip', detail: 'the person is not in this trip' };
-  if (!pick || !theirs) return { reason: 'no_pick', detail: `that person has not picked that option on their own card in the last ${PICK_MINUTES} minutes` };
+  if (!pick || !theirs) return { reason: 'no_pick', detail: `that person has not picked that option on a card of theirs in the last ${PICK_MINUTES} minutes` };
   // The price is the one the card showed when they tapped. A pick with no price, or in another currency, fits no amount.
   if (pick.price_minor == null || pick.currency !== req.currency || req.amount_minor > Math.floor(Number(pick.price_minor) * PICK_PRICE_SLACK)) {
     return { reason: 'no_pick', detail: "the amount is more than the picked option's price plus 5%, or the option showed no price in this currency" };

@@ -281,6 +281,32 @@ Asks sent to Go: `docs/GO-TEAM-REV5.md`, `docs/GO-TEAM-REV5-BUGS.md`.
 - **Not merged, not deployed.** Going live takes a merge to `main` and `GO_SERVER_NAME=go-server-prod` on Railway;
   both redeploy the Server, which Go's team asked us not to do during the demo. The owner decides when.
 
+## Before the demo: Go's newest code against the Server's rules (branch `go-server-name`)
+- Request (11 Oct): make the interactions between the Server, Go and the app seamless for the demo.
+- Read in go-brain `a9a11d73`: the personal flight flow (`travel/taps.ts`, `booking/flight-booking.ts`, `money/ask.ts`),
+  the vote on the card and "See more" (`travel/votes.ts`, `taps.ts`), `place-info.ts`, the live card.
+- Found in step with the Server: Go redraws a person's own card with the picked option and keeps their name on it;
+  a fare up more than 5% gets a new card to pick again; Go opens the vote before posting its card, gives each vote
+  option the card option's id as `option_ref`, and "See more" adds only options not shown; the live link passes
+  through (checked locally on the released code: room read, cards list and live frames).
+- Changed:
+  1. A room's card of tickets counts for a personal approval (`src/requests/money.ts`): Go books a room's flights card
+     for whoever taps it, and the Server denied that `no_pick`. Only `flight`, `train`, `bus` cards with no
+     `decision_id`; a card addressed to someone else is still refused.
+  2. Idea photos (`src/jobs/ideas.ts`): an idea not yet answered in full is asked about again after an hour, not a
+     day, and takes the photos a partial answer brings when it has none. Go was deployed after the Server on 11 Oct
+     and marks a place partial while it lacks only its best months.
+- Evidence: `tsc --noEmit` clean; 68 files, 596 tests passing (+1 case; 22 of 50). Mutation proofs (each restored):
+  unanswered ideas waiting a day; partial photos overwriting kept ones; a card addressed to someone else accepted; the
+  room's stays card accepted. Each fails a test.
+- **Opus 5.5 code review**, session `7c927e08-87a3-4f58-a06b-beb5b8cd179b`, call 1 of 3, 84 s of 480: APPROVE. Minors:
+  the room case not limited to ticket cards (now limited, with a test); hourly asks without end for a place Go never
+  learns (accepted); a partial answer with no place (the contract check in `askGo` comes first); stale wording (fixed).
+- **Fable 5.1 final QC**, session `4f713cbc-cc26-44d6-afec-ee256d3361c3`, call 1 of 3, 110 s of 480: APPROVE. Minors:
+  a stale comment (fixed); no test for a literal null `for_person_ids`; Go may wait 30 minutes for an ixigo login and
+  the pick also stands 30 minutes, so a slow login can end in `no_pick` and a second tap (not changed; in CONTRACT-GO).
+- Not proven: any of this against the real Go.
+
 ## Storage
 - Canonical: this file; the plan. Scratch (disposable, session `dcbcd553`): the session scratchpad under
   `/private/tmp/claude-501/…/scratchpad` (briefs, reviewer outputs, the read-only go-brain clone). Cleanup: pending (left in place; the

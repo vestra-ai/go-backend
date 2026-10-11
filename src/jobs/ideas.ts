@@ -6,20 +6,25 @@ import { askGo, GoUnavailable, type GoClient } from '../domain/ask-go.js';
 
 type PlaceInfo = components['schemas']['PlaceInfo'];
 
-/** How long before an idea is asked about again, whether or not Go answered. */
+/** How long before an idea Go has answered about in full is asked about again. */
 export const IDEA_REFRESH_HOURS = 24;
+/**
+ * How long before an idea Go has not yet answered about in full is asked about again. Go learns places as it goes
+ * (and may be deployed after this Server): an idea must not wait a day for photos Go has an hour later.
+ */
+export const IDEA_RETRY_HOURS = 1;
 /** Go says how one gets there in its own words; the ideas table has four. */
 /** A week: anything longer is not a way to get to a holiday, and the column is an int. */
 const MAX_MINUTES = 7 * 24 * 60;
 const TRAVEL_MODE: Record<string, 'flight' | 'car' | 'train' | 'bus'> = { flight: 'flight', train: 'train', bus: 'bus', cab: 'car', drive: 'car' };
 
 /**
- * Asks Go about up to `max` ideas that have not been asked about in the last day, the longest-waiting first, and keeps
- * each whole answer. Claiming an idea marks it tried first, so two instances never ask about the same one and a Go that
- * does not answer is not asked again until tomorrow. A whole answer is Go's newest word on the place and replaces what
- * is kept, field by field, for the fields it has: a partial answer (`complete: false`), a refusal, or an answer with no
- * photo leaves the idea's photos as they were. Go is not asked while the socket is down, and an ask that times out with
- * the socket still down is handed back, so an outage does not use up the day's try (a brief drop the socket recovers
+ * Asks Go about up to `max` ideas that are due (not asked about in the last day, or hour: see above), the longest-waiting first, and keeps
+ * each whole answer; an idea Go has not answered about in full is asked about again after an hour, not a day. Claiming
+ * an idea marks it tried first, so two instances never ask about the same one. A whole answer is Go's newest word on the place and replaces what
+ * is kept, field by field, for the fields it has: a refusal, or an answer with no photo, leaves the idea's photos as they were,
+ * and a partial answer (`complete: false`) only gives its photos to an idea that has none. Go is not asked while the socket is down, and an ask that times out with
+ * the socket still down is handed back, so an outage does not use up the idea's try (a brief drop the socket recovers
  * from resends the ask, which then counts). Answers the number of ideas updated.
  */
 export async function refreshIdeas(ctx: Ctx, go: GoClient & { connected?: boolean }, max = 1): Promise<number> {
@@ -27,23 +32,29 @@ export async function refreshIdeas(ctx: Ctx, go: GoClient & { connected?: boolea
   // The due ideas are picked once (materialized), then marked: exactly `max` at most, whatever plan the update takes.
   const due = (await ctx.pool.query<{ idea_id: string; name: string; from_city: string | null }>(
     `with due as materialized (
-       select idea_id from ideas where refresh_tried_at is null or refresh_tried_at < now() - make_interval(hours => $2)
+       select idea_id from ideas where refresh_tried_at is null
+          or refresh_tried_at < now() - make_interval(hours => case when refreshed_at is null then $3::int else $2::int end)
         order by refresh_tried_at nulls first, idea_id limit $1 for update skip locked)
      update ideas set refresh_tried_at = now() from due where ideas.idea_id = due.idea_id
      returning ideas.idea_id, ideas.name, ideas.from_city`,
-    [max, IDEA_REFRESH_HOURS],
+    [max, IDEA_REFRESH_HOURS, IDEA_RETRY_HOURS],
   )).rows;
   let updated = 0;
   let failed: unknown;
   for (const idea of due) {
     try {
       const info = await askGo<PlaceInfo>(go, 'place_info', { name: idea.name, ...(idea.from_city ? { from_city: idea.from_city } : {}) });
-      if (info.complete === false) continue;
       // Up to 12 photos; a place Go knows by one picture alone (photo_url) shows that one.
       // A label Go left empty (null) is left out: the app's photo has a label or none.
       const photos = info.place.photos?.length
         ? info.place.photos.slice(0, 12).map((p) => ({ url: p.url, ...(p.label ? { label: p.label } : {}) }))
         : info.place.photo_url ? [{ url: info.place.photo_url }] : [];
+      if (info.complete === false) {
+        // A partial answer is not kept as the idea's answer (it is asked about again within the hour), but an idea with
+        // no photo at all takes the ones it brings: Go marks a place partial while it lacks only its best months.
+        if (photos.length) await ctx.pool.query('update ideas set photos = $2::jsonb where idea_id = $1 and photos is null', [idea.idea_id, JSON.stringify(photos)]);
+        continue;
+      }
       // The way there is from a city: an idea for "anywhere" keeps its curated one. A time the column cannot hold is not taken.
       const travel = idea.from_city && info.travel && info.travel.duration_minutes <= MAX_MINUTES ? { mode: TRAVEL_MODE[info.travel.mode], minutes: info.travel.duration_minutes } : null;
       await ctx.pool.query(
@@ -56,7 +67,7 @@ export async function refreshIdeas(ctx: Ctx, go: GoClient & { connected?: boolea
       updated++;
     } catch (err) {
       if (!(err instanceof GoUnavailable)) {
-        failed ??= err; // this idea waits for tomorrow; the others claimed with it are still asked about
+        failed ??= err; // this idea waits for its next turn; the others claimed with it are still asked about
         continue;
       }
       // Go did not answer. If the socket is down now, the ask very likely never arrived: due again at once.
