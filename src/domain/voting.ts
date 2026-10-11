@@ -129,7 +129,7 @@ export async function closeDecision(
   // The trip notice before the pill's message notice, so the live frames arrive in change-number order.
   await ctx.live.publish(tripId, { kind: 'trip', seq: last, kinds });
   await publishHomeAll(ctx, tripId, db); // the vote leaves everyone's open items (a mandate may follow for the payer)
-  // The room's pill, "Villa Sol won · 4 votes" (decision D8): after the events.
-  if (result !== null && label !== null) await postSystemMessage(ctx, db, tripId, decidedText(label, decision.tally[result] ?? 0));
+  // The room's pill, "Villa Sol won · 4 votes" (decision D8), or "Villa Sol chosen" in a trip of one: after the events.
+  if (result !== null && label !== null) await postSystemMessage(ctx, db, tripId, decidedText(label, decision.tally[result] ?? 0, row.of_count));
   return { decision, seq };
 }
