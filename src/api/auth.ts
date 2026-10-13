@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { createRemoteJWKSet, decodeProtectedHeader, errors as joseErrors, jwtVerify, type JWTPayload } from 'jose';
 import type pg from 'pg';
+import { alertSignup, type Alerts } from '../alerts.js';
 import { newId } from '../db/ids.js';
 
 // How the app signs people in. The contract leaves sign-in to us ("yours to design").
@@ -62,6 +63,8 @@ export interface SupabaseAuthOptions {
    * for new projects) are checked against the public keys at `${url}/auth/v1/.well-known/jwks.json` instead.
    */
   jwtSecret?: string;
+  /** The team's Slack channel: told when a person signs in for the first time. */
+  alerts?: Alerts;
   /** Override for the public-key address (tests). */
   jwksUrl?: string;
 }
@@ -138,6 +141,9 @@ export class SupabaseAuth implements Authenticator {
         [newId('p'), name.slice(0, 80), photo, email, userId, provider],
       );
       personId = created.rows[0]?.person_id ?? (await this.opts.pool.query('select person_id from people where auth_user_id = $1', [userId])).rows[0].person_id;
+      if (created.rows[0] && this.opts.alerts) {
+        void alertSignup(this.opts.alerts, this.opts.pool, { person_id: personId!, name: name.slice(0, 80), email, provider }).catch((err) => console.error('[alerts] sign-up', err));
+      }
     }
     if (this.people.size > 10_000) this.people.clear();
     this.people.set(userId, personId!);

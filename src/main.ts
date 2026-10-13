@@ -2,6 +2,7 @@ import { repairStayDestinations, repairSystemDates } from './domain/trip-from-bo
 import { randomBytes } from 'node:crypto';
 import { createWriteStream, mkdirSync } from 'node:fs';
 import { buildApp } from './api/app.js';
+import { SlackAlerts, tripAlertEveryOf } from './alerts.js';
 import { DevAuth, SupabaseAuth } from './api/auth.js';
 import { loadConfig, socketUrl } from './config.js';
 import { createPool } from './db/pool.js';
@@ -34,6 +35,10 @@ else console.log(`storage: supabase bucket ${config.supabaseStorageBucket}`);
 console.log(`ticket pdfs: ${pdfStatus()}`);
 // A real render right after start, so the deploy log proves the e-tickets and vouchers work (it never blocks the start).
 void pdfSelfTest().then((r) => (r.startsWith('ok') ? console.log : console.error)(`ticket pdfs: ${r}`));
+// Slack: a first sign-in, and every TRIP_ALERT_GO_MESSAGES of Go's messages in one trip (Go's replies cost tokens).
+const alerts = process.env.SLACK_WEBHOOK_URL ? new SlackAlerts(process.env.SLACK_WEBHOOK_URL) : undefined;
+const tripAlertEvery = tripAlertEveryOf();
+console.log(alerts ? `slack alerts: on (sign-ups${tripAlertEvery ? `, every ${tripAlertEvery} Go messages in a trip` : ''})` : 'slack alerts: off (set SLACK_WEBHOOK_URL)');
 const ctx: Ctx = {
   pool,
   live,
@@ -42,6 +47,8 @@ const ctx: Ctx = {
   spendPrivateKey: config.goSpendPrivateKey,
   features: config.features,
   goContract: config.goContract,
+  alerts,
+  tripAlertEvery,
 };
 // Go keeps a trip with the Server of this name: without one, a redeploy strands the trips made before it.
 console.log(config.serverName ? `go server name: ${config.serverName}` : 'go server name: none (set GO_SERVER_NAME: without it a redeploy strands older trips on Go)');
@@ -81,7 +88,7 @@ const stopJobs = startJobs(ctx, undefined, undefined, go);
 // Sign-in: Supabase access tokens, or our dev tokens for local testing (refused in production by loadConfig).
 const sessionSecret = process.env.APP_SESSION_SECRET ?? randomBytes(32).toString('hex');
 const auth = config.authMode === 'supabase'
-  ? new SupabaseAuth({ supabaseUrl: config.supabaseUrl!, pool, jwtSecret: config.supabaseJwtSecret })
+  ? new SupabaseAuth({ supabaseUrl: config.supabaseUrl!, pool, jwtSecret: config.supabaseJwtSecret, alerts })
   : new DevAuth(sessionSecret);
 console.log(`sign-in: ${config.authMode}${config.authMode === 'supabase' ? ` (${config.supabaseUrl})` : ' tokens from POST /app/v1/dev/sign-in'}`);
 const app = buildApp({ ctx, go, sessionSecret, auth, origins: config.appOrigins, features: config.features, internalKey: config.internalApiKey });

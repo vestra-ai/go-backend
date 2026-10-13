@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import type pg from 'pg';
+import type { Alerts } from '../../src/alerts.js';
 import type { Ctx } from '../../src/context.js';
 import { GoSocket } from '../../src/go/go-socket.js';
 import type { Live, LiveEvent } from '../../src/live/live.js';
@@ -60,6 +61,9 @@ export interface HarnessOptions {
   makeAuth?: (pool: pg.Pool) => Authenticator;
   /** The live socket hub's settings (a short heartbeat for the pong-timeout test). */
   live?: LiveHubOptions;
+  /** Slack alerts (a recording fake), and every how many of Go's messages in a trip one goes out. */
+  alerts?: Alerts;
+  tripAlertEvery?: number;
 }
 
 /** A person's name from a test id: `p_rahul` → `Rahul`. */
@@ -70,7 +74,7 @@ export async function startHarness(opts: HarnessOptions = {}) {
   const { pool, close } = await freshDb();
   const live = new RecordingLive();
   const storage = new MemoryStorage('https://go.example'); // its signed URLs point at the server under test (app.inject takes the path)
-  const ctx: Ctx = { pool, live, storage, publicBaseUrl: 'https://go.example', spendPrivateKey: spend.private_key_pem, features: opts.features, goContract: opts.goContract ?? '1.1' };
+  const ctx: Ctx = { pool, live, storage, publicBaseUrl: 'https://go.example', spendPrivateKey: spend.private_key_pem, features: opts.features, goContract: opts.goContract ?? '1.1', alerts: opts.alerts, tripAlertEvery: opts.tripAlertEvery };
   const go = new MockGo();
   const base = await go.listen();
   const socket = new GoSocket({

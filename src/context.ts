@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import type { Features, GoContract } from './config.js';
+import type { Alerts } from './alerts.js';
 import type { Live } from './live/live.js';
 import type { Storage } from './storage/storage.js';
 
@@ -20,6 +21,10 @@ export interface Ctx {
   features?: Partial<Features>;
   /** What Go's side accepts (GO_CONTRACT). Absent means 1.0: the events Go 1.0 refuses are kept to ourselves. */
   goContract?: GoContract;
+  /** The team's Slack channel (SLACK_WEBHOOK_URL). Absent: no alerts. */
+  alerts?: Alerts;
+  /** An alert every this many of Go's messages in one trip (TRIP_ALERT_GO_MESSAGES). Absent or 0: none. */
+  tripAlertEvery?: number;
 }
 
 export const goContractOf = (ctx: Ctx): GoContract => ctx.goContract ?? '1.0';

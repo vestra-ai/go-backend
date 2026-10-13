@@ -71,7 +71,7 @@ afterAll(async () => {
 });
 
 it('012 moves nobody\'s balance: every balance, the transfers and the totals equal what the old rules gave for the same rows', async () => {
-  expect(applied.filter((f) => f.endsWith('.sql'))).toEqual(['012_rev4_cleanup.sql', '013_visible_to.sql', '014_ticket_approvals.sql', '015_option_details.sql', '016_idea_photos.sql']);
+  expect(applied.filter((f) => f.endsWith('.sql'))).toEqual(['012_rev4_cleanup.sql', '013_visible_to.sql', '014_ticket_approvals.sql', '015_option_details.sql', '016_idea_photos.sql', '017_go_messages.sql']);
   const m = await tripMoney(pool, 't_m');
   expect(Object.fromEntries(balances(m.expenses, m.order, m.settlements))).toEqual({ p_a: 5000, p_b: 4000, p_c: -9000 });
   expect([m.money.spent_minor, m.money.by_category, m.money.transfers]).toEqual([
@@ -98,8 +98,8 @@ it('what the removed features stored is gone: four tables and seven columns on f
   expect(await migrate(pool)).toEqual([]); // nothing left to apply
 });
 
-it('every migration, 001 to 016, applies to an empty database', async () => {
+it('every migration, 001 to 017, applies to an empty database', async () => {
   const empty = await freshDatabase();
   const applied = (await migrate(empty)).filter((f) => f.endsWith('.sql'));
-  expect([applied[0], applied.at(-1), applied.length]).toEqual(['001_core.sql', '016_idea_photos.sql', 16]);
+  expect([applied[0], applied.at(-1), applied.length]).toEqual(['001_core.sql', '017_go_messages.sql', 17]);
 });

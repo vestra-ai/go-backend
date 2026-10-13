@@ -45,6 +45,8 @@ Secret (pasted by a person in Railway → service → Variables → Raw Editor; 
 | `GO_SIGNING_SECRET` | the socket signing secret shared with the Go team |
 | `GO_SPEND_PRIVATE_KEY` | our Ed25519 spend key (one line with `\n`); the Go team holds its public half |
 | `INTERNAL_API_KEY` | optional: the App team's key for the internal routes (`/internal/v1`: look a person up, delete or forget any person, reset a test trip; `docs/API.md` §10), sent as `x-internal-key`. Generate with `openssl rand -hex 32` and share it with the App team by one-time link. **Unset: every internal route answers `404`.** Rotate it by changing the variable (a redeploy) |
+| `SLACK_WEBHOOK_URL` | optional: a Slack incoming webhook (Slack → Apps → Incoming Webhooks → pick the channel). The channel gets a message when a person signs in for the first time, and when a trip reaches another `TRIP_ALERT_GO_MESSAGES` of Go's messages. The start-up log says `slack alerts: on (…)` or `off`. **Unset: no alerts.** A Slack outage never affects the app |
+| `TRIP_ALERT_GO_MESSAGES` | optional, default `50`: a trip alert at every 50th (100th, 150th, …) message Go posts in one trip, with the trip, its organizer, its members and how many of Go's messages came in the last hour. `0` turns trip alerts off |
 | `SUPABASE_SECRET_KEY` | the project's secret key (`sb_secret_…`, Project Settings → API Keys): it signs Storage upload and download links. **With it set, `STORAGE` defaults to `supabase`**; without it the server keeps files in memory, warns at start, and loses them on every redeploy |
 
 Feature flags (`1` or `0`; unset = the default from `src/config.ts`). Each is served to the app by `GET /app/v1/config`

@@ -1,3 +1,4 @@
+import { alertTripUsage } from '../alerts.js';
 import type { Ctx } from '../context.js';
 import { newId } from '../db/ids.js';
 import { once } from '../db/once.js';
@@ -75,6 +76,12 @@ export const postMessage = (ctx: Ctx) => async (p: any, raw: Record<string, unkn
        Array.isArray(raw.quick_replies) && raw.quick_replies.length ? JSON.stringify(raw.quick_replies) : null, visibleTo ? JSON.stringify(visibleTo) : null],
     )).rows[0]!;
     await emit(db, trip.trip_id, seq, 'message.created', { message: messageForGo(row, []) });
+    // Go's messages in this trip, counted under the trip row's lock (nextSeq): each count is reached once, so a step is alerted once.
+    const goMessages = (await db.query('update trips set go_messages = go_messages + 1 where trip_id = $1 returning go_messages', [trip.trip_id])).rows[0].go_messages as number;
+    if (ctx.alerts && ctx.tripAlertEvery && goMessages % ctx.tripAlertEvery === 0) {
+      const alerts = ctx.alerts;
+      after(async () => void (await alertTripUsage(alerts, ctx.pool, trip.trip_id, goMessages).catch((err) => console.error('[alerts] trip usage', err))));
+    }
 
     // Live notices go out with the transaction, at the commit and in commit order.
     await ctx.live.publish(trip.trip_id, { kind: 'message', message_id: row.message_id, updated_seq: seq });
